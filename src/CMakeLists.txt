@@ -1,0 +1,17 @@
+set(SRC
+    src/dir.c
+    src/dir.h
+    src/dynamicArray.c
+    src/dynamicArray.h
+    src/hashTable.c
+    src/hashTable.h
+    src/main.c
+    src/raygui.h
+    src/stringBuilder.c
+    src/stringBuilder.h
+    src/tac.c
+    src/tac.h
+    src/tad.c
+    src/tad.h
+    PARENT_SCOPE
+)

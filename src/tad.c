@@ -131,54 +131,104 @@ size_t TAD_GetEntryRelPath(TADFileEntry* entry, HashTable filenameDB, StringBuil
 	return relPathOffset;
 }
 
-void TAD_ExtractAllFiles(const char* tadFilepath, HashTable filenameDB, const char* outputPath, bool appendBasename) {
-	StringBuilder sb = SB_Create(32);
-
-	uint8_t* buffer = TAD_Load(tadFilepath);
+uint64_t TAD_GetFileCount(uint8_t* buffer) {
     TADHeader* header = (TADHeader*)buffer;
-    
+	return header->fileCount;
+}
+
+void TAD_ExtractFile(TADFileEntry* entry, HashTable filenameDB, StringBuilder sb, FILE* tacFile, const char* outputPath, const char* basename) {
+    size_t relPathOffset = TAD_GetEntryRelPath(entry, filenameDB, sb);
+    printf("    Path: %s\n", SB_CStrOffset(sb, relPathOffset));
+
+	size_t outputFilenameOffset = SB_Count(sb);
+    if (outputPath != NULL && strlen(outputPath) > 0) {
+		SB_AppendStr(sb, outputPath);
+    }
+    if (basename)
+        SB_AppendFormat(sb, "/%s", basename);
+
+    SB_AppendStr(sb, SB_CStrOffset(sb, relPathOffset));
+	SB_AppendChar(sb, '\0');
+	const char* outputFilename = SB_CStrOffset(sb, outputFilenameOffset);
+
+    // Ensure the directory exists
+    const char* lastSlash = strrchr(outputFilename, '/');
+    if (lastSlash != NULL) {
+		size_t dirOffset = SB_Count(sb);
+        SB_AppendSubstringFromSB(sb, outputFilenameOffset, lastSlash - outputFilename);
+		SB_AppendChar(sb, '\0');
+		const char* dir = SB_CStrOffset(sb, dirOffset);
+        int success = MakeDirs(dir);
+    }
+    outputFilename = SB_CStrOffset(sb, outputFilenameOffset);
+    TAC_SaveFile(tacFile, entry, outputFilename, sb);
+    SB_Clear(sb);
+}
+
+void TAD_ContextInit(TAD_Context* ctx, const char* tadFilepath, HashTable filenameDB, const char* outputPath, bool appendBasename) {
+	memset(ctx, 0, sizeof(TAD_Context));
+    ctx->tadFilepath = tadFilepath;
+    ctx->filenameDB = filenameDB;
+    ctx->outputPath = outputPath;
+    ctx->appendBasename = appendBasename;
+}
+
+size_t TAD_ExtractAllFilesStart(TAD_Context* ctx) {
+    ctx->sb = SB_Create(512);
+
+    ctx->buffer = TAD_Load(ctx->tadFilepath);
+    TADHeader* header = (TADHeader*)ctx->buffer;
+
     TAD_PrintHeader(header);
 
-    size_t tacFilenameOffet = TAD_GetTACFilename(tadFilepath, sb);
-	const char* tacFilename = SB_CStrOffset(sb, tacFilenameOffet);
+    size_t tacFilenameOffet = TAD_GetTACFilename(ctx->tadFilepath, ctx->sb);
+    const char* tacFilename = SB_CStrOffset(ctx->sb, tacFilenameOffet);
 
     // Open the TAC file
-	FILE* tacFile = TAC_Open(tacFilename);
+    ctx->tacFile = TAC_Open(tacFilename);
 
-    for (int i = 0; i < header->fileCount; i++) {
-        TADFileEntry* entry = (TADFileEntry*)(buffer + 0x3C + i * 0x20);
-        
-        TAD_PrintEntry(entry, i, header->fileCount, buffer);
+	ctx->entryID = 0;
 
-        size_t relPathOffset = TAD_GetEntryRelPath(entry, filenameDB, sb);
-        printf("    Path: %s\n", SB_CStrOffset(sb, relPathOffset));
+	return header->fileCount; // Return the total number of entries
+}
 
-        char outputFilename[256] = { 0 };
-        if (outputPath != NULL && strlen(outputPath) > 0) {
-            snprintf(outputFilename, sizeof(outputFilename), "%s", outputPath);
-        }
-        if (appendBasename) {
-            size_t basenameOffset = TAD_GetBasename(tadFilepath, sb);
-			const char* basename = SB_CStrOffset(sb, basenameOffset);
-            snprintf(outputFilename, sizeof(outputFilename), "%s/%s", outputFilename, basename);
-        }
-        snprintf(outputFilename, sizeof(outputFilename), "%s%s", outputFilename, SB_CStrOffset(sb, relPathOffset));
+size_t TAD_ExtractAllFilesNext(TAD_Context* ctx) {
+    TADHeader* header = (TADHeader*)ctx->buffer;
+    if (ctx->entryID >= header->fileCount) {
+        return SIZE_MAX; // No more entries to process
+	}
 
-        // Ensure the directory exists
-        const char* lastSlash = strrchr(outputFilename, '/');
-        if (lastSlash != NULL) {
-            char dir[256];
-            strncpy_s(dir, 256, outputFilename, lastSlash - outputFilename);
-            dir[lastSlash - outputFilename] = '\0';
-            int success = MakeDirs(dir);
-        }
-        TAC_SaveFile(tacFile, entry, outputFilename, sb);
-		SB_Clear(sb);
+    TADFileEntry* entry = (TADFileEntry*)(ctx->buffer + 0x3C + ctx->entryID * 0x20);
+
+    TAD_PrintEntry(entry, ctx->entryID, header->fileCount, ctx->buffer);
+
+    const char* basename = NULL;
+    if (ctx->appendBasename) {
+        size_t basenameOffset = TAD_GetBasename(ctx->tadFilepath, ctx->sb);
+        basename = SB_CStrOffset(ctx->sb, basenameOffset);
     }
-    printf("SB capacity: %zu", SB_Capacity(sb));
-	SB_Destroy(sb);
-	TAC_Close(tacFile);
-    free(buffer);
+    TAD_ExtractFile(entry, ctx->filenameDB, ctx->sb, ctx->tacFile, ctx->outputPath, basename);
+
+	ctx->entryID++;
+	return ctx->entryID; // Successfully processed the entry
+}
+
+void TAD_ExtractAllFilesEnd(TAD_Context* ctx) {
+    SB_Destroy(ctx->sb);
+    TAC_Close(ctx->tacFile);
+    free(ctx->buffer);
+	ctx->buffer = NULL;
+    ctx->tacFile = NULL;
+	ctx->sb = NULL;
+}
+
+void TAD_ExtractAllFiles(const char* tadFilepath, HashTable filenameDB, const char* outputPath, bool appendBasename) {
+	TAD_Context ctx;
+    TAD_ContextInit(&ctx, tadFilepath, filenameDB, outputPath, appendBasename);
+
+	TAD_ExtractAllFilesStart(&ctx);
+    while (TAD_ExtractAllFilesNext(&ctx) != SIZE_MAX) {	}
+	TAD_ExtractAllFilesEnd(&ctx);
 }
 
 int asctime_safe(char* dest, size_t size, const struct tm* timeptr) {

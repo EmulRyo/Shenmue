@@ -23,6 +23,20 @@ typedef struct TADFileEntry {
     uint32_t    unknow2;
 } TADFileEntry;
 
+typedef struct TAD_Context {
+    // Used as input
+    const char* tadFilepath;
+    HashTable filenameDB;
+    const char* outputPath;
+    bool appendBasename;
+
+    // Used internally
+    size_t entryID;
+    StringBuilder sb;
+    FILE* tacFile;
+    uint8_t* buffer;
+}TAD_Context;
+
 uint8_t*      TAD_Load(const char* filepath);
 void          TAD_ExtractAllFiles(const char* tadFilePath, HashTable filenameDB, const char* outputPath, bool appendBasename);
 size_t        TAD_GetBasename(const char* filepath, StringBuilder basename);
@@ -31,5 +45,11 @@ void          TAD_PrintEntry(TADFileEntry* entry, size_t entryID, size_t totalEn
 size_t        TAD_GetTACFilename(const char* tadFilename, StringBuilder tacFilename);
 size_t        TAD_GetEntryRelPath(TADFileEntry* entry, HashTable filenameDB, StringBuilder sb);
 void          TAD_PrintHeader(TADHeader* header);
+
+void          TAD_ContextInit(TAD_Context* ctx,
+                  const char* tadFilepath, HashTable filenameDB, const char* outputPath, bool appendBasename);
+size_t        TAD_ExtractAllFilesStart(TAD_Context* ctx);
+size_t        TAD_ExtractAllFilesNext(TAD_Context* ctx);
+void          TAD_ExtractAllFilesEnd(TAD_Context* ctx);
 
 #endif

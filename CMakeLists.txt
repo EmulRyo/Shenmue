@@ -21,37 +21,28 @@ endif()
 set_property(GLOBAL PROPERTY C_STANDARD 11)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-set(SRC
-    src/cJSON.c
-    src/cJSON.h
-    src/dir.c
-    src/dir.h
-    src/dynamicArray.c
-    src/dynamicArray.h
-    src/hashTable.c
-    src/hashTable.h
-    src/main.c
-    src/raygui.h
-    src/stringBuilder.c
-    src/stringBuilder.h
-    src/tac.c
-    src/tac.h
-    src/tad.c
-    src/tad.h
-)
-source_group(src   FILES ${SRC})
+add_subdirectory(src)
+add_subdirectory(vendor/nativefiledialog-extended)
+set(CJSON
+    vendor/cJSON/cJSON.h
+    vendor/cJSON/cJSON.c)
 
+source_group(src   FILES ${SRC})
+source_group(cJSON   FILES ${CJSON})
 add_executable(Shenmue)
 
 set_target_properties(
-    Shenmue PROPERTIES
-    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+  Shenmue PROPERTIES
+  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+  
+  set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Shenmue)
+  
+  target_sources(Shenmue PRIVATE ${SRC} ${CJSON})
 
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Shenmue)
-
-target_sources(Shenmue PRIVATE ${SRC})
-
-target_link_libraries(${PROJECT_NAME} raylib)
+  target_include_directories(${PROJECT_NAME} PRIVATE vendor/cJSON)
+  
+  target_link_libraries(${PROJECT_NAME} PRIVATE raylib)
+  target_link_libraries(${PROJECT_NAME} PRIVATE nfd)
 
 # Checks if OSX and links appropriate frameworks (only required on MacOS)
 if (APPLE)
