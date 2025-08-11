@@ -6,6 +6,8 @@ set(SRC
     src/hashTable.c
     src/hashTable.h
     src/main.c
+    src/pvr.c
+    src/pvr.h
     src/raygui.h
     src/stringBuilder.c
     src/stringBuilder.h
