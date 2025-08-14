@@ -45,10 +45,10 @@ static uint32_t PixelFormat16ToRGBA8888(uint16_t pixel, PVR_PixelFormat pf) {
 	uint8_t r, g, b, a;
 	switch (pf) {
 		case PVR_PF_ARGB1555:
-			a = (pixel & 0x8000) ? 255 : 0; // Alpha bit
-			r = ((pixel >> 10) & 0x1F) * 8; // Red
+			a = ((pixel >> 15) & 0x01) * 255; // Alpha bit
+			r = ((pixel >> 10) & 0x1F) * 8; // Blue
 			g = ((pixel >>  5) & 0x1F) * 8; // Green
-			b =  (pixel        & 0x1F) * 8; // Blue
+			b = ((pixel >>  0) & 0x1F) * 8; // Red
 			break;
 		case PVR_PF_RGB565:
 			r = ((pixel >> 11) & 0x1F) * 8; // Red
@@ -66,7 +66,7 @@ static uint32_t PixelFormat16ToRGBA8888(uint16_t pixel, PVR_PixelFormat pf) {
 			fprintf(stderr, "[FormatToRGBA8888]: Unsupported pixel format %d\n", pf);
 			exit(6);
 	}
-	return (r << 24) | (g << 16) | (b << 8) | a;
+	return (a << 24) | (b << 16) | (g << 8) | r;
 }
 
 /* 
@@ -96,7 +96,7 @@ static void DecodeVQ(const PVR_Header* pvrHeader, uint32_t* outPixels) {
 				int dst_x = blockX * 2 + px;
 				int dst_y = blockY * 2 + py;
 
-				uint16_t pixel = *(uint16_t*)&blockPixels[(py * 2 + px) * bpp];
+				uint16_t pixel = *(uint16_t*)(blockPixels + (py * 2 + px) * bpp);
 				uint32_t rgba = PixelFormat16ToRGBA8888(pixel, pvrHeader->pixelFormat);
 				outPixels[(dst_y * pvrHeader->width + dst_x)] = rgba;
 			}
@@ -124,16 +124,30 @@ bool PVR_Load(const char* filepath, uint16_t* width, uint16_t* height, uint32_t*
 	size_t result = fread(buffer, sizeof(uint8_t), size, file);
 	fclose(file);
 
+	bool success = PVR_LoadFromMemory(buffer, width, height, pixels);
+
+	free(buffer);
+
+	if (success) {
+		return true;
+	}
+	else {
+		free(*pixels);
+		return false;
+	}
+}
+
+bool PVR_LoadFromMemory(uint8_t* buffer, uint16_t* width, uint16_t* height, uint32_t** pixels) {
 	GBIX_Header* gbixHeader = (GBIX_Header*)buffer;
 	PVR_Header* pvrHeader = (PVR_Header*)(gbixHeader->content + gbixHeader->size);
 
-	printf("GBIX Header ID: %.4s, Size: %u\n", gbixHeader->id, gbixHeader->size);
-	printf("PVR Header ID: %.4s, Length: %u, Width: %u, Height: %u, Pixel Format: %u, Data Format: %u\n",
+	printf("[PVR_LoadFromMemory]: GBIX Header ID: %.4s, Size: %u\n", gbixHeader->id, gbixHeader->size);
+	printf("[PVR_LoadFromMemory]: PVR Header ID: %.4s, Length: %u, Width: %u, Height: %u, Pixel Format: %u, Data Format: %u\n",
 		pvrHeader->id, pvrHeader->length, pvrHeader->width, pvrHeader->height, pvrHeader->pixelFormat, pvrHeader->dataFormat);
 
 	*pixels = malloc(pvrHeader->width * pvrHeader->height * sizeof(uint32_t));
 	if (*pixels == NULL) {
-		fputs("[PVR_Load]: Memory allocation error 2", stderr);
+		fputs("[PVR_LoadFromMemory]: Memory allocation error 2", stderr);
 		exit(3);
 	}
 
@@ -159,14 +173,8 @@ bool PVR_Load(const char* filepath, uint16_t* width, uint16_t* height, uint32_t*
 		}
 	}
 
-	free(buffer);
+	if (!success)
+		fprintf(stderr, "[PVR_LoadFromMemory]: Unsupported pixel format %d or data format %d\n", pvrHeader->pixelFormat, pvrHeader->dataFormat);
 
-	if (success) {
-		return true;
-	}
-	else {
-		fprintf(stderr, "[PVR_Load]: Unsupported pixel format %d or data format %d\n", pvrHeader->pixelFormat, pvrHeader->dataFormat);
-		free(*pixels);
-		return false;
-	}
+	return success;
 }

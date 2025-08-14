@@ -1,4 +1,5 @@
 set(SRC
+    src/CMakeLists.txt
     src/dir.c
     src/dir.h
     src/dynamicArray.c
@@ -9,6 +10,8 @@ set(SRC
     src/pvr.c
     src/pvr.h
     src/raygui.h
+    src/spr.c
+    src/spr.h
     src/stringBuilder.c
     src/stringBuilder.h
     src/tac.c

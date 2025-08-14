@@ -13,6 +13,7 @@
 #include "hashTable.h"
 #include "tad.h"
 #include "pvr.h"
+#include "spr.h"
 
 static HashTable g_filenameDB;
 static TAD_Context g_TADCtx;
@@ -119,6 +120,45 @@ static void ExtractTADsDialog() {
     }
 }
 
+static void ShowImage(uint32_t* pixels, uint16_t width, uint16_t height) {
+    Image img1 = {
+        .data = pixels,
+        .width = width,
+        .height = height,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+        .mipmaps = 1,
+    };
+
+    // Draw the image on top of the checkered pattern
+    Image img2 = GenImageChecked(width, height, width / 8, height / 8, (Color) { 50, 50, 50, 255 }, (Color) { 100, 100, 100, 255 });
+    ImageDraw(&img2, img1, (Rectangle) { 0, 0, width, height }, (Rectangle) { 0, 0, width, height }, WHITE);
+
+    if (g_texture.id > 0)
+        UnloadTexture(g_texture);
+
+    g_texture = LoadTextureFromImage(img2);
+    UnloadImage(img1);
+    UnloadImage(img2);
+}
+
+static void OpenFilePVR(nfdu8char_t* outPath) {
+    uint32_t* data = NULL;
+    uint16_t width = 0, height = 0;
+    if (PVR_Load(outPath, &width, &height, &data))
+		ShowImage(data, width, height);
+    else
+        printf("Failed to load PVR file: %s\n", outPath);
+}
+
+static void OpenFileSPR(nfdu8char_t* outPath) {
+    uint32_t* data = NULL;
+    uint16_t width = 0, height = 0;
+    if (SPR_Load(outPath, &width, &height, &data))
+		ShowImage(data, width, height);
+    else
+        printf("Failed to load SPR file: %s\n", outPath);
+}
+
 static void OpenFileDialog() {
     nfdu8char_t* outPath;
     nfdu8filteritem_t filters[3] = { { "Textures", "pvr,spr,dds" }, { "Models", "mt5,mt7" }, { "Sounds", "snd" } };
@@ -127,34 +167,12 @@ static void OpenFileDialog() {
     args.filterCount = 3;
     nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY) {
-        if (strstr(outPath, ".pvr") != NULL) {
-			uint32_t* data = NULL;
-            uint16_t width = 0, height = 0;
-            if (PVR_Load(outPath, &width, &height, &data)) {
-                Image img1 = { 0 };
-                img1.data = data;
-                img1.width = width;
-                img1.height = height;
-                img1.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-				img1.mipmaps = 1;
-
-				// Draw the image on top of the checkered pattern
-				Image img2 = GenImageChecked(width, height, width/8, height/8, (Color) { 128, 128, 128, 20 }, (Color) { 255, 255, 255, 20 });
-				ImageDraw(&img2, img1, (Rectangle) { 0, 0, width, height }, (Rectangle) { 0, 0, width, height }, WHITE);
-                
-                if (g_texture.id > 0)
-                    UnloadTexture(g_texture);
-                g_texture = LoadTextureFromImage(img2);
-                UnloadImage(img1);
-				UnloadImage(img2);
-            }
-            else {
-                printf("Failed to load PVR file: %s\n", outPath);
-            }
-        }
-        else {
+        if (strstr(outPath, ".pvr") != NULL)
+            OpenFilePVR(outPath);
+        else if (strstr(outPath, ".spr") != NULL)
+            OpenFileSPR(outPath);
+        else
             printf("Selected file not implemented yet.\n");
-        }
         NFD_FreePathU8(outPath);
     }
     else if (result == NFD_ERROR) {
@@ -220,9 +238,9 @@ static void DrawContent(Rectangle dst) {
         DrawTexturePro(
             g_texture,
             (Rectangle) { 0, 0, g_texture.width, g_texture.height },
-            (Rectangle) { dst.x + dst.width/2.0f - width/2.0f, dst.y + dst.height/2.0f - height/2.0f, width, height },
+            (Rectangle) { dst.x + dst.width/2.0f - width/2.0f, dst.y + height, width, height },
             (Vector2)   { 0, 0 },
-            0.0f,
+            -90.0f,
             WHITE
         );
     }
@@ -240,7 +258,7 @@ static void Draw() {
 }
 
 void main() {
-    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT);
+    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 720, "Shenmue");
 
     Init();
