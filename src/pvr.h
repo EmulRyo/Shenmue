@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 // Global Index
+// This header is optional
 typedef struct GBIX_Header {
 	char		id[4]; // "GBIX"
 	uint32_t	size;

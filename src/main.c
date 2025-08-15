@@ -130,8 +130,9 @@ static void ShowImage(uint32_t* pixels, uint16_t width, uint16_t height) {
     };
 
     // Draw the image on top of the checkered pattern
-    Image img2 = GenImageChecked(width, height, width / 8, height / 8, (Color) { 50, 50, 50, 255 }, (Color) { 100, 100, 100, 255 });
+    Image img2 = GenImageChecked(width, height, width / 8, height / 8, (Color) { 100, 100, 100, 255 }, (Color) { 150, 150, 150, 255 });
     ImageDraw(&img2, img1, (Rectangle) { 0, 0, width, height }, (Rectangle) { 0, 0, width, height }, WHITE);
+	ImageRotate(&img2, -90.0f);
 
     if (g_texture.id > 0)
         UnloadTexture(g_texture);
@@ -230,17 +231,17 @@ static void DrawContent(Rectangle dst) {
 		float ar = (float)g_texture.width / (float)g_texture.height;
 		float height = dst.height;
 		float width = ar * height;
-        if (ar < 1.0f) {
+        if (ar > 1.0f) {
             width = dst.width;
             height = width / ar;
         }
-
+        
         DrawTexturePro(
             g_texture,
             (Rectangle) { 0, 0, g_texture.width, g_texture.height },
-            (Rectangle) { dst.x + dst.width/2.0f - width/2.0f, dst.y + height, width, height },
+            (Rectangle) { dst.x + dst.width/2.0f - width/2.0f, dst.y, width, height },
             (Vector2)   { 0, 0 },
-            -90.0f,
+            0,
             WHITE
         );
     }

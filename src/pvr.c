@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -36,8 +37,8 @@ static size_t GetBpp(PVR_PixelFormat pf) {
 		case PVR_PF_ARGB8888:
 			return 4; // 32 bits per pixel
 		default:
-			fprintf(stderr, "[GetBpp]: Unsupported pixel format %d\n", pf);
-			exit(5);
+			assert(false && "[GetBpp]: Unsupported pixel format");
+			return 0; // Should never reach here
 	}
 }
 
@@ -63,10 +64,15 @@ static uint32_t PixelFormat16ToRGBA8888(uint16_t pixel, PVR_PixelFormat pf) {
 			b =  (pixel        & 0x0F) * 17; // Blue
 			break;
 		default:
-			fprintf(stderr, "[FormatToRGBA8888]: Unsupported pixel format %d\n", pf);
-			exit(6);
+			assert(false && "[PixelFormat16ToRGBA8888]: Unsupported pixel format");
+			r = g = b = a = 0; // Should never reach here
 	}
 	return (a << 24) | (b << 16) | (g << 8) | r;
+}
+
+static bool IsFormatTwiddled(PVR_DataFormat df) {
+	return df == PVR_DF_SQUARE_TWIDDLED || df == PVR_DF_SQUARE_TWIDDLED_MIPMAP ||
+		   df == PVR_DF_RECTANGLE_TWIDDLED || df == PVR_DF_SQUARE_TWIDDLED_MIPMAP_ALT;
 }
 
 /* 
@@ -128,22 +134,31 @@ bool PVR_Load(const char* filepath, uint16_t* width, uint16_t* height, uint32_t*
 
 	free(buffer);
 
-	if (success) {
-		return true;
-	}
-	else {
-		free(*pixels);
-		return false;
-	}
+	return success;
 }
 
 bool PVR_LoadFromMemory(uint8_t* buffer, uint16_t* width, uint16_t* height, uint32_t** pixels) {
 	GBIX_Header* gbixHeader = (GBIX_Header*)buffer;
-	PVR_Header* pvrHeader = (PVR_Header*)(gbixHeader->content + gbixHeader->size);
+	PVR_Header* pvrHeader = (PVR_Header*)buffer;
+	if (strncmp(gbixHeader->id, "GBIX", 4) == 0) {
+		printf("[PVR_LoadFromMemory]: GBIX Header ID: %.4s, Size: %u\n", gbixHeader->id, gbixHeader->size);
+		pvrHeader = (PVR_Header*)(gbixHeader->content + gbixHeader->size);
+	}
 
-	printf("[PVR_LoadFromMemory]: GBIX Header ID: %.4s, Size: %u\n", gbixHeader->id, gbixHeader->size);
+	assert(strncmp(pvrHeader->id, "PVRT", 4) == 0 && "id not valid");
+	if (strncmp(pvrHeader->id, "PVRT", 4) != 0) {
+		fprintf(stderr, "[PVR_LoadFromMemory]: Invalid PVR header ID: %.4s\n", pvrHeader->id);
+		return false;
+	}
+
 	printf("[PVR_LoadFromMemory]: PVR Header ID: %.4s, Length: %u, Width: %u, Height: %u, Pixel Format: %u, Data Format: %u\n",
 		pvrHeader->id, pvrHeader->length, pvrHeader->width, pvrHeader->height, pvrHeader->pixelFormat, pvrHeader->dataFormat);
+
+	size_t bpp = GetBpp(pvrHeader->pixelFormat);
+	if (bpp == 0) {
+		fprintf(stderr, "[PVR_LoadFromMemory]: Unsupported pixel format %d\n", pvrHeader->pixelFormat);
+		return false;
+	}
 
 	*pixels = malloc(pvrHeader->width * pvrHeader->height * sizeof(uint32_t));
 	if (*pixels == NULL) {
@@ -154,27 +169,32 @@ bool PVR_LoadFromMemory(uint8_t* buffer, uint16_t* width, uint16_t* height, uint
 	*width = pvrHeader->width;
 	*height = pvrHeader->height;
 
-	size_t bpp = GetBpp(pvrHeader->pixelFormat);
 	bool success = false;
 
 	if (pvrHeader->dataFormat == PVR_DF_VECTOR_QUANTIZATION) {
 		DecodeVQ(pvrHeader, *pixels);
 		success = true;
 	}
-	else if (pvrHeader->dataFormat == PVR_DF_SQUARE_TWIDDLED || pvrHeader->dataFormat == PVR_DF_SQUARE_TWIDDLED_MIPMAP) {
+	else if (pvrHeader->dataFormat == PVR_DF_SQUARE_TWIDDLED || pvrHeader->dataFormat == PVR_DF_SQUARE_TWIDDLED_MIPMAP || pvrHeader->dataFormat == PVR_DF_RECTANGLE || pvrHeader->dataFormat == PVR_DF_RECTANGLE_TWIDDLED) {
 		if (bpp == 2) {
 			for (size_t i = 0; i < pvrHeader->width * pvrHeader->height; i++) {
 				uint16_t pixel = *(uint16_t*)(pvrHeader->data + i * 2);
 				uint32_t rgba = PixelFormat16ToRGBA8888(pixel, pvrHeader->pixelFormat);
-				size_t index = Untwiddle(i, pvrHeader->width);
+
+				size_t index = i;
+				if (IsFormatTwiddled(pvrHeader->dataFormat))
+					index = Untwiddle(i, pvrHeader->width);
+
 				(*pixels)[index] = rgba;
 			}
 			success = true;
 		}
 	}
 
-	if (!success)
+	if (!success) {
+		free(*pixels);
 		fprintf(stderr, "[PVR_LoadFromMemory]: Unsupported pixel format %d or data format %d\n", pvrHeader->pixelFormat, pvrHeader->dataFormat);
+	}
 
 	return success;
 }

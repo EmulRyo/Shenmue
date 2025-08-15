@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -26,17 +27,16 @@ bool SPR_Load(const char* filepath, uint16_t* width, uint16_t* height, uint32_t*
 	fclose(file);
 
 	SPR_Header* sprHeader = (SPR_Header*)buffer;
+	if (strncmp(sprHeader->id, "TEXN", 4) != 0)
+		sprHeader++;
+	assert(strncmp(sprHeader->id, "TEXN", 4) == 0 && "id not valid");
 	printf("SPR Header ID: %.4s, Size: %u, Filename: %.8s\n", sprHeader->id, sprHeader->size, sprHeader->filename);
 
-	bool success = PVR_LoadFromMemory(sprHeader->pvrData, width, height, pixels);
+	bool success = false;
+	if (strncmp(sprHeader->id, "TEXN", 4) == 0)
+		success = PVR_LoadFromMemory(sprHeader->pvrData, width, height, pixels);
 
 	free(buffer);
 
-	if (success) {
-		return true;
-	}
-	else {
-		free(*pixels);
-		return false;
-	}
+	return success;
 }
