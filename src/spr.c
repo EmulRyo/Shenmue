@@ -7,6 +7,7 @@
 #include "spr.h"
 
 bool SPR_Load(const char* filepath, uint16_t* width, uint16_t* height, uint32_t** pixels) {
+	printf("[SPR_Load]: Loading SPR file: %s\n", filepath);
 	FILE* file = fopen(filepath, "rb");
 	if (file == NULL) {
 		fputs("[SPR_Load] Open file error", stderr);

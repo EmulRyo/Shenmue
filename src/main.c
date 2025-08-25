@@ -20,6 +20,7 @@ static TAD_Context g_TADCtx;
 static size_t g_tadEntriesCount;
 static FilePathList g_fileList;
 static unsigned int g_fileID;
+static Image g_image;
 static Texture g_texture;
 
 static size_t Hash_Hash(const void* data) {
@@ -85,7 +86,7 @@ static void Init() {
 
     int numCodepoints = 0;
     int* codePoints = LoadCodepoints(utf8Chars, &numCodepoints);
-    int fontSize = 16 * winDPI.y;
+    int fontSize = (int)(16.0f * winDPI.y);
     Font font = LoadFontEx("C:\\Windows\\Fonts\\segoeui.ttf", fontSize, codePoints, numCodepoints);
     GuiSetFont(font);
 	SetStyle(fontSize);
@@ -121,24 +122,25 @@ static void ExtractTADsDialog() {
 }
 
 static void ShowImage(uint32_t* pixels, uint16_t width, uint16_t height) {
-    Image img1 = {
-        .data = pixels,
-        .width = width,
-        .height = height,
-        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
-        .mipmaps = 1,
-    };
+    if (g_image.data != NULL) {
+        UnloadImage(g_image);
+	}
+    
+    g_image.data = pixels;
+    g_image.width = width;
+    g_image.height = height,
+    g_image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    g_image.mipmaps = 1;
 
+	float ar = (float)width / (float)height;
     // Draw the image on top of the checkered pattern
-    Image img2 = GenImageChecked(width, height, width / 8, height / 8, (Color) { 100, 100, 100, 255 }, (Color) { 150, 150, 150, 255 });
-    ImageDraw(&img2, img1, (Rectangle) { 0, 0, width, height }, (Rectangle) { 0, 0, width, height }, WHITE);
-	ImageRotate(&img2, -90.0f);
+    Image img2 = GenImageChecked(width, height, width / 8, (int)(ar * height / 8), (Color) { 100, 100, 100, 255 }, (Color) { 150, 150, 150, 255 });
+    ImageDraw(&img2, g_image, (Rectangle) { 0, 0, width, height }, (Rectangle) { 0, 0, width, height }, WHITE);
 
     if (g_texture.id > 0)
         UnloadTexture(g_texture);
 
     g_texture = LoadTextureFromImage(img2);
-    UnloadImage(img1);
     UnloadImage(img2);
 }
 
@@ -174,6 +176,23 @@ static void OpenFileDialog() {
             OpenFileSPR(outPath);
         else
             printf("Selected file not implemented yet.\n");
+        NFD_FreePathU8(outPath);
+    }
+    else if (result == NFD_ERROR) {
+        printf("Error: %s\n", NFD_GetError());
+    }
+}
+
+static void SaveFileDialog() {
+    nfdu8char_t* outPath;
+    nfdu8filteritem_t filters[1] = { { "Images", "png,jpg,bmp" } };
+    nfdresult_t result = NFD_SaveDialogU8(&outPath, filters, 1, NULL, NULL);
+    if (result == NFD_OKAY) {
+        if (g_image.data != NULL)
+            ExportImage(g_image, outPath);
+        else
+            printf("No image to save.\n");
+
         NFD_FreePathU8(outPath);
     }
     else if (result == NFD_ERROR) {
@@ -238,7 +257,7 @@ static void DrawContent(Rectangle dst) {
         
         DrawTexturePro(
             g_texture,
-            (Rectangle) { 0, 0, g_texture.width, g_texture.height },
+            (Rectangle) { 0, 0, (float)g_texture.width, (float)g_texture.height },
             (Rectangle) { dst.x + dst.width/2.0f - width/2.0f, dst.y, width, height },
             (Vector2)   { 0, 0 },
             0,
@@ -254,8 +273,11 @@ static void Draw() {
     if (GuiButton((Rectangle) { 220, 10, 200, 30 }, "Open files")) {
         OpenFileDialog();
     }
-	DrawContent((Rectangle) { 0, 50, GetScreenWidth(), GetScreenHeight() - 50 - 40 });
-	DrawStatusBar((Rectangle) { 0, GetScreenHeight() - 30, GetScreenWidth(), 30 });
+    if (GuiButton((Rectangle) { 430, 10, 200, 30 }, "Save file")) {
+        SaveFileDialog();
+    }
+	DrawContent((Rectangle) { 0, 50.0f, (float)GetScreenWidth(), (float)GetScreenHeight() - 50.0f - 40.0f });
+	DrawStatusBar((Rectangle) { 0, (float)GetScreenHeight() - 30.0f, (float)GetScreenWidth(), 30.0f });
 }
 
 void main() {
