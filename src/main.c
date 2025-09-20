@@ -144,22 +144,31 @@ static void ShowImage(uint32_t* pixels, uint16_t width, uint16_t height) {
     UnloadImage(img2);
 }
 
-static void OpenFilePVR(nfdu8char_t* outPath) {
+static void OpenFilePVR(const char* filename) {
     uint32_t* data = NULL;
     uint16_t width = 0, height = 0;
-    if (PVR_Load(outPath, &width, &height, &data))
+    if (PVR_Load(filename, &width, &height, &data))
 		ShowImage(data, width, height);
     else
-        printf("Failed to load PVR file: %s\n", outPath);
+        printf("Failed to load PVR file: %s\n", filename);
 }
 
-static void OpenFileSPR(nfdu8char_t* outPath) {
+static void OpenFileSPR(const char* filename) {
     uint32_t* data = NULL;
     uint16_t width = 0, height = 0;
-    if (SPR_Load(outPath, &width, &height, &data))
+    if (SPR_Load(filename, &width, &height, &data))
 		ShowImage(data, width, height);
     else
-        printf("Failed to load SPR file: %s\n", outPath);
+        printf("Failed to load SPR file: %s\n", filename);
+}
+
+static void OpenKnownFile(const char* filename) {
+    if (IsFileExtension(filename, ".pvr"))
+        OpenFilePVR(filename);
+    else if (IsFileExtension(filename, ".spr"))
+        OpenFileSPR(filename);
+    else
+        printf("File not implemented yet: %s\n", filename);
 }
 
 static void OpenFileDialog() {
@@ -169,18 +178,11 @@ static void OpenFileDialog() {
     args.filterList = filters;
     args.filterCount = 3;
     nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
-    if (result == NFD_OKAY) {
-        if (strstr(outPath, ".pvr") != NULL)
-            OpenFilePVR(outPath);
-        else if (strstr(outPath, ".spr") != NULL)
-            OpenFileSPR(outPath);
-        else
-            printf("Selected file not implemented yet.\n");
-        NFD_FreePathU8(outPath);
-    }
-    else if (result == NFD_ERROR) {
+    if (result == NFD_OKAY)
+		OpenKnownFile(outPath);
+    else if (result == NFD_ERROR)
         printf("Error: %s\n", NFD_GetError());
-    }
+    NFD_FreePathU8(outPath);
 }
 
 static void SaveFileDialog() {
@@ -200,14 +202,23 @@ static void SaveFileDialog() {
     }
 }
 
-static void Update() {
+static void ProcessDroppedFiles() {
+    if (IsFileDropped()) {
+        FilePathList files = LoadDroppedFiles();
+        for (unsigned int i = 0; i < files.count; i++)
+            OpenKnownFile(files.paths[i]);
+        UnloadDroppedFiles(files);
+    }
+}
+
+static void ProcessNextTADFile() {
     if (g_TADCtx.buffer == NULL)
         return;
 
     size_t entryID = TAD_ExtractAllFilesNext(&g_TADCtx);
     if (entryID == SIZE_MAX) {
         TAD_ExtractAllFilesEnd(&g_TADCtx);
-		g_fileID++;
+        g_fileID++;
         if (g_fileID < g_fileList.count) {
             const char* filename = g_fileList.paths[g_fileID];
             printf("Loading TAD file: %s\n", filename);
@@ -217,8 +228,13 @@ static void Update() {
         else {
             printf("All TAD files extracted.\n");
             UnloadDirectoryFiles(g_fileList);
-		}
+        }
     }
+}
+
+static void Update() {
+	ProcessDroppedFiles();
+	ProcessNextTADFile();
 }
 
 static void DrawStatusBar(Rectangle dst) {
