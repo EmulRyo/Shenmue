@@ -266,15 +266,24 @@ static void DrawContent(Rectangle dst) {
 		float ar = (float)g_texture.width / (float)g_texture.height;
 		float height = dst.height;
 		float width = ar * height;
-        if (ar > 1.0f) {
+
+        if (width > dst.width) {
             width = dst.width;
             height = width / ar;
+		}
+
+        if (height > dst.height) {
+            height = dst.height;
+            width = ar * height;
         }
+
+		float x = dst.x + (dst.width - width) / 2.0f;
+		float y = dst.y + (dst.height - height) / 2.0f;
         
         DrawTexturePro(
             g_texture,
             (Rectangle) { 0, 0, (float)g_texture.width, (float)g_texture.height },
-            (Rectangle) { dst.x + dst.width/2.0f - width/2.0f, dst.y, width, height },
+            (Rectangle) { x, y, width, height },
             (Vector2)   { 0, 0 },
             0,
             WHITE
