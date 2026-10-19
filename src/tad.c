@@ -7,34 +7,8 @@
 #include "hashTable.h"
 #include "stringBuilder.h"
 #include "tac.h"
+#include "file.h"
 #include "tad.h"
-
-uint8_t* TAD_Load(const char* filepath) {
-    FILE* tadFile = fopen(filepath, "rb");
-    if (tadFile == NULL) {
-        fputs("[TAD_Load] Open file error", stderr);
-        exit(1);
-    }
-
-    // obtain file size:
-    fseek(tadFile, 0, SEEK_END);
-    long size = ftell(tadFile);
-    rewind(tadFile);
-
-    // allocate memory to contain the whole file:
-    uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * size);
-    if (buffer == NULL) {
-        fputs("[TAD_Load]: Memory allocation error", stderr);
-        exit(2);
-    }
-
-    // copy the file into the buffer:
-    size_t result = fread(buffer, 1, size, tadFile);
-
-    fclose(tadFile);
-
-    return buffer;
-}
 
 size_t TAD_GetBasename(const char* filepath, StringBuilder sb) {
     char* lastSlash = strrchr(filepath, '\\');
@@ -176,7 +150,7 @@ void TAD_ContextInit(TAD_Context* ctx, const char* tadFilepath, HashTable filena
 size_t TAD_ExtractAllFilesStart(TAD_Context* ctx) {
     ctx->sb = SB_Create(512);
 
-    ctx->buffer = TAD_Load(ctx->tadFilepath);
+    ctx->buffer = File_LoadToMemory(ctx->tadFilepath);
     TADHeader* header = (TADHeader*)ctx->buffer;
 
     TAD_PrintHeader(header);

@@ -1,11 +1,17 @@
 set(SRC
+    src/afs.c
+    src/afs.h
     src/CMakeLists.txt
     src/dir.c
     src/dir.h
     src/dynamicArray.c
     src/dynamicArray.h
+    src/file.c
+    src/file.h
     src/hashTable.c
     src/hashTable.h
+    src/idx.c
+    src/idx.h
     src/main.c
     src/pvr.c
     src/pvr.h

@@ -14,6 +14,8 @@
 #include "tad.h"
 #include "pvr.h"
 #include "spr.h"
+#include "afs.h"
+#include "idx.h"
 
 static HashTable g_filenameDB;
 static TAD_Context g_TADCtx;
@@ -162,31 +164,45 @@ static void OpenFileSPR(const char* filename) {
         printf("Failed to load SPR file: %s\n", filename);
 }
 
+static void OpenFileAFS(const char* filename) {
+    AFS_ExtractAllFiles(filename, "");
+}
+
+static void OpenFileIDX(const char* filename) {
+    IDX_ExtractAllFiles(filename, "");
+}
+
 static void OpenKnownFile(const char* filename) {
     if (IsFileExtension(filename, ".pvr"))
         OpenFilePVR(filename);
     else if (IsFileExtension(filename, ".spr"))
         OpenFileSPR(filename);
+    else if (IsFileExtension(filename, ".afs"))
+        OpenFileAFS(filename);
+    else if (IsFileExtension(filename, ".idx"))
+        OpenFileIDX(filename);
     else
         printf("File not implemented yet: %s\n", filename);
 }
 
 static void OpenFileDialog() {
-    nfdu8char_t* outPath;
-    nfdu8filteritem_t filters[3] = { { "Textures", "pvr,spr,dds" }, { "Models", "mt5,mt7" }, { "Sounds", "snd" } };
+    nfdu8char_t* outPath = NULL;
+    nfdu8filteritem_t filters[4] = { { "Containers", "afs" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,mt7" }, { "Sounds", "snd" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
-    args.filterCount = 3;
+    args.filterCount = 4;
     nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
 		OpenKnownFile(outPath);
     else if (result == NFD_ERROR)
         printf("Error: %s\n", NFD_GetError());
-    NFD_FreePathU8(outPath);
+
+    if (outPath != NULL)
+        NFD_FreePathU8(outPath);
 }
 
 static void SaveFileDialog() {
-    nfdu8char_t* outPath;
+    nfdu8char_t* outPath = NULL;
     nfdu8filteritem_t filters[1] = { { "Images", "png,jpg,bmp" } };
     nfdresult_t result = NFD_SaveDialogU8(&outPath, filters, 1, NULL, NULL);
     if (result == NFD_OKAY) {

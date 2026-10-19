@@ -37,7 +37,6 @@ typedef struct TAD_Context {
     uint8_t* buffer;
 }TAD_Context;
 
-uint8_t*      TAD_Load(const char* filepath);
 void          TAD_ExtractAllFiles(const char* tadFilePath, HashTable filenameDB, const char* outputPath, bool appendBasename);
 size_t        TAD_GetBasename(const char* filepath, StringBuilder basename);
 TADFileEntry* TAD_GetEntry(uint8_t* buffer, size_t entryID);
