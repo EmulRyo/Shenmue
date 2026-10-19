@@ -72,8 +72,8 @@ int MakeDirs(const char *path) {
 #ifdef _WIN32
     // Handle Windows drive letters (e.g., "C:/...")
     if (len > 2 && path[1] == ':' && (path[2] == '/' || path[2] == '\\')) {
-        strncpy_safe(subpath, path, 3);
-        subpath[3] = '\0';
+        strncpy_safe(subpath, path, 4); // Copy "C:/" (the size includes the null terminator)
+        subpath[2] = '/';
         token = strtok_safe(temp + 3, "/", &context);
     }
 #endif

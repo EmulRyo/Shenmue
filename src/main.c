@@ -187,7 +187,7 @@ static void OpenKnownFile(const char* filename) {
 
 static void OpenFileDialog() {
     nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[4] = { { "Containers", "afs" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,mt7" }, { "Sounds", "snd" } };
+    nfdu8filteritem_t filters[4] = { { "Containers", "afs,idx" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,mt7" }, { "Sounds", "snd" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
     args.filterCount = 4;
