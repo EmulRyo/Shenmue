@@ -16,6 +16,8 @@
 #include "spr.h"
 #include "afs.h"
 #include "idx.h"
+#include "pkf.h"
+#include "pks.h"
 
 static HashTable g_filenameDB;
 static TAD_Context g_TADCtx;
@@ -172,6 +174,14 @@ static void OpenFileIDX(const char* filename) {
     IDX_ExtractAllFiles(filename, "");
 }
 
+static void OpenFilePKF(const char* filename) {
+    PKF_ExtractAllFiles(filename, "");
+}
+
+static void OpenFilePKS(const char* filename) {
+    PKS_ExtractAllFiles(filename, "");
+}
+
 static void OpenKnownFile(const char* filename) {
     if (IsFileExtension(filename, ".pvr"))
         OpenFilePVR(filename);
@@ -181,13 +191,17 @@ static void OpenKnownFile(const char* filename) {
         OpenFileAFS(filename);
     else if (IsFileExtension(filename, ".idx"))
         OpenFileIDX(filename);
+    else if (IsFileExtension(filename, ".pkf"))
+        OpenFilePKF(filename);
+    else if (IsFileExtension(filename, ".pks"))
+        OpenFilePKS(filename);
     else
         printf("File not implemented yet: %s\n", filename);
 }
 
 static void OpenFileDialog() {
     nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[4] = { { "Containers", "afs,idx" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,mt7" }, { "Sounds", "snd" } };
+    nfdu8filteritem_t filters[4] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,mt7" }, { "Sounds", "snd" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
     args.filterCount = 4;

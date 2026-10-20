@@ -12,7 +12,13 @@ set(SRC
     src/hashTable.h
     src/idx.c
     src/idx.h
+    src/ipac.c
+    src/ipac.h
     src/main.c
+    src/pkf.c
+    src/pkf.h
+    src/pks.c
+    src/pks.h
     src/pvr.c
     src/pvr.h
     src/raygui.h

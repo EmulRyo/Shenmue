@@ -21,20 +21,11 @@ typedef struct {
 	AFS_Entry	entries[];
 } AFS_Header;
 
-// Returns the position after the last path separator
-static const char* GetFilename(const char* filepath) {
-	const char* lastSlash = strrchr(filepath, '/');
-	const char* lastBackslash = strrchr(filepath, '\\');
-	if (lastBackslash != NULL && (lastSlash == NULL || lastBackslash > lastSlash))
-		lastSlash = lastBackslash;
-	return lastSlash != NULL ? lastSlash + 1 : filepath;
-}
-
 // Loads the entry names from the IDX file with the same name as the AFS file, if it exists
 static void LoadEntryNames(const char* filepath, char (*names)[IDX_NAME_SIZE], uint32_t count) {
 	char idxPath[AFS_PATH_SIZE];
 	const char* lastDot = strrchr(filepath, '.');
-	int baseLength = (int)(lastDot != NULL && lastDot > GetFilename(filepath) ? lastDot - filepath : strlen(filepath));
+	int baseLength = (int)(lastDot != NULL && lastDot > File_GetFilename(filepath) ? lastDot - filepath : strlen(filepath));
 	snprintf(idxPath, sizeof(idxPath), "%.*s.idx", baseLength, filepath);
 
 	FILE* idxFile = fopen(idxPath, "rb");
@@ -46,18 +37,6 @@ static void LoadEntryNames(const char* filepath, char (*names)[IDX_NAME_SIZE], u
 
 	if (IDX_LoadEntryNames(idxPath, names, count))
 		printf("  Filenames loaded from: %s\n", idxPath);
-}
-
-// Output folder: "outputPath/<AFS name>" or "<AFS folder>/<AFS name>" if no outputPath is given
-static void GetOutputFolder(const char* filepath, const char* outputPath, char* outputFolder, size_t size) {
-	const char* filename = GetFilename(filepath);
-	const char* lastDot = strrchr(filename, '.');
-	int basenameLength = (int)(lastDot != NULL ? lastDot - filename : strlen(filename));
-
-	if (outputPath != NULL && strlen(outputPath) > 0)
-		snprintf(outputFolder, size, "%s/%.*s", outputPath, basenameLength, filename);
-	else
-		snprintf(outputFolder, size, "%.*s%.*s", (int)(filename - filepath), filepath, basenameLength, filename);
 }
 
 static void GetEntryFilename(char (*filenames)[AFS_FILENAME_SIZE], uint32_t entryID, const char* name, const char* ext) {
@@ -142,7 +121,7 @@ void AFS_ExtractAllFiles(const char* filepath, const char* outputPath) {
 	LoadEntryNames(filepath, names, header.count);
 
 	char outputFolder[AFS_PATH_SIZE];
-	GetOutputFolder(filepath, outputPath, outputFolder, sizeof(outputFolder));
+	File_GetOutputFolder(filepath, outputPath, outputFolder, sizeof(outputFolder));
 	MakeDirs(outputFolder);
 	printf("  Output folder: %s\n", outputFolder);
 
