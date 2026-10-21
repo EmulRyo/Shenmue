@@ -18,6 +18,7 @@
 #include "idx.h"
 #include "pkf.h"
 #include "pks.h"
+#include "chrt.h"
 
 static HashTable g_filenameDB;
 static TAD_Context g_TADCtx;
@@ -182,6 +183,10 @@ static void OpenFilePKS(const char* filename) {
     PKS_ExtractAllFiles(filename, "");
 }
 
+static void OpenFileCHRT(const char* filename) {
+    CHRT_Print(filename);
+}
+
 static void OpenKnownFile(const char* filename) {
     if (IsFileExtension(filename, ".pvr"))
         OpenFilePVR(filename);
@@ -195,16 +200,18 @@ static void OpenKnownFile(const char* filename) {
         OpenFilePKF(filename);
     else if (IsFileExtension(filename, ".pks"))
         OpenFilePKS(filename);
+    else if (IsFileExtension(filename, ".chrt"))
+        OpenFileCHRT(filename);
     else
         printf("File not implemented yet: %s\n", filename);
 }
 
 static void OpenFileDialog() {
     nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[4] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,mt7" }, { "Sounds", "snd" } };
+    nfdu8filteritem_t filters[5] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,mt7" }, { "Sounds", "snd" }, { "Scripts", "chrt" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
-    args.filterCount = 4;
+    args.filterCount = 5;
     nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
 		OpenKnownFile(outPath);

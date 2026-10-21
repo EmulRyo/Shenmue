@@ -1,6 +1,8 @@
 set(SRC
     src/afs.c
     src/afs.h
+    src/chrt.c
+    src/chrt.h
     src/CMakeLists.txt
     src/dir.c
     src/dir.h
