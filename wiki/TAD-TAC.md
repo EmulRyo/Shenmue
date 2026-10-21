@@ -4,7 +4,7 @@ The PC version (Shenmue I & II) stores its data in pairs of files: the **TAD** f
 
 - **Extensions:** `.tad` (index), `.tac` (data)
 - **Magic:** none
-- **Source:** [`src/tad.c`](https://github.com/EmulRyo/Shenmue/blob/main/src/tad.c), [`src/tac.c`](https://github.com/EmulRyo/Shenmue/blob/main/src/tac.c)
+- **Source:** [`src/tad.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/tad.c), [`src/tac.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/tac.c)
 
 ## TAD layout
 
@@ -47,7 +47,7 @@ The TAC file has no header: it is the data of every file, one after another. Eac
 
 ## File names
 
-The TAD only stores a hash of each path. The path is recovered from [`resources/FilenameDatabase.json`](https://github.com/EmulRyo/Shenmue/blob/main/resources/FilenameDatabase.json), an array of objects:
+The TAD only stores a hash of each path. The path is recovered from [`resources/FilenameDatabase.json`](https://github.com/EmulRyo/Shenmue/blob/master/resources/FilenameDatabase.json), an array of objects:
 
 ```json
 { "Hash": 1863636607, "HashPath": 0, "Path": "/0gdtex.bmp" }

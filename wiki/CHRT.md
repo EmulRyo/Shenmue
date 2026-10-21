@@ -5,7 +5,7 @@ A CHRT file is a script made of commands (e.g. which character to place and wher
 - **Extension:** `.chrt`
 - **Magic:** `CHRS` (`43 48 52 53`)
 - **Compression:** the whole file can be [gzipped](Home#compression)
-- **Source:** [`src/chrt.c`](https://github.com/EmulRyo/Shenmue/blob/main/src/chrt.c)
+- **Source:** [`src/chrt.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/chrt.c)
 
 ## Layout
 

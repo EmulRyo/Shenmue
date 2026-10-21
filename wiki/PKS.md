@@ -5,7 +5,7 @@ A PKS file contains only an [IPAC](IPAC) block (no textures). It usually goes to
 - **Extension:** `.pks`
 - **Magic:** `PAKS` (`50 41 4B 53`)
 - **Compression:** the whole file can be [gzipped](Home#compression)
-- **Source:** [`src/pks.c`](https://github.com/EmulRyo/Shenmue/blob/main/src/pks.c)
+- **Source:** [`src/pks.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/pks.c)
 
 ## Layout
 

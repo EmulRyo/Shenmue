@@ -3,7 +3,7 @@
 IPAC is not a file on its own: it is a block stored inside [PKF](PKF) and [PKS](PKS) files. It contains a list of files (models, scripts, textures...) and a dictionary with their names, offsets and sizes.
 
 - **Magic:** `IPAC` (`49 50 41 43`)
-- **Source:** [`src/ipac.c`](https://github.com/EmulRyo/Shenmue/blob/main/src/ipac.c)
+- **Source:** [`src/ipac.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/ipac.c)
 
 All offsets are relative to the start of the IPAC block.
 

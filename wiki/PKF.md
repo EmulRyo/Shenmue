@@ -5,7 +5,7 @@ A PKF file stores a list of textures followed by an [IPAC](IPAC) block with othe
 - **Extension:** `.pkf`
 - **Magic:** `PAKF` (`50 41 4B 46`)
 - **Compression:** the whole file can be [gzipped](Home#compression)
-- **Source:** [`src/pkf.c`](https://github.com/EmulRyo/Shenmue/blob/main/src/pkf.c)
+- **Source:** [`src/pkf.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/pkf.c)
 
 ## Layout
 

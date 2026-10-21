@@ -4,7 +4,7 @@ AFS is a simple archive format used by Sega games. It stores a list of files one
 
 - **Extension:** `.afs`
 - **Magic:** `AFS\0` (`41 46 53 00`)
-- **Source:** [`src/afs.c`](https://github.com/EmulRyo/Shenmue/blob/main/src/afs.c)
+- **Source:** [`src/afs.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/afs.c)
 
 ## Layout
 

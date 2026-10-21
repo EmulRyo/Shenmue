@@ -4,7 +4,7 @@ PVR is the texture format of the Dreamcast (PowerVR GPU). A PVR file is an optio
 
 - **Extension:** `.pvr`
 - **Magic:** `GBIX` (`47 42 49 58`) or `PVRT` (`50 56 52 54`)
-- **Source:** [`src/pvr.c`](https://github.com/EmulRyo/Shenmue/blob/main/src/pvr.c), [`src/pvr.h`](https://github.com/EmulRyo/Shenmue/blob/main/src/pvr.h)
+- **Source:** [`src/pvr.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/pvr.c), [`src/pvr.h`](https://github.com/EmulRyo/Shenmue/blob/master/src/pvr.h)
 
 ## Layout
 

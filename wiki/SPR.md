@@ -4,7 +4,7 @@ An SPR file is a single `TEXN` block (the same one used by [PKF](PKF)) that wrap
 
 - **Extension:** `.spr`
 - **Magic:** `TEXN` (`54 45 58 4E`), at offset 0x00 or 0x10
-- **Source:** [`src/spr.c`](https://github.com/EmulRyo/Shenmue/blob/main/src/spr.c), [`src/spr.h`](https://github.com/EmulRyo/Shenmue/blob/main/src/spr.h)
+- **Source:** [`src/spr.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/spr.c), [`src/spr.h`](https://github.com/EmulRyo/Shenmue/blob/master/src/spr.h)
 
 ## Layout
 

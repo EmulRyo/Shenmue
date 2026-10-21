@@ -4,7 +4,7 @@ An IDX file holds the names of the files stored in the [AFS](AFS) container with
 
 - **Extension:** `.idx`
 - **Magic:** `IDX0` (`49 44 58 30`) for the IDX0 variant, none for `humans.idx`
-- **Source:** [`src/idx.c`](https://github.com/EmulRyo/Shenmue/blob/main/src/idx.c)
+- **Source:** [`src/idx.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/idx.c)
 
 ## IDX0 variant
 
