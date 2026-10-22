@@ -39,8 +39,9 @@ static void GetEntryFilename(char (*filenames)[IPAC_FILENAME_SIZE], uint32_t ent
 	CopyTrimmed(ext, entry->extension, sizeof(entry->extension), true);
 
 	// The magic is more accurate than the IPAC extension (e.g. textures are stored as "BIN")
+	// except for CHRM files, MT5 models whose textures are stored outside the model
 	const char* magicExt = File_ExtensionFromMagic(data, size);
-	if (magicExt != NULL)
+	if (magicExt != NULL && !(strcmp(magicExt, "mt5") == 0 && strcmp(ext, "chrm") == 0))
 		snprintf(ext, sizeof(ext), "%s", magicExt);
 	else if (ext[0] == '\0')
 		snprintf(ext, sizeof(ext), "bin");

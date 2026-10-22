@@ -41,4 +41,4 @@ All offsets are relative to the start of the IPAC block.
 ## Notes
 
 - A file can be compressed with [gzip](Home#compression); it is decompressed on extraction.
-- The `extension` field isn't reliable (textures are stored as `BIN`), so the extension is taken from the file magic when it is known, then from this field in lowercase, and `bin` as a last resort.
+- The `extension` field isn't reliable (textures are stored as `BIN`), so the extension is taken from the file magic when it is known, then from this field in lowercase, and `bin` as a last resort. The only exception are the entries with the `CHRM` extension: they have the [MT5](MT5) magic (`HRCM`), but they keep the `.chrm` extension because their textures are stored outside the model.

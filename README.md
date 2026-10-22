@@ -9,6 +9,7 @@ Tool to explore and extract the files of Shenmue I & II (PC version). It is writ
 - Decompress gzip compressed files automatically.
 - View `PVR` and `SPR` textures and save them as PNG, JPG or BMP.
 - Decode the commands of `CHRT` character scripts.
+- Read `MT5`/`CHRM` models and print their node tree, meshes and textures.
 
 The file formats are described in the [wiki](https://github.com/EmulRyo/Shenmue/wiki) (source pages in [`wiki/`](wiki)).
 
@@ -33,4 +34,5 @@ Run the program from the repository folder (it reads `resources/FilenameDatabase
   - Textures (`.pvr`, `.spr`) are shown in the window.
   - Containers (`.afs`, `.idx`, `.pkf`, `.pks`) are extracted to a folder with the name of the file, next to it.
   - Scripts (`.chrt`) are decoded to the console.
+  - Models (`.mt5`, `.chrm`) are described in the console.
 - **Save file**: save the texture being shown as an image.

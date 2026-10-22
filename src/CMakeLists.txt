@@ -17,6 +17,8 @@ set(SRC
     src/ipac.c
     src/ipac.h
     src/main.c
+    src/mt5.c
+    src/mt5.h
     src/pkf.c
     src/pkf.h
     src/pks.c
