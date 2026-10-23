@@ -362,19 +362,21 @@ bool MT5_Load(const char* filepath, MT5_Model* model) {
 	return true;
 }
 
-// Number of vertices of the mesh used by the negative vertex indices: the mesh of the nearest ancestor that has one,
-// or of another node with the same ID (e.g. the alternative faces of a character hang from a copy of the head node
-// without mesh)
-static uint32_t ParentVertexCount(const MT5_Model* model, int32_t parent) {
+int32_t MT5_ParentMeshNode(const MT5_Model* model, int32_t parent) {
 	for (; parent >= 0; parent = model->nodes[parent].parent) {
 		if (model->nodes[parent].hasMesh)
-			return model->nodes[parent].vertexCount;
+			return parent;
 		for (uint32_t i = 0; i < model->nodeCount; i++) {
 			if (model->nodes[i].id == model->nodes[parent].id && model->nodes[i].hasMesh)
-				return model->nodes[i].vertexCount;
+				return (int32_t)i;
 		}
 	}
-	return 0;
+	return -1;
+}
+
+static uint32_t ParentVertexCount(const MT5_Model* model, int32_t parent) {
+	int32_t node = MT5_ParentMeshNode(model, parent);
+	return node >= 0 ? model->nodes[node].vertexCount : 0;
 }
 
 bool MT5_Print(const char* filepath) {

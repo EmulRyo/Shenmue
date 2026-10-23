@@ -59,14 +59,16 @@ static size_t MortonToY(size_t morton) {
 	return y;
 }
 
+// Rectangular textures are a row (or column) of twiddled square blocks, the size of the shortest side
 static size_t Untwiddle(size_t i, size_t width, size_t height) {
-	size_t x = MortonToX(i);
-	size_t y = MortonToY(i);
-	if (y >= height) {
-		size_t quotient = y / height;
-		y = y % height;
-		x += width / (quotient+1);
-	}
+	size_t size = width < height ? width : height;
+	size_t block = i / (size * size);
+	size_t x = MortonToX(i % (size * size));
+	size_t y = MortonToY(i % (size * size));
+	if (width > height)
+		x += block * size;
+	else
+		y += block * size;
 	y = height - 1 - y; // Invert Y to match the image coordinate system
 	assert(x < width && y < height && "Untwiddle coordinates out of bounds");
 	assert(i < width * height && "Untwiddle index out of bounds");

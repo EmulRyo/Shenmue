@@ -68,6 +68,11 @@ typedef struct {
 bool MT5_Load(const char* filepath, MT5_Model* model);
 void MT5_Free(MT5_Model* model);
 
+// Node whose mesh is used by the negative vertex indices of the children of parent: the nearest ancestor that has a
+// mesh, or another node with the same ID (e.g. the alternative faces of a character hang from a copy of the head node
+// without mesh). Returns -1 if there is none
+int32_t MT5_ParentMeshNode(const MT5_Model* model, int32_t parent);
+
 // Prints the node tree, the meshes and the textures of an MT5/CHRM file
 bool MT5_Print(const char* filepath);
 

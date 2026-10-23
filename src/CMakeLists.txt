@@ -19,6 +19,8 @@ set(SRC
     src/main.c
     src/mt5.c
     src/mt5.h
+    src/mt5View.c
+    src/mt5View.h
     src/pkf.c
     src/pkf.h
     src/pks.c

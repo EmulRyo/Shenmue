@@ -20,6 +20,7 @@
 #include "pks.h"
 #include "chrt.h"
 #include "mt5.h"
+#include "mt5View.h"
 
 static HashTable g_filenameDB;
 static TAD_Context g_TADCtx;
@@ -127,7 +128,17 @@ static void ExtractTADsDialog() {
     }
 }
 
+static void CloseImage() {
+    if (g_image.data != NULL)
+        UnloadImage(g_image);
+    g_image = (Image) { 0 };
+    if (g_texture.id > 0)
+        UnloadTexture(g_texture);
+    g_texture = (Texture) { 0 };
+}
+
 static void ShowImage(uint32_t* pixels, uint16_t width, uint16_t height) {
+    MT5View_Close();
     if (g_image.data != NULL) {
         UnloadImage(g_image);
 	}
@@ -186,6 +197,10 @@ static void OpenFilePKS(const char* filename) {
 
 static void OpenFileMT5(const char* filename) {
     MT5_Print(filename);
+    if (MT5View_Open(filename))
+        CloseImage();
+    else
+        printf("Failed to load MT5 file: %s\n", filename);
 }
 
 static void OpenFileCHRT(const char* filename) {
@@ -306,7 +321,9 @@ static void DrawStatusBar(Rectangle dst) {
 }
 
 static void DrawContent(Rectangle dst) {
-    if (g_texture.id > 0) {
+    if (MT5View_IsOpen())
+        MT5View_Draw(dst);
+    else if (g_texture.id > 0) {
 		float ar = (float)g_texture.width / (float)g_texture.height;
 		float height = dst.height;
 		float width = ar * height;
@@ -349,11 +366,13 @@ static void Draw() {
 	DrawStatusBar((Rectangle) { 0, (float)GetScreenHeight() - 30.0f, (float)GetScreenWidth(), 30.0f });
 }
 
-void main() {
+void main(int argc, char** argv) {
     SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 720, "Shenmue");
 
     Init();
+    if (argc > 1)
+        OpenKnownFile(argv[1]);
 
     while (!WindowShouldClose()) {
         Update();
@@ -366,6 +385,7 @@ void main() {
         EndDrawing();
     }
 
+    MT5View_Close();
     CloseWindow();
     NFD_Quit();
 }

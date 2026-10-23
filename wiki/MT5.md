@@ -44,6 +44,8 @@ All offsets are absolute (from the start of the file); an offset of 0 means none
 
 The nodes form a tree: each node points to its first child and to its next sibling.
 
+The transform of a node is relative to its parent and is applied in this order: `scale`, rotation around X, rotation around Y, rotation around Z and `position`. The coordinate system is right-handed with Y up; characters look to −Z. All the nodes of the maps (e.g. `scene/01/betd/map.mt5`) have the ID `0xFFFF`, the root included.
+
 | Offset | Size | Type      | Name            | Description                                                                 |
 |-------:|-----:|-----------|-----------------|-----------------------------------------------------------------------------|
 | 0x00   | 4    | uint32    | `id`            | Node (bone) ID. The lowest byte looks like the bone number; the next byte is `0x00` or `0xFF` and the upper 16 bits `0` or `1` (unknown meaning) |
@@ -131,7 +133,7 @@ Each strip is an `int16` vertex count followed by that many entries. The count i
 |----------|-----:|--------|-------------------------|-------------------------------------------------------------------|
 | `vertex` | 2    | int16  | all                     | Vertex index (see below)                                          |
 | `u`      | 2    | int16  | `0x0011`, `0x001C`      | U × UV divisor                                                    |
-| `v`      | 2    | int16  | `0x0011`, `0x001C`      | V × UV divisor                                                    |
+| `v`      | 2    | int16  | `0x0011`, `0x001C`      | V × UV divisor. V = 0 is the top row of the texture as it is shown by this tool |
 | `color`  | 4    | uint32 | `0x001A`, `0x001C`      | Vertex color, ARGB                                                |
 
 The entries form a triangle strip: entries *i*, *i*+1, *i*+2 make a triangle. Taking the usual strip order (*i*, *i*+1, *i*+2 for even *i* and *i*+1, *i*, *i*+2 for odd *i*), the triangles are clockwise when looking at the side the vertex normals point to.
@@ -140,7 +142,7 @@ A negative vertex index `-n` points to the vertex `vertexCount - n` of the mesh 
 
 ## Alternative meshes
 
-Some character models have a second branch under the root with copies of a node that have no mesh (same `id` as the head) and children with `parentOffset` = 0 and the same `id` as the face. They look like alternative faces (e.g. expressions) that replace the face mesh. Their negative vertex indices point to the mesh of the node with the same `id` as their parent (the head).
+Some character models have a second branch under the root with copies of a node that have no mesh (same `id` as the head) and children with `parentOffset` = 0 and the same `id` as the face. They look like alternative faces (e.g. expressions) that replace the face mesh. Their negative vertex indices point to the mesh of the node with the same `id` as their parent (the head). The copy of the head is placed at the origin, not at the head, so these meshes are only correct when attached to the original node; the viewer doesn't show them.
 
 ## Textures
 
@@ -203,5 +205,5 @@ A relocation table: the positions of the pointer fields of the file (offsets of 
 ## Notes
 
 - A CHRM file and the MT5 file of the same model are identical up to `texturesOffset` (e.g. `ATRS500G.chrm` and `model/item/atrs500g.mt5`).
-- Opening a model prints its node tree, the meshes (vertices and triangles) and the textures to the console.
+- Opening a model shows it in a 3D viewer and prints its node tree, the meshes (vertices and triangles) and the textures to the console. The textures of CHRM files are searched in the folder of the model, where the [PKF](PKF) of the scene is extracted (`tex_<index>_<textureID>.pvr`).
 - Extracted files with the `HRCM` magic get the `.mt5` extension, except the [IPAC](IPAC) entries with the `CHRM` extension, which keep it.

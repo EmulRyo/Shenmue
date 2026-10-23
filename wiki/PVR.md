@@ -83,7 +83,7 @@ PVR is the texture format of the Dreamcast (PowerVR GPU). A PVR file is an optio
 
 ### Twiddled
 
-The pixels are stored in Morton order (Z-order): the bits of the index alternate between Y (even bits) and X (odd bits). For rectangular textures the image is split in squares of `height × height` placed side by side.
+The pixels are stored in Morton order (Z-order): the bits of the index alternate between Y (even bits) and X (odd bits). For rectangular textures the image is split in squares the size of the shortest side, each one twiddled, stored one after the other: left to right in textures wider than tall (e.g. 32×16) and top to bottom in textures taller than wide (e.g. 16×64).
 
 ### Vector quantization (VQ)
 
