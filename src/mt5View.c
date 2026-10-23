@@ -46,6 +46,7 @@ typedef struct {
 	float			yaw, pitch, distance;
 	int				dragButton; // -1 if the mouse isn't dragging
 	bool			wireframe;
+	bool			character; // The characters look to -Z, the rest of the models to +Z
 } MT5View_State;
 
 static MT5View_State g_view = { .dragButton = -1 };
@@ -183,6 +184,47 @@ static void AddCorner(Mesh* mesh, uint32_t index, const MT5_Corner* corner, Vect
 	mesh->colors[index * 4 + 3] = (corner->color >> 24) & 0xFF;
 }
 
+static bool HasNegativeIndices(const MT5_Node* node) {
+	for (uint32_t t = 0; t < node->triangleCount; t++) {
+		for (int c = 0; c < 3; c++) {
+			if (node->triangles[t].corners[c].vertex < 0)
+				return true;
+		}
+	}
+	return false;
+}
+
+// The faces (_F) and hands (_TL, _TR) of the characters are separate models that replace the head (0xFFBD) or a hand
+// (0xFFBE, 0xFFBF) of the body: their root has a mesh with negative vertex indices, which point to the mesh of the
+// parent of that node in the body, and their vertices are in the space of that node. They are rotated as that node in
+// the pose of the bodies, identified by the ID of the root: 3 for the faces, the lower arm (5-7, 0xA-0xC) for the hands.
+// Returns false (and the identity) if the model is not a face or a hand
+static bool PartMatrix(const MT5_Model* model, Matrix* matrix) {
+	*matrix = MatrixIdentity();
+	if (model->nodeCount == 0 || !model->nodes[0].hasMesh || !HasNegativeIndices(&model->nodes[0]))
+		return false;
+	switch (model->nodes[0].id & 0xFFFF) {
+	case 0x03: // X -> -Z, Y -> -X, Z -> Y
+		*matrix = (Matrix) { 0, -1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, 0, 0, 1 };
+		return true;
+	case 0x05: case 0x06: case 0x07:
+	case 0x0A: case 0x0B: case 0x0C: // X -> -Y, Y -> -Z, Z -> X
+		*matrix = (Matrix) { 0, 0, 1, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 1 };
+		return true;
+	default:
+		return false;
+	}
+}
+
+// The bodies of the characters have the head node (0xFFBD); the rest of the models (items, objects) have no bones
+static bool HasHead(const MT5_Model* model) {
+	for (uint32_t i = 0; i < model->nodeCount; i++) {
+		if ((model->nodes[i].id & 0xFFFF) == 0xFFBD)
+			return true;
+	}
+	return false;
+}
+
 // Builds one mesh per group with the vertices in model space (the pose of the node hierarchy)
 static bool BuildMeshes(const MT5_Model* model) {
 	Matrix* world = malloc(model->nodeCount * (2 * sizeof(Matrix) + sizeof(bool)));
@@ -190,11 +232,13 @@ static bool BuildMeshes(const MT5_Model* model) {
 		return false;
 	Matrix* normalMatrix = world + model->nodeCount;
 	bool* hidden = (bool*)(normalMatrix + model->nodeCount);
+	Matrix part;
+	g_view.character = PartMatrix(model, &part) || HasHead(model);
 	// The nodes are in depth first order, the parents are before their children
 	for (uint32_t i = 0; i < model->nodeCount; i++) {
 		int32_t parent = model->nodes[i].parent;
 		Matrix local = NodeMatrix(&model->nodes[i]);
-		world[i] = parent >= 0 ? MatrixMultiply(local, world[parent]) : local;
+		world[i] = parent >= 0 ? MatrixMultiply(local, world[parent]) : MatrixMultiply(local, part);
 		normalMatrix[i] = MatrixTranspose(MatrixInvert(world[i]));
 		hidden[i] = IsAlternativeRoot(model, i) || (parent >= 0 && hidden[parent]);
 		if (hidden[i] && model->nodes[i].hasMesh)
@@ -362,7 +406,7 @@ static bool LoadTextures(const MT5_Model* model, const char* filepath) {
 
 static void ResetCamera(void) {
 	g_view.target = g_view.center;
-	g_view.yaw = PI; // The characters look to -Z
+	g_view.yaw = g_view.character ? PI : 0.0f; // Look at the front of the model
 	g_view.pitch = 0.2f;
 	g_view.distance = g_view.radius / sinf(MT5VIEW_FOVY * 0.5f * DEG2RAD);
 }

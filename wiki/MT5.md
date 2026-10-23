@@ -44,7 +44,7 @@ All offsets are absolute (from the start of the file); an offset of 0 means none
 
 The nodes form a tree: each node points to its first child and to its next sibling.
 
-The transform of a node is relative to its parent and is applied in this order: `scale`, rotation around X, rotation around Y, rotation around Z and `position`. The coordinate system is right-handed with Y up; characters look to −Z. All the nodes of the maps (e.g. `scene/01/betd/map.mt5`) have the ID `0xFFFF`, the root included.
+The transform of a node is relative to its parent and is applied in this order: `scale`, rotation around X, rotation around Y, rotation around Z and `position`. The coordinate system is right-handed with Y up. The characters (the bodies, which have the head node `0xFFBD`, and their [faces and hands](#faces-and-hands)) look to −Z; the rest of the models (e.g. the items of `model/item`) look to +Z. All the nodes of the maps (e.g. `scene/01/betd/map.mt5`) have the ID `0xFFFF`, the root included.
 
 | Offset | Size | Type      | Name            | Description                                                                 |
 |-------:|-----:|-----------|-----------------|-----------------------------------------------------------------------------|
@@ -138,11 +138,23 @@ Each strip is an `int16` vertex count followed by that many entries. The count i
 
 The entries form a triangle strip: entries *i*, *i*+1, *i*+2 make a triangle. Taking the usual strip order (*i*, *i*+1, *i*+2 for even *i* and *i*+1, *i*, *i*+2 for odd *i*), the triangles are clockwise when looking at the side the vertex normals point to.
 
-A negative vertex index `-n` points to the vertex `vertexCount - n` of the mesh of the parent node: it joins the mesh to its parent (e.g. a forearm to the arm). Some models use negative indices that point to a mesh of another model: the faces (`_F`) and hands (`_TL`, `_TR`) of a character attach to its body (`_L`). Some MT5 files also use indices equal to or greater than `vertexCount`; their meaning is unknown.
+A negative vertex index `-n` points to the vertex `vertexCount - n` of the mesh of the parent node: it joins the mesh to its parent (e.g. a forearm to the arm). Some models use negative indices that point to a mesh of another model: the faces (`_F`) and hands (`_TL`, `_TR`) of a character attach to its body (`_L`, see [faces and hands](#faces-and-hands)). Some MT5 files also use indices equal to or greater than `vertexCount`; their meaning is unknown.
 
 ## Alternative meshes
 
 Some character models have a second branch under the root with copies of a node that have no mesh (same `id` as the head) and children with `parentOffset` = 0 and the same `id` as the face. They look like alternative faces (e.g. expressions) that replace the face mesh. Their negative vertex indices point to the mesh of the node with the same `id` as their parent (the head). The copy of the head is placed at the origin, not at the head, so these meshes are only correct when attached to the original node; the viewer doesn't show them.
+
+## Faces and hands
+
+The detailed faces (`_F`, e.g. `model/face/aso_f.mt5`, `ASO_F.chrm`) and hands (`_TL`, `_TR`, in `model/hand`) of the characters are separate models that replace a node of the body (`_L`, `_M`): the root node has the mesh, and its negative vertex indices point to the mesh of the parent of the replaced node in the body. Their vertices are in the space of the replaced node, so on their own they are rotated. The ID of the root (its lowest 16 bits) tells the part:
+
+| Part            | Root ID                  | Replaced node of the body | Parent in the body          | Rotation of the replaced node in the body |
+|-----------------|--------------------------|---------------------------|-----------------------------|-------------------------------------------|
+| Face (`_F`)     | `0x0003`                 | `0xFFBD` (head)           | `0x0001` (or `0x0002`)      | X → −Z, Y → −X, Z → Y                     |
+| Left hand (`_TL`)  | `0x000B` (also `0x000A`, `0x000C`) | `0xFFBE`        | `0x000B` (lower arm)        | X → −Y, Y → −Z, Z → X                     |
+| Right hand (`_TR`) | `0x0006` (also `0x0005`, `0x0007`) | `0xFFBF`        | `0x0006` (lower arm)        | X → −Y, Y → −Z, Z → X                     |
+
+The upper 16 bits of the root ID are `0`, `1`, `4` or `9` (unknown meaning). The rotations are the ones of 154 of the 166 extracted bodies (the rest are posed differently); the viewer applies them to show the parts upright. The meshes of the body nodes `0xFFBD`, `0xFFBE` and `0xFFBF` are low detail versions of the parts that replace them, with about the same bounding box. A few faces (e.g. `mgr_f.mt5`) have the root ID `0xFFFF` and only triangles with negative indices.
 
 ## Textures
 
