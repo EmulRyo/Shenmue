@@ -70,6 +70,7 @@ typedef enum {
 typedef struct {
 	uint16_t	texture;
 	uint8_t		listType;
+	uint8_t		uvFlags;
 	float		uvScale;
 	uint32_t	capacity;
 } MT5_FaceState;
@@ -121,6 +122,7 @@ static bool AddTriangle(MT5_Node* node, MT5_FaceState* state, MT5_Corner a, MT5_
 	triangle->corners[2] = c;
 	triangle->texture = state->texture;
 	triangle->listType = state->listType;
+	triangle->uvFlags = state->uvFlags;
 	return true;
 }
 
@@ -159,7 +161,7 @@ static bool ReadStrips(const uint8_t* buffer, size_t pos, MT5_Node* node, MT5_Fa
 }
 
 static bool ReadFaces(const uint8_t* buffer, size_t size, size_t pos, MT5_Node* node) {
-	MT5_FaceState state = { 0, MT5_LIST_OPAQUE, 1024.0f, 0 };
+	MT5_FaceState state = { 0, MT5_LIST_OPAQUE, 0, 1024.0f, 0 };
 	while (InBounds(size, pos, 2)) {
 		uint16_t type = Read16(buffer + pos);
 		if (type == MT5_CHUNK_END)
@@ -179,6 +181,12 @@ static bool ReadFaces(const uint8_t* buffer, size_t size, size_t pos, MT5_Node* 
 			if (value < 4 || !InBounds(size, pos + 4, value))
 				return false;
 			state.listType = (buffer[pos + 7] & 7); // List type of the PCW (bits 24-26)
+			if (value >= 12) {
+				// Flip U and V (bits 18, 17) and clamp U and V (bits 16, 15) of the TSP
+				uint32_t tsp = Read32(buffer + pos + 12);
+				state.uvFlags = ((tsp >> 18) & 1 ? MT5_UV_FLIP_U : 0) | ((tsp >> 17) & 1 ? MT5_UV_FLIP_V : 0) |
+					((tsp >> 16) & 1 ? MT5_UV_CLAMP_U : 0) | ((tsp >> 15) & 1 ? MT5_UV_CLAMP_V : 0);
+			}
 			pos += 4 + value;
 			break;
 		case MT5_CHUNK_COLORS:

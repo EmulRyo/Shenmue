@@ -25,11 +25,20 @@ typedef enum {
 	MT5_LIST_PUNCH_THROUGH = 4,
 } MT5_ListType;
 
+// Texture wrapping outside [0, 1], from the TSP instruction word of the polygon parameters
+typedef enum {
+	MT5_UV_FLIP_U  = 1, // Mirrored repeat
+	MT5_UV_FLIP_V  = 2,
+	MT5_UV_CLAMP_U = 4,
+	MT5_UV_CLAMP_V = 8,
+} MT5_UVFlags;
+
 // Counter-clockwise when looking at the side the vertex normals point to
 typedef struct {
 	MT5_Corner	corners[3];
 	uint16_t	texture;  // Index in the texture list
 	uint8_t		listType; // MT5_ListType
+	uint8_t		uvFlags;  // MT5_UVFlags, repeat if 0
 } MT5_Triangle;
 
 typedef struct {

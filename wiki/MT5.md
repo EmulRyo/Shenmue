@@ -108,8 +108,20 @@ They look like the polygon header of the Dreamcast PowerVR (CLX2) graphics chip.
 |-------:|-----:|--------|----------|---------------------------------------------------------------------------------------------------|
 | 0x00   | 4    | uint32 | `pcw`    | Parameter control word. Bits 24–26 are the list type: 0 opaque, 2 translucent, 4 punch-through (it matches the chunk type). E.g. `0x808C002E` |
 | 0x04   | 4    | uint32 | `isp`    | ISP/TSP instruction word (depth compare and culling). Usually `0xC8000000`                        |
-| 0x08   | 4    | uint32 | `tsp`    | TSP instruction word: blending (`0x20...` one/zero for opaque, `0x94...` source alpha/inverse source alpha for translucent), UV clamp and flip, filter, texture instruction |
+| 0x08   | 4    | uint32 | `tsp`    | TSP instruction word: blending (`0x20...` one/zero for opaque, `0x94...` source alpha/inverse source alpha for translucent), UV flip (bit 18 U, bit 17 V), UV clamp (bit 16 U, bit 15 V), filter, texture instruction. See [texture wrapping](#texture-wrapping) |
 | 0x0C   | 4    | uint32 | `tcw`    | Texture control word (pixel format in bits 27–29). The texture address is 0                      |
+
+### Texture wrapping
+
+The UVs go outside [0, 1] in many meshes, and the `tsp` of the polygon parameters says how the texture is repeated in each axis:
+
+| Flip | Clamp | Wrapping                                                    |
+|------|-------|-------------------------------------------------------------|
+| 0    | 0     | Repeat                                                      |
+| 1    | 0     | Mirrored repeat: every other repetition is flipped          |
+| any  | 1     | Clamp to the edge (the viewer assumes the clamp wins; only 75 polygons set both) |
+
+Symmetric details use the flip to store only part of the image: the wheels of `model/item/gacgtrxg.mt5` use a quarter of a wheel with UVs from 0 to 2 and flip U and V (`tsp` = `0x20062440`), and its bumper and windshield store half of the image with flip U (`0x20042440`). Most polygons repeat; around 15 % clamp both axes and 6 % flip some axis.
 
 ### Colors (8 bytes)
 

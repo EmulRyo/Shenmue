@@ -15,10 +15,11 @@
 
 #define MT5VIEW_FOVY 45.0f
 
-// Triangles that share texture and list type, drawn with one mesh
+// Triangles that share texture, list type and texture wrapping, drawn with one mesh
 typedef struct {
 	uint16_t	texture;
 	uint8_t		listType;
+	uint8_t		uvFlags;
 	uint32_t	triangleCount;
 	uint32_t	filled; // Triangles copied to the mesh while it is built
 	Mesh		mesh;
@@ -153,23 +154,25 @@ static bool IsTriangleValid(const MT5_Model* model, uint32_t node, const MT5_Tri
 	return true;
 }
 
-static MT5View_Group* FindGroup(uint16_t texture, uint8_t listType) {
+static MT5View_Group* FindGroup(const MT5_Triangle* triangle) {
 	for (uint32_t i = 0; i < g_view.groupCount; i++) {
-		if (g_view.groups[i].texture == texture && g_view.groups[i].listType == listType)
+		const MT5View_Group* group = &g_view.groups[i];
+		if (group->texture == triangle->texture && group->listType == triangle->listType && group->uvFlags == triangle->uvFlags)
 			return &g_view.groups[i];
 	}
 	return NULL;
 }
 
-static bool AddGroup(uint16_t texture, uint8_t listType) {
+static bool AddGroup(const MT5_Triangle* triangle) {
 	MT5View_Group* groups = realloc(g_view.groups, (g_view.groupCount + 1) * sizeof(MT5View_Group));
 	if (groups == NULL)
 		return false;
 	g_view.groups = groups;
 	MT5View_Group* group = &g_view.groups[g_view.groupCount++];
 	memset(group, 0, sizeof(MT5View_Group));
-	group->texture = texture;
-	group->listType = listType;
+	group->texture = triangle->texture;
+	group->listType = triangle->listType;
+	group->uvFlags = triangle->uvFlags;
 	return true;
 }
 
@@ -256,9 +259,9 @@ static bool BuildMeshes(const MT5_Model* model) {
 				g_view.skippedTriangles++;
 				continue;
 			}
-			MT5View_Group* group = FindGroup(triangle->texture, triangle->listType);
+			MT5View_Group* group = FindGroup(triangle);
 			if (group == NULL) {
-				if (!AddGroup(triangle->texture, triangle->listType)) {
+				if (!AddGroup(triangle)) {
 					free(world);
 					return false;
 				}
@@ -293,7 +296,7 @@ static bool BuildMeshes(const MT5_Model* model) {
 			const MT5_Triangle* triangle = &node->triangles[t];
 			if (!IsTriangleValid(model, n, triangle))
 				continue;
-			MT5View_Group* group = FindGroup(triangle->texture, triangle->listType);
+			MT5View_Group* group = FindGroup(triangle);
 			for (int c = 0; c < 3; c++) {
 				uint32_t owner, vertex;
 				ResolveVertex(model, n, triangle->corners[c].vertex, &owner, &vertex);
@@ -512,6 +515,13 @@ static void UpdateInput(Rectangle area) {
 		g_view.wireframe = !g_view.wireframe;
 }
 
+// The clamp takes priority over the flip
+static int WrapMode(uint8_t uvFlags, uint8_t flip, uint8_t clamp) {
+	if (uvFlags & clamp)
+		return RL_TEXTURE_WRAP_CLAMP;
+	return (uvFlags & flip) ? RL_TEXTURE_WRAP_MIRROR_REPEAT : RL_TEXTURE_WRAP_REPEAT;
+}
+
 static void DrawGroups(bool translucent) {
 	Texture white = { rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
 	for (uint32_t i = 0; i < g_view.groupCount; i++) {
@@ -522,6 +532,12 @@ static void DrawGroups(bool translucent) {
 		SetShaderValue(g_view.shader, g_view.modeLoc, &mode, SHADER_UNIFORM_INT);
 		bool hasTexture = group->texture < g_view.textureCount && g_view.textures[group->texture].id > 0;
 		g_view.material.maps[MATERIAL_MAP_DIFFUSE].texture = hasTexture ? g_view.textures[group->texture] : white;
+		if (hasTexture) {
+			// The textures are shared by groups with different wrapping
+			unsigned int id = g_view.textures[group->texture].id;
+			rlTextureParameters(id, RL_TEXTURE_WRAP_S, WrapMode(group->uvFlags, MT5_UV_FLIP_U, MT5_UV_CLAMP_U));
+			rlTextureParameters(id, RL_TEXTURE_WRAP_T, WrapMode(group->uvFlags, MT5_UV_FLIP_V, MT5_UV_CLAMP_V));
+		}
 		DrawMesh(group->mesh, g_view.material, MatrixIdentity());
 	}
 }
