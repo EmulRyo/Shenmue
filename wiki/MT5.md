@@ -107,7 +107,7 @@ They look like the polygon header of the Dreamcast PowerVR (CLX2) graphics chip.
 | Offset | Size | Type   | Name     | Description                                                                                       |
 |-------:|-----:|--------|----------|---------------------------------------------------------------------------------------------------|
 | 0x00   | 4    | uint32 | `pcw`    | Parameter control word. Bits 24–26 are the list type: 0 opaque, 2 translucent, 4 punch-through (it matches the chunk type). E.g. `0x808C002E` |
-| 0x04   | 4    | uint32 | `isp`    | ISP/TSP instruction word (depth compare and culling). Usually `0xC8000000`                        |
+| 0x04   | 4    | uint32 | `isp`    | ISP/TSP instruction word (depth compare and culling). Usually `0xC8000000`. The culling mode (bits 27–28) is always 1, which only culls very small polygons; see [back faces](#back-faces) |
 | 0x08   | 4    | uint32 | `tsp`    | TSP instruction word: blending (`0x20...` one/zero for opaque, `0x94...` source alpha/inverse source alpha for translucent), UV flip (bit 18 U, bit 17 V), UV clamp (bit 16 U, bit 15 V), filter, texture instruction. See [texture wrapping](#texture-wrapping) |
 | 0x0C   | 4    | uint32 | `tcw`    | Texture control word (pixel format in bits 27–29). The texture address is 0                      |
 
@@ -155,6 +155,10 @@ Each strip is an `int16` vertex count followed by that many entries. The count i
 | `color`  | 4    | uint32 | `0x001A`, `0x001C`      | Vertex color, ARGB                                                |
 
 The entries form a triangle strip: entries *i*, *i*+1, *i*+2 make a triangle. Taking the usual strip order (*i*, *i*+1, *i*+2 for even *i* and *i*+1, *i*, *i*+2 for odd *i*), the triangles are clockwise when looking at the side the vertex normals point to.
+
+#### Back faces
+
+The polygons are one-sided: where both sides of a surface are seen, the models have a second polygon in the same place with the opposite winding (e.g. the white back of the poster `model/item/srp3h00g.mt5`, the inside of the box of `gach5rrg.mt5` or of the canopy of the umbrella `model/chara/kasm400g.mt5`). The culling mode of the polygon parameters doesn't cull the back faces, so the game must cull them itself: drawn without culling, the two sides fight and pieces of the back show on the front. The winding agrees with the vertex normals in 99.8 % of the triangles of a sample of 400 models.
 
 A negative vertex index `-n` points to the vertex `vertexCount - n` of the mesh of the parent node: it joins the mesh to its parent (e.g. a forearm to the arm). Some models use negative indices that point to a mesh of another model: the faces (`_F`) and hands (`_TL`, `_TR`) of a character attach to its body (`_L`, see [faces and hands](#faces-and-hands)). Some MT5 files also use indices equal to or greater than `vertexCount`; their meaning is unknown.
 

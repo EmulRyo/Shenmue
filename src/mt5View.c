@@ -53,6 +53,7 @@ typedef struct {
 	float			yaw, pitch, distance;
 	int				dragButton; // -1 if the mouse isn't dragging
 	bool			wireframe;
+	bool			noCulling; // Draw the back faces too
 	bool			character; // The characters look to -Z, the rest of the models to +Z
 	bool			sorted;    // The translucent triangles are sorted for the camera at sortedEye, sortedTarget
 	Vector3			sortedEye;
@@ -61,7 +62,7 @@ typedef struct {
 
 static MT5View_State g_view = { .dragButton = -1 };
 
-// Default raylib attributes; lit from the camera, with both faces lit because the culling mode of the polygons isn't used
+// Default raylib attributes; lit from the camera, with both faces lit for when the back faces are drawn
 static const char* g_vertexShader =
 	"#version 330\n"
 	"in vec3 vertexPosition;\n"
@@ -307,13 +308,16 @@ static bool BuildMeshes(const MT5_Model* model) {
 			if (!IsTriangleValid(model, n, triangle))
 				continue;
 			MT5View_Group* group = FindGroup(triangle);
+			// A mirrored transform (negative scale) changes the winding
+			bool mirrored = MatrixDeterminant(world[n]) < 0.0f;
 			for (int c = 0; c < 3; c++) {
 				uint32_t owner, vertex;
 				ResolveVertex(model, n, triangle->corners[c].vertex, &owner, &vertex);
 				const MT5_Vertex* source = &model->nodes[owner].vertices[vertex];
 				Vector3 position = Vector3Transform((Vector3) { source->position[0], source->position[1], source->position[2] }, world[owner]);
 				Vector3 normal = TransformNormal(source->normal, normalMatrix[owner]);
-				AddCorner(&group->mesh, group->filled * 3 + c, &triangle->corners[c], position, normal);
+				int index = mirrored && c > 0 ? 3 - c : c;
+				AddCorner(&group->mesh, group->filled * 3 + index, &triangle->corners[c], position, normal);
 				min = Vector3Min(min, position);
 				max = Vector3Max(max, position);
 			}
@@ -523,6 +527,8 @@ static void UpdateInput(Rectangle area) {
 		ResetCamera();
 	if (IsKeyPressed(KEY_W))
 		g_view.wireframe = !g_view.wireframe;
+	if (IsKeyPressed(KEY_C))
+		g_view.noCulling = !g_view.noCulling;
 }
 
 // The clamp takes priority over the flip
@@ -660,7 +666,10 @@ void MT5View_Draw(Rectangle area) {
 
 	Vector3 lightDir = Vector3Normalize(Vector3Subtract(camera.position, camera.target));
 	SetShaderValue(g_view.shader, g_view.lightDirLoc, &lightDir, SHADER_UNIFORM_VEC3);
-	rlDisableBackfaceCulling();
+	// The faces are counter-clockwise, and the models have explicit back faces where both sides are seen (e.g. the
+	// posters): the culling mode of the polygon parameters is always "small polygons", so the game culls them itself
+	if (g_view.noCulling)
+		rlDisableBackfaceCulling();
 	if (g_view.wireframe)
 		rlEnableWireMode();
 	SortTranslucent(camera);
@@ -676,7 +685,7 @@ void MT5View_Draw(Rectangle area) {
 	const char* lines[3] = {
 		g_view.filename,
 		TextFormat("%u nodes, %u triangles, %u/%u textures", g_view.nodeCount, g_view.triangleCount, g_view.loadedTextures, g_view.textureCount),
-		"Left drag: rotate   Right drag: pan   Wheel: zoom   R: reset   W: wireframe",
+		"Left drag: rotate   Right drag: pan   Wheel: zoom   R: reset   W: wireframe   C: back faces",
 	};
 	for (int i = 0; i < 3; i++)
 		DrawTextEx(font, lines[i], (Vector2) { area.x + 10.0f, area.y + 10.0f + i * fontSize * 1.2f }, fontSize, 1.0f, LIGHTGRAY);

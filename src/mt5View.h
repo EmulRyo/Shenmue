@@ -11,8 +11,8 @@
 bool MT5View_Open(const char* filepath);
 void MT5View_Close(void);
 bool MT5View_IsOpen(void);
-// Handles the camera input (left drag: rotate, right/middle drag: pan, wheel: zoom, R: reset, W: wireframe) and
-// draws the model inside area
+// Handles the camera input (left drag: rotate, right/middle drag: pan, wheel: zoom, R: reset, W: wireframe, C: draw the
+// back faces) and draws the model inside area
 void MT5View_Draw(Rectangle area);
 
 #endif
