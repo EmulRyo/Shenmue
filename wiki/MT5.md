@@ -85,7 +85,7 @@ The faces of a mesh are a list of chunks. Each chunk starts with a `uint16` type
 |----------|--------------------|-----------------------------------------------------------------------------------------------|
 | `0x0000` | 0                  | Padding                                                                                       |
 | `0x0002` | 2 + `size`         | `uint16 size` (0x10) + [polygon parameters](#polygon-parameters-16-bytes). Opaque polygons    |
-| `0x0003` | 2 + `size`         | Same as `0x0002`. Translucent polygons                                                        |
+| `0x0003` | 2 + `size`         | Same as `0x0002`. Translucent polygons (see [translucent polygons](#translucent-polygons))     |
 | `0x0004` | 2 + `size`         | Same as `0x0002`. Punch-through polygons (only seen in MT5 files)                              |
 | `0x0008` | 2                  | `uint16` unknown. Usually 0; also 0x1E, 0x22, 0x32, 0xB4, 0x12C                              |
 | `0x0009` | 2                  | `uint16` index of the texture used by the next strips, in the [texture list](#textures)       |
@@ -122,6 +122,10 @@ The UVs go outside [0, 1] in many meshes, and the `tsp` of the polygon parameter
 | any  | 1     | Clamp to the edge (the viewer assumes the clamp wins; only 75 polygons set both) |
 
 Symmetric details use the flip to store only part of the image: the wheels of `model/item/gacgtrxg.mt5` use a quarter of a wheel with UVs from 0 to 2 and flip U and V (`tsp` = `0x20062440`), and its bumper and windshield store half of the image with flip U (`0x20042440`). Most polygons repeat; around 15 % clamp both axes and 6 % flip some axis.
+
+### Translucent polygons
+
+The PowerVR of the Dreamcast sorts the translucent polygons by depth, so the models don't store them in drawing order, and many solid parts are in the translucent list with textures that are opaque in most pixels: e.g. the walls of the box of `model/item/gach5rrg.mt5` and the base of `gach5slg.mt5`. Drawn in file order without sorting, the walls at the back are drawn on top of the front ones. The viewer sorts the translucent triangles from back to front when the camera moves, draws them after the opaque and punch-through ones, and lets them write the depth.
 
 ### Colors (8 bytes)
 

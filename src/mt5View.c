@@ -22,8 +22,14 @@ typedef struct {
 	uint8_t		uvFlags;
 	uint32_t	triangleCount;
 	uint32_t	filled; // Triangles copied to the mesh while it is built
+	float		depth;  // Mean depth of the triangles of a translucent group, to draw the groups from back to front
 	Mesh		mesh;
 } MT5View_Group;
+
+typedef struct {
+	float		depth;
+	uint32_t	triangle;
+} MT5View_SortEntry;
 
 typedef struct {
 	bool			open;
@@ -48,6 +54,9 @@ typedef struct {
 	int				dragButton; // -1 if the mouse isn't dragging
 	bool			wireframe;
 	bool			character; // The characters look to -Z, the rest of the models to +Z
+	bool			sorted;    // The translucent triangles are sorted for the camera at sortedEye, sortedTarget
+	Vector3			sortedEye;
+	Vector3			sortedTarget;
 } MT5View_State;
 
 static MT5View_State g_view = { .dragButton = -1 };
@@ -70,7 +79,8 @@ static const char* g_vertexShader =
 	"    gl_Position = mvp * vec4(vertexPosition, 1.0);\n"
 	"}\n";
 
-// mode: 0 opaque (alpha ignored), 1 punch-through (alpha test), 2 translucent (alpha blending)
+// mode: 0 opaque (alpha ignored), 1 punch-through (alpha test), 2 translucent (alpha blending; the transparent pixels
+// are discarded because the translucent polygons write the depth)
 static const char* g_fragmentShader =
 	"#version 330\n"
 	"in vec2 fragTexCoord;\n"
@@ -83,7 +93,7 @@ static const char* g_fragmentShader =
 	"out vec4 finalColor;\n"
 	"void main() {\n"
 	"    vec4 color = texture(texture0, fragTexCoord) * fragColor * colDiffuse;\n"
-	"    if (mode == 1 && color.a < 0.5) discard;\n"
+	"    if ((mode == 1 && color.a < 0.5) || (mode == 2 && color.a < 0.004)) discard;\n"
 	"    float light = 0.45 + 0.55 * abs(dot(normalize(fragNormal), lightDir));\n"
 	"    finalColor = vec4(color.rgb * light, mode == 0 ? 1.0 : color.a);\n"
 	"}\n";
@@ -522,23 +532,109 @@ static int WrapMode(uint8_t uvFlags, uint8_t flip, uint8_t clamp) {
 	return (uvFlags & flip) ? RL_TEXTURE_WRAP_MIRROR_REPEAT : RL_TEXTURE_WRAP_REPEAT;
 }
 
-static void DrawGroups(bool translucent) {
-	Texture white = { rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
+static int CompareDepth(const void* a, const void* b) {
+	float depthA = ((const MT5View_SortEntry*)a)->depth;
+	float depthB = ((const MT5View_SortEntry*)b)->depth;
+	return depthA < depthB ? 1 : depthA > depthB ? -1 : 0; // Farthest first
+}
+
+// Reorders the data of the triangles of a mesh attribute
+static void PermuteTriangles(void* data, size_t triangleSize, const MT5View_SortEntry* entries, uint32_t count, uint8_t* temp) {
+	for (uint32_t i = 0; i < count; i++)
+		memcpy(temp + i * triangleSize, (const uint8_t*)data + entries[i].triangle * triangleSize, triangleSize);
+	memcpy(data, temp, count * triangleSize);
+}
+
+// Sorts the triangles of a translucent group from back to front, and computes the depth of the group
+static void SortTriangles(MT5View_Group* group, Vector3 eye, Vector3 forward) {
+	Mesh* mesh = &group->mesh;
+	uint32_t count = group->triangleCount;
+	MT5View_SortEntry* entries = malloc(count * sizeof(MT5View_SortEntry));
+	uint8_t* temp = malloc(count * 9 * sizeof(float)); // The biggest attribute: 3 vertices with 3 floats
+	if (entries == NULL || temp == NULL) {
+		free(entries);
+		free(temp);
+		return;
+	}
+
+	double depthSum = 0.0;
+	for (uint32_t t = 0; t < count; t++) {
+		const float* v = &mesh->vertices[t * 9];
+		Vector3 center = { (v[0] + v[3] + v[6]) / 3.0f, (v[1] + v[4] + v[7]) / 3.0f, (v[2] + v[5] + v[8]) / 3.0f };
+		entries[t] = (MT5View_SortEntry) { Vector3DotProduct(Vector3Subtract(center, eye), forward), t };
+		depthSum += entries[t].depth;
+	}
+	group->depth = count > 0 ? (float)(depthSum / count) : 0.0f;
+	qsort(entries, count, sizeof(MT5View_SortEntry), CompareDepth);
+
+	PermuteTriangles(mesh->vertices, 9 * sizeof(float), entries, count, temp);
+	PermuteTriangles(mesh->texcoords, 6 * sizeof(float), entries, count, temp);
+	PermuteTriangles(mesh->normals, 9 * sizeof(float), entries, count, temp);
+	PermuteTriangles(mesh->colors, 12, entries, count, temp);
+	UpdateMeshBuffer(*mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION, mesh->vertices, mesh->vertexCount * 3 * sizeof(float), 0);
+	UpdateMeshBuffer(*mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD, mesh->texcoords, mesh->vertexCount * 2 * sizeof(float), 0);
+	UpdateMeshBuffer(*mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_NORMAL, mesh->normals, mesh->vertexCount * 3 * sizeof(float), 0);
+	UpdateMeshBuffer(*mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_COLOR, mesh->colors, mesh->vertexCount * 4, 0);
+	free(entries);
+	free(temp);
+}
+
+// The PowerVR of the Dreamcast sorts the translucent polygons; they are sorted again when the camera moves
+static void SortTranslucent(Camera3D camera) {
+	if (g_view.sorted && Vector3Equals(camera.position, g_view.sortedEye) && Vector3Equals(camera.target, g_view.sortedTarget))
+		return;
+	Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
 	for (uint32_t i = 0; i < g_view.groupCount; i++) {
-		const MT5View_Group* group = &g_view.groups[i];
-		if ((group->listType == MT5_LIST_TRANSLUCENT) != translucent)
-			continue;
-		int mode = group->listType == MT5_LIST_TRANSLUCENT ? 2 : group->listType == MT5_LIST_PUNCH_THROUGH ? 1 : 0;
-		SetShaderValue(g_view.shader, g_view.modeLoc, &mode, SHADER_UNIFORM_INT);
-		bool hasTexture = group->texture < g_view.textureCount && g_view.textures[group->texture].id > 0;
-		g_view.material.maps[MATERIAL_MAP_DIFFUSE].texture = hasTexture ? g_view.textures[group->texture] : white;
-		if (hasTexture) {
-			// The textures are shared by groups with different wrapping
-			unsigned int id = g_view.textures[group->texture].id;
-			rlTextureParameters(id, RL_TEXTURE_WRAP_S, WrapMode(group->uvFlags, MT5_UV_FLIP_U, MT5_UV_CLAMP_U));
-			rlTextureParameters(id, RL_TEXTURE_WRAP_T, WrapMode(group->uvFlags, MT5_UV_FLIP_V, MT5_UV_CLAMP_V));
+		if (g_view.groups[i].listType == MT5_LIST_TRANSLUCENT)
+			SortTriangles(&g_view.groups[i], camera.position, forward);
+	}
+	g_view.sorted = true;
+	g_view.sortedEye = camera.position;
+	g_view.sortedTarget = camera.target;
+}
+
+static void DrawGroup(const MT5View_Group* group) {
+	Texture white = { rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
+	int mode = group->listType == MT5_LIST_TRANSLUCENT ? 2 : group->listType == MT5_LIST_PUNCH_THROUGH ? 1 : 0;
+	SetShaderValue(g_view.shader, g_view.modeLoc, &mode, SHADER_UNIFORM_INT);
+	bool hasTexture = group->texture < g_view.textureCount && g_view.textures[group->texture].id > 0;
+	g_view.material.maps[MATERIAL_MAP_DIFFUSE].texture = hasTexture ? g_view.textures[group->texture] : white;
+	if (hasTexture) {
+		// The textures are shared by groups with different wrapping
+		unsigned int id = g_view.textures[group->texture].id;
+		rlTextureParameters(id, RL_TEXTURE_WRAP_S, WrapMode(group->uvFlags, MT5_UV_FLIP_U, MT5_UV_CLAMP_U));
+		rlTextureParameters(id, RL_TEXTURE_WRAP_T, WrapMode(group->uvFlags, MT5_UV_FLIP_V, MT5_UV_CLAMP_V));
+	}
+	DrawMesh(group->mesh, g_view.material, MatrixIdentity());
+}
+
+// Opaque and punch-through groups first, then the translucent ones from back to front. The translucent polygons write
+// the depth: a polygon behind another one that is drawn before is hidden instead of drawn on top
+static void DrawGroups(void) {
+	for (uint32_t i = 0; i < g_view.groupCount; i++) {
+		if (g_view.groups[i].listType != MT5_LIST_TRANSLUCENT)
+			DrawGroup(&g_view.groups[i]);
+	}
+
+	float lastDepth = INFINITY;
+	uint32_t lastGroup = UINT32_MAX;
+	for (;;) {
+		// Next farthest group after the last one drawn (equal depths in index order)
+		uint32_t next = UINT32_MAX;
+		for (uint32_t i = 0; i < g_view.groupCount; i++) {
+			const MT5View_Group* group = &g_view.groups[i];
+			if (group->listType != MT5_LIST_TRANSLUCENT)
+				continue;
+			bool after = group->depth < lastDepth || (group->depth == lastDepth && (lastGroup == UINT32_MAX || i > lastGroup));
+			bool farther = next == UINT32_MAX || group->depth > g_view.groups[next].depth;
+			if (after && farther)
+				next = i;
 		}
-		DrawMesh(group->mesh, g_view.material, MatrixIdentity());
+		if (next == UINT32_MAX)
+			break;
+		DrawGroup(&g_view.groups[next]);
+		lastDepth = g_view.groups[next].depth;
+		lastGroup = next;
 	}
 }
 
@@ -567,10 +663,8 @@ void MT5View_Draw(Rectangle area) {
 	rlDisableBackfaceCulling();
 	if (g_view.wireframe)
 		rlEnableWireMode();
-	DrawGroups(false);
-	rlDisableDepthMask();
-	DrawGroups(true);
-	rlEnableDepthMask();
+	SortTranslucent(camera);
+	DrawGroups();
 	rlDisableWireMode();
 	rlEnableBackfaceCulling();
 
