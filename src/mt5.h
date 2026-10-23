@@ -16,7 +16,7 @@ typedef struct {
 typedef struct {
 	int32_t		vertex; // Negative: vertex (parent vertexCount + vertex) of the mesh of the parent node
 	float		u, v;
-	uint32_t	color;  // ARGB, 0xFFFFFFFF if the strip has no vertex colors
+	uint32_t	color;  // ARGB, the base color of the colors chunk (or 0xFFFFFFFF) if the strip has no vertex colors
 } MT5_Corner;
 
 typedef enum {

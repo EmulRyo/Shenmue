@@ -58,7 +58,8 @@ typedef enum {
 	MT5_CHUNK_UNKNOWN_8          = 0x0008, // uint16 value
 	MT5_CHUNK_TEXTURE            = 0x0009, // uint16 texture index
 	MT5_CHUNK_UV_SCALE           = 0x000B, // uint16 UV divisor
-	MT5_CHUNK_COLORS             = 0x000E, // uint16 size + base and offset ARGB colors
+	MT5_CHUNK_COLORS             = 0x000E, // uint16 size + base and offset ARGB colors. The base color is the color of
+	                                       // the vertices of the next strips without vertex colors
 	MT5_CHUNK_STRIP              = 0x0010, // Strips of vertex indices
 	MT5_CHUNK_STRIP_UV           = 0x0011, // Strips of vertex index, u, v
 	MT5_CHUNK_STRIP_13           = 0x0013, // Strips of vertex indices
@@ -71,6 +72,7 @@ typedef struct {
 	uint16_t	texture;
 	uint8_t		listType;
 	uint8_t		uvFlags;
+	uint32_t	baseColor; // Of the last colors chunk
 	float		uvScale;
 	uint32_t	capacity;
 } MT5_FaceState;
@@ -91,8 +93,8 @@ static uint32_t Read32(const uint8_t* data) {
 	return value;
 }
 
-static MT5_Corner ReadCorner(const uint8_t* entry, bool hasUV, bool hasColor, float uvScale) {
-	MT5_Corner corner = { (int16_t)Read16(entry), 0.0f, 0.0f, 0xFFFFFFFF };
+static MT5_Corner ReadCorner(const uint8_t* entry, bool hasUV, bool hasColor, float uvScale, uint32_t baseColor) {
+	MT5_Corner corner = { (int16_t)Read16(entry), 0.0f, 0.0f, baseColor };
 	entry += 2;
 	if (hasUV) {
 		corner.u = (int16_t)Read16(entry) / uvScale;
@@ -148,9 +150,9 @@ static bool ReadStrips(const uint8_t* buffer, size_t pos, MT5_Node* node, MT5_Fa
 		// The strips are clockwise, the triangles are stored counter-clockwise
 		for (size_t j = 0; j + 2 < length; j++) {
 			const uint8_t* entry = buffer + pos + j * entrySize;
-			MT5_Corner c0 = ReadCorner(entry, hasUV, hasColor, state->uvScale);
-			MT5_Corner c1 = ReadCorner(entry + entrySize, hasUV, hasColor, state->uvScale);
-			MT5_Corner c2 = ReadCorner(entry + entrySize * 2, hasUV, hasColor, state->uvScale);
+			MT5_Corner c0 = ReadCorner(entry, hasUV, hasColor, state->uvScale, state->baseColor);
+			MT5_Corner c1 = ReadCorner(entry + entrySize, hasUV, hasColor, state->uvScale, state->baseColor);
+			MT5_Corner c2 = ReadCorner(entry + entrySize * 2, hasUV, hasColor, state->uvScale, state->baseColor);
 			bool added = (j & 1) == 0 ? AddTriangle(node, state, c0, c2, c1) : AddTriangle(node, state, c0, c1, c2);
 			if (!added)
 				return false;
@@ -161,7 +163,7 @@ static bool ReadStrips(const uint8_t* buffer, size_t pos, MT5_Node* node, MT5_Fa
 }
 
 static bool ReadFaces(const uint8_t* buffer, size_t size, size_t pos, MT5_Node* node) {
-	MT5_FaceState state = { 0, MT5_LIST_OPAQUE, 0, 1024.0f, 0 };
+	MT5_FaceState state = { 0, MT5_LIST_OPAQUE, 0, 0xFFFFFFFF, 1024.0f, 0 };
 	while (InBounds(size, pos, 2)) {
 		uint16_t type = Read16(buffer + pos);
 		if (type == MT5_CHUNK_END)
@@ -192,6 +194,8 @@ static bool ReadFaces(const uint8_t* buffer, size_t size, size_t pos, MT5_Node* 
 		case MT5_CHUNK_COLORS:
 			if (!InBounds(size, pos + 4, value))
 				return false;
+			if (value >= 4)
+				state.baseColor = Read32(buffer + pos + 4);
 			pos += 4 + value;
 			break;
 		case MT5_CHUNK_UNKNOWN_8:

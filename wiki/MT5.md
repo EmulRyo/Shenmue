@@ -134,6 +134,8 @@ The PowerVR of the Dreamcast sorts the translucent polygons by depth, so the mod
 | 0x00   | 4    | uint32 | `base`   | Base color, ARGB (e.g. `0xFFFFFFFF`, `0xFFB2B2B2`)                |
 | 0x04   | 4    | uint32 | `offset` | Offset (specular) color, ARGB. Usually `0xFF000000` or `0xFFFFFFFF` |
 
+The polygons use the intensity mode of the PowerVR (PCW `0x808C002E`: bits 4–5 = 2), where the color of the polygon is the base color multiplied by the lighting, and it multiplies the texture. The base color applies to the next strips without vertex colors (`0x0010`, `0x0011`, `0x0013`) until the next colors chunk; it is white if there is none. Many models are colored only by it, with white or almost white textures: e.g. the red shoes of Tails (`model/item/gacrtl1g.mt5`, base `0xFFFF0000`) or the blue of Metal Sonic (`gacrmetg.mt5`). Of the 145 different base colors of the game, `0xFFFFFFFF` is used by 95 % of the chunks, followed by greys (`0xFFB2B2B2`, `0xFFCCCCCC`…). The viewer doesn't use the offset color, which is probably scaled by a specular intensity computed at runtime.
+
 ### Strips
 
 | Offset | Size | Type     | Name     | Description                                              |
