@@ -9,7 +9,7 @@ Tool to explore and extract the files of Shenmue I & II (PC version). It is writ
 - Decompress gzip compressed files automatically.
 - View `PVR` and `SPR` textures and save them as PNG, JPG or BMP.
 - Decode the commands of `CHRT` character scripts.
-- Print the dialogue lines of `SCNF` files: voice, speaker, duration and subtitle (converted from EUC-JP).
+- Print the dialogue lines of `SCNF` files: voice, speaker, duration and subtitle (converted from EUC-JP), and disassemble the script that chooses them.
 - View `MT5`/`CHRM` models in 3D, with their textures, and print their node tree, meshes and textures.
 
 The file formats are described in the [wiki](https://github.com/EmulRyo/Shenmue/wiki) (source pages in [`wiki/`](wiki)).

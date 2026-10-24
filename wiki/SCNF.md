@@ -1,6 +1,6 @@
 # SCNF — Dialogue lines
 
-A SCNF file holds the dialogue lines of one or more characters: for each line, the name of its voice clip, its duration and its subtitle. It also holds a script (bytecode) that isn't known yet.
+A SCNF file holds the dialogue lines of one or more characters: for each line, the name of its voice clip, its duration and its subtitle. It also holds a script (bytecode) that chooses the lines to say.
 
 Every character of `scene/01/stream/humans` has one, inside the [IPAC](IPAC) block of its [PKS](PKS) (e.g. `AKMI.pks` → `AKMI.BIN`, next to the model `HOS_L.CHRM`). Its IPAC extension is `BIN`. SCNF data is also found inside other files: `misc/cold.bin` (a [PKS](PKS) whose SCNF entry has 6 blocks with the lines Ryo says when it is late) and the end of `scene/0x/jhd0/mapinfo.bin`.
 
@@ -34,7 +34,7 @@ Each block:
 +------------------------+ voicePathOffset
 | Voice path             |  null terminated, padded to 4 bytes
 +------------------------+ scriptOffset
-| Script                 |  bytecode, unknown
+| Script                 |  bytecode
 +------------------------+ linesOffset
 | Lines                  |  16 bytes each
 +------------------------+
@@ -89,7 +89,7 @@ The index of a character is the letter of the voices it speaks: `A` for the firs
 
 ### Script
 
-Bytecode between `scriptOffset` and `linesOffset`; its format is unknown.
+Bytecode between `scriptOffset` and `linesOffset` that chooses the lines to say: it checks flags, the date and the time, chooses lines at random and plays them. See [Script bytecode](#script-bytecode).
 
 ### Line (16 bytes)
 
@@ -119,3 +119,96 @@ The subtitles are null terminated strings in **EUC-JP**: the name of the speaker
 | `3D 40`        | `=@`      | Ellipsis     |
 
 The texts are in English, except in 22 files with Japanese lines (e.g. `KZKI.bin`, `YAMO.bin`) and in `mapinfo.bin`. 7 subtitles have a space after `」`.
+
+## Script bytecode
+
+The script of a block (60 to 8,164 bytes in the character files) is a list of instructions run from the start. Most of its meaning comes from the lines it plays; the meaning of the procedures, of some variables and of some instructions is unknown.
+
+### Encoding
+
+The highest 4 bits of the first byte are the opcode; the rest of the instruction is the argument, **big-endian** (unlike the rest of the file):
+
+| First byte    | Size    | Argument                                   |
+|---------------|--------:|--------------------------------------------|
+| `8X`, `FX`    | 1 byte  | The lowest 4 bits                          |
+| `F2`, `F5`    | 4 bytes | The next 3 bytes (24 bits)                 |
+| `DX`          | 3 bytes | The lowest 4 bits and the next 2 bytes (20 bits) |
+| The rest      | 2 bytes | The lowest 4 bits and the next byte (12 bits) |
+
+The jumps (`1X`, `4X`, `5X`, `9X`, `DX`, `F2`, `F5`) are relative to the end of the instruction and only go forward. Over the 262 character files, 60,809 of the 60,836 jumps land on an instruction; the rest are in 4 files with data that isn't code (e.g. a table of `5X` jumps in `FUKU.bin`). The scripts end with 1 to 4 `FF` bytes, so that their size is a multiple of 4.
+
+### Instructions
+
+| Opcode    | Name     | Count  | Description                                                                 |
+|-----------|----------|-------:|-----------------------------------------------------------------------------|
+| `F0`      | If       | 13,763 | Start of a condition: an [expression](#expressions) that ends with `80`, followed by a `4X` jump |
+| `4X n`    | If not   | 13,762 | Jumps `n` bytes if the condition is false                                   |
+| `5X n`    | Jump     | 46,918 | Jumps `n` bytes                                                            |
+| `DX n`    | Call     | 7,957  | Calls the subroutine `n` bytes ahead; the target is always a `1X` instruction |
+| `1X n`    | Block    | 4,372  | Start of a subroutine that ends `n` bytes ahead, at a `50 00` jump in 4,342 of them. The subroutines are inside an `if (0)`, so they only run when they are called |
+| `2X n`    | Line     | 61,621 | Plays the line `n` of the [table of lines](#line-16-bytes)                  |
+| `EX n`    | Random   | 11,785 | Plays one of the next `n` options, chosen at random                         |
+| `0X n`    | Option   | 33,058 | Start of an option of `EX`: `n` is its size in bytes. The option ends with a jump to the end of the `EX` |
+| `FD`      | —        | 1,068  | Empty option (the only instruction of the option before its jump)           |
+| `6X n`    | Set flag | 655    | Sets the flag `n` (e.g. after a character explains something to Ryo)        |
+| `3X n`    | Procedure| 20,020 | Unknown action of the game. `30 28` (8,503), `30 10` (6,789) and `30 32` (3,682) surround almost every conversation |
+| `CX n`    | —        | 2,497  | Unknown action (e.g. `C2 41`, `C2 42`, `C7 0B`), usually between lines      |
+| `F1`      | —        | 4,493  | Start of a part of a conversation                                            |
+| `9X n`    | —        | 2,668  | After `F1`: jumps to the end of the part (an `F6` in 2,615 of them); probably skips the part when it was already said |
+| `F2 n`    | —        | 8,164  | Usually `F2 00 00 00` (jump 0) at the start of a part. With another value, it points to a subroutine (`1X`), probably the conversation to use the next time |
+| `F5 n`    | —        | 1,709  | Points to a subroutine (`1X`), always followed by `F1`                      |
+| `F3`      | —        | 66     | Start of a greeting, before `30 28`                                         |
+| `F6`, `F8`, `F9` | — | 2,676, 1,219, 474 | End of a part or a conversation, usually after `30 32` (`F6`, `F8`) or after a line (`F9`) |
+| `FF`      | End      | 656    | End of the script, repeated up to a multiple of 4 bytes                     |
+
+`AX` and `F4` appear once as instructions.
+
+### Expressions
+
+The expressions are in postfix notation (operands first, then the operator) between `F0` and `80`:
+
+| Opcode | Operand            | Description                                                              |
+|--------|--------------------|--------------------------------------------------------------------------|
+| `0X n` | Flag `n`           | True if the flag `n` is set; most scripts start by checking the progress of the story with them |
+| `6X n` | Constant `n`       | e.g. `60 01` = 1                                                         |
+| `5X n` | Constant `n − 0x1000` | Only `5F FF` = −1                                                     |
+| `CX n` | Variable `n`       | `C0 00` is compared with 0–5 at the start of most scripts (unknown meaning) |
+| `AX n` | Date and time      | `A0 00` year (compared with 86 and 87), `A0 01` month, `A0 02` day, `A0 04` hour, `A0 05` minute |
+| `EX n`, `4X n` | Unknown    | Compared with 0–2 (`EX` also alone, as a condition)                     |
+
+| Opcode | Operator      | Description                                                             |
+|--------|---------------|-------------------------------------------------------------------------|
+| `84`   | `!`           | Not, after a flag                                                       |
+| `85`   | `&&`          | And                                                                     |
+| `86`   | `\|\|`        | Or                                                                      |
+| `87`   | `==`          | Equal                                                                   |
+| `88`   | `!=`          | Not equal                                                               |
+| `89`   | `>` (probably)| Used with the hour (`hour 19 89`)                                       |
+| `8A`   | `<`           | e.g. `hour >= 10 && hour < 19` (daytime), `hour >= 19 \|\| hour < 7` (night) |
+| `8C`   | `>=`          |                                                                         |
+| `82`   | Unknown       | Unary, once                                                             |
+
+### Example
+
+The script of `BOB_.bin`:
+
+```
+0000  F0 01 90 80 40 05     if (flag[0x190]) {
+0006  D0 00 1E                  call 0027
+0009  50 00                 }
+000B  ...                   (the same with flag[0x281] and with 1)
+0021  F0 60 00 80 40 51     if (0) {
+0027  10 4D                     block (ends at 0076)
+0029  F2 00 00 00
+002D  30 10                     procedure 0x010
+002F  30 28                     procedure 0x028
+0031  E0 02                     random 2:
+0033  00 04 20 00 50 06             line 0  (涼「Um...」)
+0039  00 04 20 01 50 00             line 1  (涼「Excuse me.」)
+003F  E0 03                     random 3: lines 2, 3, 4
+0053  E0 05                     random 5: lines 5 to 9
+0073  30 32                     procedure 0x032
+0075  F8
+0076  50 00                 }
+0078  FF FF FF FF
+```
