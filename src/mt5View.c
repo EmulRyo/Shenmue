@@ -87,8 +87,8 @@ static const char* g_vertexShader =
 	"    gl_Position = mvp * vec4(vertexPosition, 1.0);\n"
 	"}\n";
 
-// mode: 0 opaque (alpha ignored), 1 punch-through (alpha test), 2 translucent (alpha blending; the transparent pixels
-// are discarded because the translucent polygons write the depth)
+// mode: 0 opaque (alpha ignored), 1 punch-through (alpha test), 2 opaque pixels of translucent polygons, 3 the rest of
+// the pixels of translucent polygons (alpha blending), see DrawGroups
 static const char* g_fragmentShader =
 	"#version 330\n"
 	"in vec2 fragTexCoord;\n"
@@ -101,7 +101,8 @@ static const char* g_fragmentShader =
 	"out vec4 finalColor;\n"
 	"void main() {\n"
 	"    vec4 color = texture(texture0, fragTexCoord) * fragColor * colDiffuse;\n"
-	"    if ((mode == 1 && color.a < 0.5) || (mode == 2 && color.a < 0.004)) discard;\n"
+	"    if ((mode == 1 && color.a < 0.5) || (mode == 2 && color.a < 0.99) ||\n"
+	"        (mode == 3 && (color.a >= 0.99 || color.a < 0.004))) discard;\n"
 	"    float light = 0.45 + 0.55 * abs(dot(normalize(fragNormal), lightDir));\n"
 	"    finalColor = vec4(color.rgb * light, mode == 0 ? 1.0 : color.a);\n"
 	"}\n";
@@ -737,11 +738,10 @@ static void SortTranslucent(Camera3D camera) {
 	g_view.sortedTarget = camera.target;
 }
 
-static void DrawGroup(const MT5View_Group* group) {
+static void DrawGroup(const MT5View_Group* group, int mode) {
 	if (group->frame >= 0 && (uint32_t)group->frame != g_view.frame)
 		return;
 	Texture white = { rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
-	int mode = group->listType == MT5_LIST_TRANSLUCENT ? 2 : group->listType == MT5_LIST_PUNCH_THROUGH ? 1 : 0;
 	SetShaderValue(g_view.shader, g_view.modeLoc, &mode, SHADER_UNIFORM_INT);
 	bool hasTexture = group->texture < g_view.textureCount && g_view.textures[group->texture].id > 0;
 	g_view.material.maps[MATERIAL_MAP_DIFFUSE].texture = hasTexture ? g_view.textures[group->texture] : white;
@@ -754,13 +754,22 @@ static void DrawGroup(const MT5View_Group* group) {
 	DrawMesh(group->mesh, g_view.material, MatrixIdentity());
 }
 
-// Opaque and punch-through groups first, then the translucent ones from back to front. The translucent polygons write
-// the depth: a polygon behind another one that is drawn before is hidden instead of drawn on top
+// Opaque and punch-through groups first, then the translucent ones in two passes. Many solid parts are translucent
+// polygons with opaque textures (e.g. the walls of the box of gach5rrg.mt5), and the groups can't be sorted when they
+// spread over the whole model (e.g. scene/01/toki/map.mt5): the opaque pixels of the translucent polygons are drawn
+// first, writing the depth, and then the rest, from back to front and without writing it, so that they don't hide
+// what is behind them (e.g. the objects behind the glass of a showcase)
 static void DrawGroups(void) {
 	for (uint32_t i = 0; i < g_view.groupCount; i++) {
 		if (g_view.groups[i].listType != MT5_LIST_TRANSLUCENT)
-			DrawGroup(&g_view.groups[i]);
+			DrawGroup(&g_view.groups[i], g_view.groups[i].listType == MT5_LIST_PUNCH_THROUGH ? 1 : 0);
 	}
+	for (uint32_t i = 0; i < g_view.groupCount; i++) {
+		if (g_view.groups[i].listType == MT5_LIST_TRANSLUCENT)
+			DrawGroup(&g_view.groups[i], 2);
+	}
+
+	rlDisableDepthMask();
 
 	float lastDepth = INFINITY;
 	uint32_t lastGroup = UINT32_MAX;
@@ -778,10 +787,11 @@ static void DrawGroups(void) {
 		}
 		if (next == UINT32_MAX)
 			break;
-		DrawGroup(&g_view.groups[next]);
+		DrawGroup(&g_view.groups[next], 3);
 		lastDepth = g_view.groups[next].depth;
 		lastGroup = next;
 	}
+	rlEnableDepthMask();
 }
 
 void MT5View_Draw(Rectangle area) {
