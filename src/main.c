@@ -19,8 +19,10 @@
 #include "pkf.h"
 #include "pks.h"
 #include "chrt.h"
+#include "scnf.h"
 #include "mt5.h"
 #include "mt5View.h"
+#include "file.h"
 
 static HashTable g_filenameDB;
 static TAD_Context g_TADCtx;
@@ -207,6 +209,21 @@ static void OpenFileCHRT(const char* filename) {
     CHRT_Print(filename);
 }
 
+static void OpenFileSCNF(const char* filename) {
+    SCNF_Print(filename);
+}
+
+// Returns the extension given by the magic of the file, or NULL if it is unknown
+static const char* GetExtensionFromMagic(const char* filename) {
+    size_t size = 0;
+    uint8_t* buffer = File_LoadToMemoryDecompressed(filename, &size);
+    if (buffer == NULL)
+        return NULL;
+    const char* ext = File_ExtensionFromMagic(buffer, size);
+    free(buffer);
+    return ext;
+}
+
 static void OpenKnownFile(const char* filename) {
     if (IsFileExtension(filename, ".pvr"))
         OpenFilePVR(filename);
@@ -224,16 +241,24 @@ static void OpenKnownFile(const char* filename) {
         OpenFileMT5(filename);
     else if (IsFileExtension(filename, ".chrt"))
         OpenFileCHRT(filename);
-    else
-        printf("File not implemented yet: %s\n", filename);
+    else if (IsFileExtension(filename, ".scnf"))
+        OpenFileSCNF(filename);
+    else {
+        // Files with a generic extension (e.g. ".bin") are opened by their magic
+        const char* ext = GetExtensionFromMagic(filename);
+        if (ext != NULL && strcmp(ext, "scnf") == 0)
+            OpenFileSCNF(filename);
+        else
+            printf("File not implemented yet: %s\n", filename);
+    }
 }
 
 static void OpenFileDialog() {
     nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[5] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "snd" }, { "Scripts", "chrt" } };
+    nfdu8filteritem_t filters[6] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
-    args.filterCount = 5;
+    args.filterCount = 6;
     nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
 		OpenKnownFile(outPath);

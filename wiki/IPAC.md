@@ -42,3 +42,4 @@ All offsets are relative to the start of the IPAC block.
 - A file can be compressed with [gzip](Home#compression).
 - The `extension` field doesn't always match the content (e.g. textures are stored as `BIN`); the [magic](Home#magic-numbers) of the data is more reliable.
 - The entries with the `CHRM` extension are [MT5](MT5) models (magic `HRCM`) whose textures are stored outside the model.
+- The dialogue lines of the characters ([SCNF](SCNF), magic `SCNF`) have the `BIN` extension.

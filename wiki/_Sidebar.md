@@ -14,6 +14,9 @@
 **Scripts**
 - [CHRT](CHRT)
 
+**Dialogues**
+- [SCNF](SCNF)
+
 **Textures**
 - [PVR](PVR)
 - [SPR](SPR)

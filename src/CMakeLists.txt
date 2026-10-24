@@ -28,6 +28,8 @@ set(SRC
     src/pvr.c
     src/pvr.h
     src/raygui.h
+    src/scnf.c
+    src/scnf.h
     src/spr.c
     src/spr.h
     src/stringBuilder.c

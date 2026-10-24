@@ -13,6 +13,7 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [PKS](PKS)         | `.pks`        | `PAKS`           | Container         | IPAC block                                   |
 | [IPAC](IPAC)       | —             | `IPAC`           | Container (block) | Named files inside PKF/PKS                   |
 | [CHRT](CHRT)       | `.chrt`       | `CHRS`           | Script            | Character script                             |
+| [SCNF](SCNF)       | — (`BIN`)     | `SCNF`           | Dialogue          | Voice and subtitle of each dialogue line     |
 | [MT5 / CHRM](MT5)  | `.mt5` `.chrm` | `HRCM`          | Model             | 3D model (CHRM: textures stored in the PKF)  |
 | [PVR](PVR)         | `.pvr`        | `GBIX` / `PVRT`  | Texture           | PowerVR texture                              |
 | [SPR](SPR)         | `.spr`        | `TEXN`           | Texture           | TEXN block with a PVR texture                |
@@ -24,7 +25,7 @@ TAD/TAC
  ├─ AFS (+ IDX for the names)
  │   ├─ PKF ─┬─ TEXN → PVR / DDS
  │   │       └─ IPAC → CHRT, PVR, ...
- │   └─ PKS ─── IPAC → CHRT, CHRM (textures in the PKF), PVR, ...
+ │   └─ PKS ─── IPAC → CHRT, CHRM (textures in the PKF), SCNF, PVR, ...
  ├─ MT5 → TEXN → PVR / DDS
  ├─ PVR
  ├─ SPR → PVR
@@ -48,6 +49,7 @@ Most formats can be identified by their first bytes. This is useful in container
 | `RIFF` .... `XWMA`            | `.xwm`    | xWMA audio              |
 | `DXBC`                        | —         | Compiled DirectX shader |
 | `CHRS`                        | `.chrt`   | [CHRT](CHRT)            |
+| `SCNF`                        | —         | [SCNF](SCNF)            |
 | `HRCM`                        | `.mt5` `.chrm` | [MT5 / CHRM](MT5)  |
 | `PAKF`                        | `.pkf`    | [PKF](PKF)              |
 | `PAKS`                        | `.pks`    | [PKS](PKS)              |
