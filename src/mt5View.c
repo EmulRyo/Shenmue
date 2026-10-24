@@ -105,11 +105,21 @@ static const char* g_fragmentShader =
 	"    finalColor = vec4(color.rgb * light, mode == 0 ? 1.0 : color.a);\n"
 	"}\n";
 
+// Rotation around Y of a node in degrees. The feet (0x12, 0x17) of the bodies are rotated (45, -90, 45), but a few
+// models (SG*_L.chrm, BGA_L.chrm, bga_l.mt5) have 0xFFFF (almost 0) instead of 0xC000 (-90) and the feet point sideways
+static float NodeRotationY(const MT5_Node* node) {
+	uint32_t id = node->id & 0xFFFF;
+	bool foot = id == 0x12 || id == 0x17;
+	if (foot && node->rotation[1] > 359.99f && fabsf(node->rotation[0] - 45.0f) < 2.0f && fabsf(node->rotation[2] - 45.0f) < 2.0f)
+		return -90.0f;
+	return node->rotation[1];
+}
+
 // Scale, rotation around X, Y and Z, and translation, relative to the parent
 static Matrix NodeMatrix(const MT5_Node* node) {
 	Matrix matrix = MatrixScale(node->scale[0], node->scale[1], node->scale[2]);
 	matrix = MatrixMultiply(matrix, MatrixRotateX(node->rotation[0] * DEG2RAD));
-	matrix = MatrixMultiply(matrix, MatrixRotateY(node->rotation[1] * DEG2RAD));
+	matrix = MatrixMultiply(matrix, MatrixRotateY(NodeRotationY(node) * DEG2RAD));
 	matrix = MatrixMultiply(matrix, MatrixRotateZ(node->rotation[2] * DEG2RAD));
 	return MatrixMultiply(matrix, MatrixTranslate(node->position[0], node->position[1], node->position[2]));
 }

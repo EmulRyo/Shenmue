@@ -50,7 +50,7 @@ The transform of a node is relative to its parent and is applied in this order: 
 |-------:|-----:|-----------|-----------------|-----------------------------------------------------------------------------|
 | 0x00   | 4    | uint32    | `id`            | Node (bone) ID. The lowest byte looks like the bone number; the next byte is `0x00` or `0xFF` and the upper 16 bits `0` or `1` (unknown meaning) |
 | 0x04   | 4    | uint32    | `meshOffset`    | Position of the [mesh header](#mesh-header-0x20-bytes), 0 if the node has no mesh |
-| 0x08   | 12   | int32[3]  | `rotation`      | Rotation around X, Y, Z. `0x10000` = 360°                                   |
+| 0x08   | 12   | int32[3]  | `rotation`      | Rotation around X, Y, Z. `0x10000` = 360°. Only the lowest 16 bits are used (e.g. `0xFFFF` = −1, `0xC000` = −90°). See [rotation of the feet](#rotation-of-the-feet) |
 | 0x14   | 12   | float[3]  | `scale`         | Scale                                                                       |
 | 0x20   | 12   | float[3]  | `position`      | Position, relative to the parent                                            |
 | 0x2C   | 4    | uint32    | `childOffset`   | First child node                                                            |
@@ -58,6 +58,10 @@ The transform of a node is relative to its parent and is applied in this order: 
 | 0x34   | 4    | uint32    | `parentOffset`  | Parent node. It is 0 in the root and in some nodes that are not the root (see [alternative meshes](#alternative-meshes)) |
 | 0x38   | 4    | char[4]   | `name`          | 4 characters in the root node of some characters (e.g. `HOSL` in `HOS_L.chrm`), 0 otherwise |
 | 0x3C   | 4    | uint32    | `unknown`       | Unknown, always 0                                                           |
+
+### Rotation of the feet
+
+The feet of the bodies (`0x0012` and `0x0017`) are rotated (`0x2000`, `0xC000`, `0x2000`), i.e. (45°, −90°, 45°), or a value close to it (e.g. `0x2018`): 1202 of the 1345 feet. In 16 feet of 8 models (`SGD_L`, `SGE_L`, `SGI_L`, `SGK_L`, `SGM_L` and `SGN_L.chrm` of `scene/01/stream/humans`, and one foot of `BGA_L.chrm` and `model/chara/bga_l.mt5`) the rotation around Y is `0xFFFF` (almost 0) instead of `0xC000`, and the feet point sideways; with `0xC000` they are like the rest. In the game the motions replace the rotations of the bones, so it isn't seen. The viewer uses −90° in the feet with Y = `0xFFFF` and X and Z close to 45°. Most of the other feet (125) have no rotation (0, 0, 0).
 
 ## Mesh header (0x20 bytes)
 
