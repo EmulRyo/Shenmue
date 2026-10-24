@@ -44,7 +44,7 @@ All offsets are absolute (from the start of the file); an offset of 0 means none
 
 The nodes form a tree: each node points to its first child and to its next sibling.
 
-The transform of a node is relative to its parent and is applied in this order: `scale`, rotation around X, rotation around Y, rotation around Z and `position`. The coordinate system is right-handed with Y up. The characters (the bodies, which have the head node `0xFFBD`, and their [faces and hands](#faces-and-hands)) look to −Z; the rest of the models (e.g. the items of `model/item`) look to +Z. All the nodes of the maps (e.g. `scene/01/betd/map.mt5`) have the ID `0xFFFF`, the root included.
+The transform of a node is relative to its parent and is applied in this order: `scale`, rotation around X, rotation around Y, rotation around Z and `position`. The coordinate system is right-handed with Y up. The face of a character looks to the X axis of its head node (`0xFFBD`, or the node 3 under the node 1 in old bodies without it, e.g. `KOB_L.chrm`, which have the shoulders and upper arms `0x0004` → `0x0005` and `0x0009` → `0x000A`): −Z in most bodies, +Z in a few whose root is rotated 180° around Y (e.g. `scene/01/d000/buss/OGM_L.chrm`). The [faces and hands](#faces-and-hands) are in the space of the head and the hands; the rest of the models (e.g. the items of `model/item`) look to +Z. All the nodes of the maps (e.g. `scene/01/betd/map.mt5`) have the ID `0xFFFF`, the root included.
 
 | Offset | Size | Type      | Name            | Description                                                                 |
 |-------:|-----:|-----------|-----------------|-----------------------------------------------------------------------------|
@@ -89,7 +89,7 @@ The faces of a mesh are a list of chunks. Each chunk starts with a `uint16` type
 | `0x0004` | 2 + `size`         | Same as `0x0002`. Punch-through polygons (only seen in MT5 files)                              |
 | `0x0008` | 2                  | `uint16` unknown. Usually 0; also 0x1E, 0x22, 0x32, 0xB4, 0x12C                              |
 | `0x0009` | 2                  | `uint16` index of the texture used by the next strips, in the [texture list](#textures)       |
-| `0x000B` | 2                  | `uint16` UV divisor: UV = value / divisor. Usually 0x400; also 0x200 and 0x100                |
+| `0x000B` | 2                  | `uint16` UV divisor: UV = value / divisor. Usually 0x400; also 0x200 and 0x100. Without this chunk (only in `KOB_L.chrm`, `model/object/line.mt5` and `pilon.mt5`) the UVs go from 0 to 0x100: the divisor is 0x100 |
 | `0x000E` | 2 + `size`         | `uint16 size` (8) + [colors](#colors-8-bytes) of the next strips                              |
 | `0x0010` | 2 + `size`         | [Strips](#strips): vertex index                                                               |
 | `0x0011` | 2 + `size`         | [Strips](#strips): vertex index, U, V                                                         |

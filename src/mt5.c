@@ -57,7 +57,7 @@ typedef enum {
 	MT5_CHUNK_ATTR_PUNCH_THROUGH = 0x0004, // Same as MT5_CHUNK_ATTR_OPAQUE
 	MT5_CHUNK_UNKNOWN_8          = 0x0008, // uint16 value
 	MT5_CHUNK_TEXTURE            = 0x0009, // uint16 texture index
-	MT5_CHUNK_UV_SCALE           = 0x000B, // uint16 UV divisor
+	MT5_CHUNK_UV_SCALE           = 0x000B, // uint16 UV divisor (256 if there is none)
 	MT5_CHUNK_COLORS             = 0x000E, // uint16 size + base and offset ARGB colors. The base color is the color of
 	                                       // the vertices of the next strips without vertex colors
 	MT5_CHUNK_STRIP              = 0x0010, // Strips of vertex indices
@@ -163,7 +163,7 @@ static bool ReadStrips(const uint8_t* buffer, size_t pos, MT5_Node* node, MT5_Fa
 }
 
 static bool ReadFaces(const uint8_t* buffer, size_t size, size_t pos, MT5_Node* node) {
-	MT5_FaceState state = { 0, MT5_LIST_OPAQUE, 0, 0xFFFFFFFF, 1024.0f, 0 };
+	MT5_FaceState state = { 0, MT5_LIST_OPAQUE, 0, 0xFFFFFFFF, 256.0f, 0 }; // Without UV divisor chunk (e.g. KOB_L.chrm) the UVs go from 0 to 256
 	while (InBounds(size, pos, 2)) {
 		uint16_t type = Read16(buffer + pos);
 		if (type == MT5_CHUNK_END)

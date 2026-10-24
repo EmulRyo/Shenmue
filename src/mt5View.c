@@ -60,7 +60,7 @@ typedef struct {
 	uint32_t		frame;
 	float			frameTime;  // Time since the current frame was shown
 	bool			paused;
-	bool			character; // The characters look to -Z, the rest of the models to +Z
+	Vector3			front;     // Direction the model looks to, the camera starts there
 	bool			sorted;    // The translucent triangles are sorted for the camera at sortedEye, sortedTarget
 	Vector3			sortedEye;
 	Vector3			sortedTarget;
@@ -238,13 +238,38 @@ static bool PartMatrix(const MT5_Model* model, Matrix* matrix) {
 	}
 }
 
-// The bodies of the characters have the head node (0xFFBD); the rest of the models (items, objects) have no bones
-static bool HasHead(const MT5_Model* model) {
+// First node with the given ID (lowest 16 bits) whose parent has the given ID, or any parent if parentID is UINT32_MAX.
+// Returns -1 if there is none
+static int32_t FindNode(const MT5_Model* model, uint32_t id, uint32_t parentID) {
 	for (uint32_t i = 0; i < model->nodeCount; i++) {
-		if ((model->nodes[i].id & 0xFFFF) == 0xFFBD)
-			return true;
+		int32_t parent = model->nodes[i].parent;
+		if ((model->nodes[i].id & 0xFFFF) == id &&
+			(parentID == UINT32_MAX || (parent >= 0 && (model->nodes[parent].id & 0xFFFF) == parentID)))
+			return (int32_t)i;
 	}
-	return false;
+	return -1;
+}
+
+// Head of the body of a character: the node 0xFFBD, or in some old models (e.g. KOB_L.chrm) the node 3 under the node 1
+// if the model has the shoulders and upper arms (4 -> 5, 9 -> 0xA). Returns -1 if the model is not a body (items,
+// objects)
+static int32_t FindHead(const MT5_Model* model) {
+	int32_t head = FindNode(model, 0xFFBD, UINT32_MAX);
+	if (head < 0 && FindNode(model, 0x05, 0x04) >= 0 && FindNode(model, 0x0A, 0x09) >= 0)
+		head = FindNode(model, 0x03, 0x01);
+	return head;
+}
+
+// The face looks to the X axis of the head: -Z in most bodies, +Z in a few whose root is rotated (e.g. OGM_L.chrm). The
+// faces and hands are rotated to look to -Z, and the rest of the models look to +Z
+static Vector3 FrontDirection(const MT5_Model* model, const Matrix* world, bool part) {
+	if (part)
+		return (Vector3) { 0.0f, 0.0f, -1.0f };
+	int32_t head = FindHead(model);
+	if (head < 0)
+		return (Vector3) { 0.0f, 0.0f, 1.0f };
+	Vector3 front = { world[head].m0, 0.0f, world[head].m2 }; // X axis on the ground
+	return Vector3Length(front) > 0.1f ? Vector3Normalize(front) : (Vector3) { 0.0f, 0.0f, -1.0f };
 }
 
 static bool IsLeaf(const MT5_Model* model, uint32_t node) {
@@ -313,7 +338,7 @@ static bool BuildMeshes(const MT5_Model* model) {
 	bool* hidden = (bool*)(nodeFrame + model->nodeCount);
 	g_view.frameCount = FindFrames(model, nodeFrame);
 	Matrix part;
-	g_view.character = PartMatrix(model, &part) || HasHead(model);
+	bool isPart = PartMatrix(model, &part);
 	// The nodes are in depth first order, the parents are before their children
 	for (uint32_t i = 0; i < model->nodeCount; i++) {
 		int32_t parent = model->nodes[i].parent;
@@ -324,6 +349,7 @@ static bool BuildMeshes(const MT5_Model* model) {
 		if (hidden[i] && model->nodes[i].hasMesh)
 			g_view.hiddenNodes++;
 	}
+	g_view.front = FrontDirection(model, world, isPart);
 
 	// Count the triangles of each group
 	for (uint32_t n = 0; n < model->nodeCount; n++) {
@@ -489,7 +515,7 @@ static bool LoadTextures(const MT5_Model* model, const char* filepath) {
 
 static void ResetCamera(void) {
 	g_view.target = g_view.center;
-	g_view.yaw = g_view.character ? PI : 0.0f; // Look at the front of the model
+	g_view.yaw = atan2f(g_view.front.x, g_view.front.z); // Look at the front of the model
 	g_view.pitch = 0.2f;
 	g_view.distance = g_view.radius / sinf(MT5VIEW_FOVY * 0.5f * DEG2RAD);
 }
