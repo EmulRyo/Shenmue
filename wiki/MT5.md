@@ -132,7 +132,7 @@ Symmetric details use the flip to store only part of the image: the wheels of `m
 
 The PowerVR of the Dreamcast sorts the translucent polygons by depth, so the models don't store them in drawing order, and many solid parts are in the translucent list with textures that are opaque in most pixels: e.g. the walls of the box of `model/item/gach5rrg.mt5` and the base of `gach5slg.mt5`. Drawn in file order without sorting, the walls at the back are drawn on top of the front ones.
 
-Sorting by groups of polygons isn't enough either: some groups spread over the whole model (e.g. a texture used in all the room of `scene/01/toki/map.mt5`), and the glass of its showcases hid the objects behind it depending on the angle. The viewer draws the translucent polygons after the opaque and punch-through ones in two passes: first their opaque pixels (alpha ≥ 0.99), writing the depth, and then the rest, sorted from back to front when the camera moves and without writing the depth.
+The polygons with the same texture can spread over the whole model (e.g. a texture used in all the room of `scene/01/toki/map.mt5`), and the translucent list mixes solid parts with really transparent ones, like the glass of the showcases of that room with the objects behind it: they need to be sorted by polygon (or by pixel, like the PowerVR), not by texture.
 
 ### Colors (8 bytes)
 
