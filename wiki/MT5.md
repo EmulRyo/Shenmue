@@ -166,6 +166,19 @@ A negative vertex index `-n` points to the vertex `vertexCount - n` of the mesh 
 
 Some character models have a second branch under the root with copies of a node that have no mesh (same `id` as the head) and children with `parentOffset` = 0 and the same `id` as the face. They look like alternative faces (e.g. expressions) that replace the face mesh. Their negative vertex indices point to the mesh of the node with the same `id` as their parent (the head). The copy of the head is placed at the origin, not at the head, so these meshes are only correct when attached to the original node; the viewer doesn't show them.
 
+## Animation frames
+
+Some models are animations made of frames: a node without mesh whose children are the frames, 3 or more leaf nodes with a mesh, the same transform and overlapping bounding spheres. Shown at the same time, the frames overlap. They are found in:
+
+| Models                                                         | Frames | Root ID  | Content                                          |
+|----------------------------------------------------------------|-------:|----------|--------------------------------------------------|
+| `model/object/hat02l*p.mt5`, `hato/`, `scene/0x/mfsy/z4h02l*p.mt5` | 20     | `0x004F` | Pigeon: 12 frames with the wings open (82 triangles), 8 with the wings folded (62 triangles) |
+| `model/object/*160201p.mt5`, `gull/`, `scene/0x/mfsy/z*e201p.mt5`  | 17     | `0x004F` | Gull flapping its wings                          |
+| `model/object/bf60200g.mt5`                                     | 16     | `0xFFFF` | Bat flapping its wings                           |
+| `scene/0x/model/chara/bfa0101g.mt5`                             | 6      | `0xFFFF` | Flame, a different texture in each frame         |
+
+All the frames of a model have the same topology, except the two animations of the pigeon. The frame rate is unknown; the viewer plays them at 15 frames per second.
+
 ## Faces and hands
 
 The detailed faces (`_F`, e.g. `model/face/aso_f.mt5`, `ASO_F.chrm`) and hands (`_TL`, `_TR`, in `model/hand`) of the characters are separate models that replace a node of the body (`_L`, `_M`): the root node has the mesh, and its negative vertex indices point to the mesh of the parent of the replaced node in the body. Their vertices are in the space of the replaced node, so on their own they are rotated. The ID of the root (its lowest 16 bits) tells the part:

@@ -14,12 +14,14 @@
 #include "mt5View.h"
 
 #define MT5VIEW_FOVY 45.0f
+#define MT5VIEW_FRAME_RATE 15.0f
 
 // Triangles that share texture, list type and texture wrapping, drawn with one mesh
 typedef struct {
 	uint16_t	texture;
 	uint8_t		listType;
 	uint8_t		uvFlags;
+	int32_t		frame; // Animation frame of the triangles, -1 if they are always shown
 	uint32_t	triangleCount;
 	uint32_t	filled; // Triangles copied to the mesh while it is built
 	float		depth;  // Mean depth of the triangles of a translucent group, to draw the groups from back to front
@@ -54,6 +56,10 @@ typedef struct {
 	int				dragButton; // -1 if the mouse isn't dragging
 	bool			wireframe;
 	bool			noCulling; // Draw the back faces too
+	uint32_t		frameCount; // Animation frames (see FindFrames), 0 if the model is not animated
+	uint32_t		frame;
+	float			frameTime;  // Time since the current frame was shown
+	bool			paused;
 	bool			character; // The characters look to -Z, the rest of the models to +Z
 	bool			sorted;    // The translucent triangles are sorted for the camera at sortedEye, sortedTarget
 	Vector3			sortedEye;
@@ -165,16 +171,17 @@ static bool IsTriangleValid(const MT5_Model* model, uint32_t node, const MT5_Tri
 	return true;
 }
 
-static MT5View_Group* FindGroup(const MT5_Triangle* triangle) {
+static MT5View_Group* FindGroup(const MT5_Triangle* triangle, int32_t frame) {
 	for (uint32_t i = 0; i < g_view.groupCount; i++) {
 		const MT5View_Group* group = &g_view.groups[i];
-		if (group->texture == triangle->texture && group->listType == triangle->listType && group->uvFlags == triangle->uvFlags)
+		if (group->texture == triangle->texture && group->listType == triangle->listType && group->uvFlags == triangle->uvFlags &&
+			group->frame == frame)
 			return &g_view.groups[i];
 	}
 	return NULL;
 }
 
-static bool AddGroup(const MT5_Triangle* triangle) {
+static bool AddGroup(const MT5_Triangle* triangle, int32_t frame) {
 	MT5View_Group* groups = realloc(g_view.groups, (g_view.groupCount + 1) * sizeof(MT5View_Group));
 	if (groups == NULL)
 		return false;
@@ -184,6 +191,7 @@ static bool AddGroup(const MT5_Triangle* triangle) {
 	group->texture = triangle->texture;
 	group->listType = triangle->listType;
 	group->uvFlags = triangle->uvFlags;
+	group->frame = frame;
 	return true;
 }
 
@@ -239,13 +247,71 @@ static bool HasHead(const MT5_Model* model) {
 	return false;
 }
 
+static bool IsLeaf(const MT5_Model* model, uint32_t node) {
+	return node + 1 >= model->nodeCount || model->nodes[node + 1].parent != (int32_t)node; // Depth first order
+}
+
+// Some models are animations made of frames (e.g. the birds of model/object, bf60200g.mt5, or the flame bfa0101g.mt5):
+// a node without mesh with 3 or more children that are the frames, leaf nodes with a mesh, the same transform and
+// overlapping bounding spheres. Sets the frame of those nodes (-1 for the rest) and returns the number of frames
+static uint32_t FindFrames(const MT5_Model* model, int32_t* nodeFrame) {
+	for (uint32_t i = 0; i < model->nodeCount; i++)
+		nodeFrame[i] = -1;
+
+	for (uint32_t p = 0; p < model->nodeCount; p++) {
+		if (model->nodes[p].hasMesh)
+			continue;
+		uint32_t count = 0, first = 0;
+		bool frames = true;
+		float maxRadius = 0.0f;
+		for (uint32_t i = p + 1; i < model->nodeCount && frames; i++) {
+			const MT5_Node* node = &model->nodes[i];
+			if (node->parent != (int32_t)p)
+				continue;
+			if (count++ == 0)
+				first = i;
+			const MT5_Node* other = &model->nodes[first];
+			frames = node->hasMesh && IsLeaf(model, i) &&
+				memcmp(node->position, other->position, sizeof(node->position)) == 0 &&
+				memcmp(node->rotation, other->rotation, sizeof(node->rotation)) == 0 &&
+				memcmp(node->scale, other->scale, sizeof(node->scale)) == 0;
+			maxRadius = fmaxf(maxRadius, node->radius);
+		}
+		if (!frames || count < 3)
+			continue;
+
+		// The frames overlap; the parts of an object are next to each other
+		for (uint32_t i = p + 1; i < model->nodeCount && frames; i++) {
+			for (uint32_t j = i + 1; j < model->nodeCount && frames && model->nodes[i].parent == (int32_t)p; j++) {
+				if (model->nodes[j].parent == (int32_t)p) {
+					Vector3 a = { model->nodes[i].center[0], model->nodes[i].center[1], model->nodes[i].center[2] };
+					Vector3 b = { model->nodes[j].center[0], model->nodes[j].center[1], model->nodes[j].center[2] };
+					frames = Vector3Distance(a, b) <= maxRadius;
+				}
+			}
+		}
+		if (!frames)
+			continue;
+
+		uint32_t frame = 0;
+		for (uint32_t i = p + 1; i < model->nodeCount; i++) {
+			if (model->nodes[i].parent == (int32_t)p)
+				nodeFrame[i] = (int32_t)frame++;
+		}
+		return count;
+	}
+	return 0;
+}
+
 // Builds one mesh per group with the vertices in model space (the pose of the node hierarchy)
 static bool BuildMeshes(const MT5_Model* model) {
-	Matrix* world = malloc(model->nodeCount * (2 * sizeof(Matrix) + sizeof(bool)));
+	Matrix* world = malloc(model->nodeCount * (2 * sizeof(Matrix) + sizeof(int32_t) + sizeof(bool)));
 	if (world == NULL)
 		return false;
 	Matrix* normalMatrix = world + model->nodeCount;
-	bool* hidden = (bool*)(normalMatrix + model->nodeCount);
+	int32_t* nodeFrame = (int32_t*)(normalMatrix + model->nodeCount);
+	bool* hidden = (bool*)(nodeFrame + model->nodeCount);
+	g_view.frameCount = FindFrames(model, nodeFrame);
 	Matrix part;
 	g_view.character = PartMatrix(model, &part) || HasHead(model);
 	// The nodes are in depth first order, the parents are before their children
@@ -270,9 +336,9 @@ static bool BuildMeshes(const MT5_Model* model) {
 				g_view.skippedTriangles++;
 				continue;
 			}
-			MT5View_Group* group = FindGroup(triangle);
+			MT5View_Group* group = FindGroup(triangle, nodeFrame[n]);
 			if (group == NULL) {
-				if (!AddGroup(triangle)) {
+				if (!AddGroup(triangle, nodeFrame[n])) {
 					free(world);
 					return false;
 				}
@@ -307,7 +373,7 @@ static bool BuildMeshes(const MT5_Model* model) {
 			const MT5_Triangle* triangle = &node->triangles[t];
 			if (!IsTriangleValid(model, n, triangle))
 				continue;
-			MT5View_Group* group = FindGroup(triangle);
+			MT5View_Group* group = FindGroup(triangle, nodeFrame[n]);
 			// A mirrored transform (negative scale) changes the winding
 			bool mirrored = MatrixDeterminant(world[n]) < 0.0f;
 			for (int c = 0; c < 3; c++) {
@@ -529,6 +595,24 @@ static void UpdateInput(Rectangle area) {
 		g_view.wireframe = !g_view.wireframe;
 	if (IsKeyPressed(KEY_C))
 		g_view.noCulling = !g_view.noCulling;
+
+	if (g_view.frameCount > 0) {
+		if (IsKeyPressed(KEY_SPACE))
+			g_view.paused = !g_view.paused;
+		if (IsKeyPressed(KEY_RIGHT)) {
+			g_view.paused = true;
+			g_view.frame = (g_view.frame + 1) % g_view.frameCount;
+		}
+		if (IsKeyPressed(KEY_LEFT)) {
+			g_view.paused = true;
+			g_view.frame = (g_view.frame + g_view.frameCount - 1) % g_view.frameCount;
+		}
+		if (!g_view.paused) {
+			g_view.frameTime += fminf(GetFrameTime(), 0.25f); // Without skipping frames after a long one (loading)
+			for (; g_view.frameTime >= 1.0f / MT5VIEW_FRAME_RATE; g_view.frameTime -= 1.0f / MT5VIEW_FRAME_RATE)
+				g_view.frame = (g_view.frame + 1) % g_view.frameCount;
+		}
+	}
 }
 
 // The clamp takes priority over the flip
@@ -600,6 +684,8 @@ static void SortTranslucent(Camera3D camera) {
 }
 
 static void DrawGroup(const MT5View_Group* group) {
+	if (group->frame >= 0 && (uint32_t)group->frame != g_view.frame)
+		return;
 	Texture white = { rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
 	int mode = group->listType == MT5_LIST_TRANSLUCENT ? 2 : group->listType == MT5_LIST_PUNCH_THROUGH ? 1 : 0;
 	SetShaderValue(g_view.shader, g_view.modeLoc, &mode, SHADER_UNIFORM_INT);
@@ -682,11 +768,13 @@ void MT5View_Draw(Rectangle area) {
 
 	Font font = GuiGetFont();
 	float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
-	const char* lines[3] = {
+	const char* lines[4] = {
 		g_view.filename,
 		TextFormat("%u nodes, %u triangles, %u/%u textures", g_view.nodeCount, g_view.triangleCount, g_view.loadedTextures, g_view.textureCount),
 		"Left drag: rotate   Right drag: pan   Wheel: zoom   R: reset   W: wireframe   C: back faces",
+		TextFormat("Frame %u/%u   Space: play/pause   Left/Right: previous/next frame", g_view.frame + 1, g_view.frameCount),
 	};
-	for (int i = 0; i < 3; i++)
+	int lineCount = g_view.frameCount > 0 ? 4 : 3;
+	for (int i = 0; i < lineCount; i++)
 		DrawTextEx(font, lines[i], (Vector2) { area.x + 10.0f, area.y + 10.0f + i * fontSize * 1.2f }, fontSize, 1.0f, LIGHTGRAY);
 }
