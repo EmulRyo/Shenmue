@@ -5,7 +5,6 @@ An MT5 file is a 3D model: a hierarchy of nodes (bones), each one with an option
 - **Extension:** `.mt5`, `.chrm` (CHRM files are found inside the [IPAC](IPAC) blocks of [PKS](PKS) files)
 - **Magic:** `HRCM` (`48 52 43 4D`)
 - **Compression:** the whole file can be [gzipped](Home#compression)
-- **Source:** [`src/mt5.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/mt5.c)
 
 The `.mt6` files also start with `HRCM`, but their meshes (`polyType` 0x80 and above) use a different face format that isn't known yet.
 
@@ -61,9 +60,9 @@ The transform of a node is relative to its parent and is applied in this order: 
 
 ### Rotation of the feet
 
-The feet of the bodies (`0x0012` and `0x0017`) are rotated (`0x2000`, `0xC000`, `0x2000`), i.e. (45°, −90°, 45°), or a value close to it (e.g. `0x2018`): 1202 of the 1345 feet. In 16 feet of 8 models (`SGD_L`, `SGE_L`, `SGI_L`, `SGK_L`, `SGM_L` and `SGN_L.chrm` of `scene/01/stream/humans`, and one foot of `BGA_L.chrm` and `model/chara/bga_l.mt5`) the rotation around Y is `0xFFFF` (almost 0) instead of `0xC000`, and the feet point sideways; with `0xC000` they are like the rest. In the game the motions replace the rotations of the bones, so it isn't seen. The viewer uses −90° in the feet with Y = `0xFFFF` and X and Z close to 45°. Most of the other feet (125) have no rotation (0, 0, 0).
+The feet of the bodies (`0x0012` and `0x0017`) are rotated (`0x2000`, `0xC000`, `0x2000`), i.e. (45°, −90°, 45°), or a value close to it (e.g. `0x2018`): 1202 of the 1345 feet. In 16 feet of 8 models (`SGD_L`, `SGE_L`, `SGI_L`, `SGK_L`, `SGM_L` and `SGN_L.chrm` of `scene/01/stream/humans`, and one foot of `BGA_L.chrm` and `model/chara/bga_l.mt5`) the rotation around Y is `0xFFFF` (almost 0) instead of `0xC000`, and the feet point sideways; with `0xC000` they are like the rest. In the game the motions replace the rotations of the bones, so it isn't seen. Most of the other feet (125) have no rotation (0, 0, 0).
 
-In the pose of the files the arms of the bodies hang close to the body, and the sleeves go through it; the viewer opens the upper arms (`0x0005` under `0x0004` and `0x000A` under `0x0009`) 12° around the Y axis of the shoulders.
+In the pose of the files the arms of the bodies hang close to the body, and the sleeves go through it.
 
 ## Mesh header (0x20 bytes)
 
@@ -125,13 +124,13 @@ The UVs go outside [0, 1] in many meshes, and the `tsp` of the polygon parameter
 |------|-------|-------------------------------------------------------------|
 | 0    | 0     | Repeat                                                      |
 | 1    | 0     | Mirrored repeat: every other repetition is flipped          |
-| any  | 1     | Clamp to the edge (the viewer assumes the clamp wins; only 75 polygons set both) |
+| any  | 1     | Clamp to the edge (only 75 polygons set both flip and clamp; which one wins is unknown) |
 
 Symmetric details use the flip to store only part of the image: the wheels of `model/item/gacgtrxg.mt5` use a quarter of a wheel with UVs from 0 to 2 and flip U and V (`tsp` = `0x20062440`), and its bumper and windshield store half of the image with flip U (`0x20042440`). Most polygons repeat; around 15 % clamp both axes and 6 % flip some axis.
 
 ### Translucent polygons
 
-The PowerVR of the Dreamcast sorts the translucent polygons by depth, so the models don't store them in drawing order, and many solid parts are in the translucent list with textures that are opaque in most pixels: e.g. the walls of the box of `model/item/gach5rrg.mt5` and the base of `gach5slg.mt5`. Drawn in file order without sorting, the walls at the back are drawn on top of the front ones. The viewer sorts the translucent triangles from back to front when the camera moves, draws them after the opaque and punch-through ones, and lets them write the depth.
+The PowerVR of the Dreamcast sorts the translucent polygons by depth, so the models don't store them in drawing order, and many solid parts are in the translucent list with textures that are opaque in most pixels: e.g. the walls of the box of `model/item/gach5rrg.mt5` and the base of `gach5slg.mt5`. Drawn in file order without sorting, the walls at the back are drawn on top of the front ones.
 
 ### Colors (8 bytes)
 
@@ -140,7 +139,7 @@ The PowerVR of the Dreamcast sorts the translucent polygons by depth, so the mod
 | 0x00   | 4    | uint32 | `base`   | Base color, ARGB (e.g. `0xFFFFFFFF`, `0xFFB2B2B2`)                |
 | 0x04   | 4    | uint32 | `offset` | Offset (specular) color, ARGB. Usually `0xFF000000` or `0xFFFFFFFF` |
 
-The polygons use the intensity mode of the PowerVR (PCW `0x808C002E`: bits 4–5 = 2), where the color of the polygon is the base color multiplied by the lighting, and it multiplies the texture. The base color applies to the next strips without vertex colors (`0x0010`, `0x0011`, `0x0013`) until the next colors chunk; it is white if there is none. Many models are colored only by it, with white or almost white textures: e.g. the red shoes of Tails (`model/item/gacrtl1g.mt5`, base `0xFFFF0000`) or the blue of Metal Sonic (`gacrmetg.mt5`). Of the 145 different base colors of the game, `0xFFFFFFFF` is used by 95 % of the chunks, followed by greys (`0xFFB2B2B2`, `0xFFCCCCCC`…). The viewer doesn't use the offset color, which is probably scaled by a specular intensity computed at runtime.
+The polygons use the intensity mode of the PowerVR (PCW `0x808C002E`: bits 4–5 = 2), where the color of the polygon is the base color multiplied by the lighting, and it multiplies the texture. The base color applies to the next strips without vertex colors (`0x0010`, `0x0011`, `0x0013`) until the next colors chunk; it is white if there is none. Many models are colored only by it, with white or almost white textures: e.g. the red shoes of Tails (`model/item/gacrtl1g.mt5`, base `0xFFFF0000`) or the blue of Metal Sonic (`gacrmetg.mt5`). Of the 145 different base colors of the game, `0xFFFFFFFF` is used by 95 % of the chunks, followed by greys (`0xFFB2B2B2`, `0xFFCCCCCC`…). The offset color is probably scaled by a specular intensity computed at runtime.
 
 ### Strips
 
@@ -157,7 +156,7 @@ Each strip is an `int16` vertex count followed by that many entries. The count i
 |----------|-----:|--------|-------------------------|-------------------------------------------------------------------|
 | `vertex` | 2    | int16  | all                     | Vertex index (see below)                                          |
 | `u`      | 2    | int16  | `0x0011`, `0x001C`      | U × UV divisor                                                    |
-| `v`      | 2    | int16  | `0x0011`, `0x001C`      | V × UV divisor. V = 0 is the top row of the texture as it is shown by this tool |
+| `v`      | 2    | int16  | `0x0011`, `0x001C`      | V × UV divisor                                                    |
 | `color`  | 4    | uint32 | `0x001A`, `0x001C`      | Vertex color, ARGB                                                |
 
 The entries form a triangle strip: entries *i*, *i*+1, *i*+2 make a triangle. Taking the usual strip order (*i*, *i*+1, *i*+2 for even *i* and *i*+1, *i*, *i*+2 for odd *i*), the triangles are clockwise when looking at the side the vertex normals point to.
@@ -170,7 +169,7 @@ A negative vertex index `-n` points to the vertex `vertexCount - n` of the mesh 
 
 ## Alternative meshes
 
-Some character models have a second branch under the root with copies of a node that have no mesh (same `id` as the head) and children with `parentOffset` = 0 and the same `id` as the face. They look like alternative faces (e.g. expressions) that replace the face mesh. Their negative vertex indices point to the mesh of the node with the same `id` as their parent (the head). The copy of the head is placed at the origin, not at the head, so these meshes are only correct when attached to the original node; the viewer doesn't show them.
+Some character models have a second branch under the root with copies of a node that have no mesh (same `id` as the head) and children with `parentOffset` = 0 and the same `id` as the face. They look like alternative faces (e.g. expressions) that replace the face mesh. Their negative vertex indices point to the mesh of the node with the same `id` as their parent (the head). The copy of the head is placed at the origin, not at the head, so these meshes are only correct when attached to the original node.
 
 ## Animation frames
 
@@ -183,7 +182,7 @@ Some models are animations made of frames: a node without mesh whose children ar
 | `model/object/bf60200g.mt5`                                     | 16     | `0xFFFF` | Bat flapping its wings                           |
 | `scene/0x/model/chara/bfa0101g.mt5`                             | 6      | `0xFFFF` | Flame, a different texture in each frame         |
 
-All the frames of a model have the same topology, except the two animations of the pigeon. The frame rate is unknown; the viewer plays them at 15 frames per second.
+All the frames of a model have the same topology, except the two animations of the pigeon. The frame rate is unknown.
 
 ## Faces and hands
 
@@ -195,7 +194,7 @@ The detailed faces (`_F`, e.g. `model/face/aso_f.mt5`, `ASO_F.chrm`) and hands (
 | Left hand (`_TL`)  | `0x000B` (also `0x000A`, `0x000C`) | `0xFFBE`        | `0x000B` (lower arm)        | X → −Y, Y → −Z, Z → X                     |
 | Right hand (`_TR`) | `0x0006` (also `0x0005`, `0x0007`) | `0xFFBF`        | `0x0006` (lower arm)        | X → −Y, Y → −Z, Z → X                     |
 
-The upper 16 bits of the root ID are `0`, `1`, `4` or `9` (unknown meaning). The rotations are the ones of 154 of the 166 extracted bodies (the rest are posed differently); the viewer applies them to show the parts upright. The meshes of the body nodes `0xFFBD`, `0xFFBE` and `0xFFBF` are low detail versions of the parts that replace them, with about the same bounding box. A few faces (e.g. `mgr_f.mt5`) have the root ID `0xFFFF` and only triangles with negative indices.
+The upper 16 bits of the root ID are `0`, `1`, `4` or `9` (unknown meaning). The rotations are the ones of 154 of the 166 bodies of the game (the rest are posed differently). The meshes of the body nodes `0xFFBD`, `0xFFBE` and `0xFFBF` are low detail versions of the parts that replace them, with about the same bounding box. A few faces (e.g. `mgr_f.mt5`) have the root ID `0xFFFF` and only triangles with negative indices.
 
 ## Textures
 
@@ -258,5 +257,3 @@ A relocation table: the positions of the pointer fields of the file (offsets of 
 ## Notes
 
 - A CHRM file and the MT5 file of the same model are identical up to `texturesOffset` (e.g. `ATRS500G.chrm` and `model/item/atrs500g.mt5`).
-- Opening a model shows it in a 3D viewer and prints its node tree, the meshes (vertices and triangles) and the textures to the console. The textures of CHRM files are searched in the folder of the model, where the [PKF](PKF) of the scene is extracted (`tex_<index>_<textureID>.pvr`).
-- Extracted files with the `HRCM` magic get the `.mt5` extension, except the [IPAC](IPAC) entries with the `CHRM` extension, which keep it.

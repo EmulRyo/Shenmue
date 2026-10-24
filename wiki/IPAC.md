@@ -3,7 +3,6 @@
 IPAC is not a file on its own: it is a block stored inside [PKF](PKF) and [PKS](PKS) files. It contains a list of files (models, scripts, textures...) and a dictionary with their names, offsets and sizes.
 
 - **Magic:** `IPAC` (`49 50 41 43`)
-- **Source:** [`src/ipac.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/ipac.c)
 
 All offsets are relative to the start of the IPAC block.
 
@@ -40,5 +39,6 @@ All offsets are relative to the start of the IPAC block.
 
 ## Notes
 
-- A file can be compressed with [gzip](Home#compression); it is decompressed on extraction.
-- The `extension` field isn't reliable (textures are stored as `BIN`), so the extension is taken from the file magic when it is known, then from this field in lowercase, and `bin` as a last resort. The only exception are the entries with the `CHRM` extension: they have the [MT5](MT5) magic (`HRCM`), but they keep the `.chrm` extension because their textures are stored outside the model.
+- A file can be compressed with [gzip](Home#compression).
+- The `extension` field doesn't always match the content (e.g. textures are stored as `BIN`); the [magic](Home#magic-numbers) of the data is more reliable.
+- The entries with the `CHRM` extension are [MT5](MT5) models (magic `HRCM`) whose textures are stored outside the model.

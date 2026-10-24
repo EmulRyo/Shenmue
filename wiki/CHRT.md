@@ -5,7 +5,6 @@ A CHRT file is a script made of commands (e.g. which character to place and wher
 - **Extension:** `.chrt`
 - **Magic:** `CHRS` (`43 48 52 53`)
 - **Compression:** the whole file can be [gzipped](Home#compression)
-- **Source:** [`src/chrt.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/chrt.c)
 
 ## Layout
 
@@ -46,7 +45,7 @@ A CHRT file is a script made of commands (e.g. which character to place and wher
 | 3     | String  | Offset of a null terminated string, **relative to the argument** |
 | 4     | Int     | 32-bit unsigned integer                                        |
 
-Other values are unknown and are printed raw.
+Other values are unknown.
 
 ## STRG block
 
@@ -54,7 +53,7 @@ Holds the null terminated strings referenced by the command names and the string
 
 ## Example
 
-Opening a CHRT file prints its commands as a script:
+Written as a script, the commands of a CHRT file look like this:
 
 ```
 Character('AKMI', 31)

@@ -5,7 +5,6 @@ A PKF file stores a list of textures followed by an [IPAC](IPAC) block with othe
 - **Extension:** `.pkf`
 - **Magic:** `PAKF` (`50 41 4B 46`)
 - **Compression:** the whole file can be [gzipped](Home#compression)
-- **Source:** [`src/pkf.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/pkf.c)
 
 ## Layout
 
@@ -55,6 +54,5 @@ The same TEXN structure is used by [SPR](SPR) files.
 
 ## Notes
 
-- Textures are extracted as `tex_<index>_<textureID in hex>.<ext>`, e.g. `tex_000_0123456789ABCDEF.pvr`.
-- Other blocks (like `DUMY`) are listed but not extracted.
-- Some files with the `.pkf` extension are actually [PKS](PKS) files; they are detected by their magic.
+- The content of the other blocks (like `DUMY`) is unknown.
+- Some files with the `.pkf` extension are actually [PKS](PKS) files (magic `PAKS`).

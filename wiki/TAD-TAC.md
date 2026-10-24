@@ -4,7 +4,6 @@ The PC version (Shenmue I & II) stores its data in pairs of files: the **TAD** f
 
 - **Extensions:** `.tad` (index), `.tac` (data)
 - **Magic:** none
-- **Source:** [`src/tad.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/tad.c), [`src/tac.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/tac.c)
 
 ## TAD layout
 
@@ -51,10 +50,4 @@ The TAC file has no header: it is the data of every file, one after another, exc
 
 ## File names
 
-The TAD only stores a hash of each path. The path is recovered from [`resources/FilenameDatabase.json`](https://github.com/EmulRyo/Shenmue/blob/master/resources/FilenameDatabase.json), an array of objects:
-
-```json
-{ "Hash": 1863636607, "HashPath": 0, "Path": "/0gdtex.bmp" }
-```
-
-`Hash` is compared with `hash[0]`. When a path has two extensions (`name.a.b`), they are swapped on extraction (`name.b.a`). Files with an unknown hash are saved as `/unknown/<hash>`, with the extension detected from the file magic.
+The TAD doesn't store the file names, only a 32-bit hash of each path (`hash[0]`), so a name can only be recovered from a list of known paths and their hashes (e.g. `/0gdtex.bmp` → `1863636607`). The type of a file whose path is unknown can be identified from the [magic](Home#magic-numbers) of its data.

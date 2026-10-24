@@ -4,7 +4,6 @@ AFS is a simple archive format used by Sega games. It stores a list of files one
 
 - **Extension:** `.afs`
 - **Magic:** `AFS\0` (`41 46 53 00`)
-- **Source:** [`src/afs.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/afs.c)
 
 ## Layout
 
@@ -40,7 +39,5 @@ AFS is a simple archive format used by Sega games. It stores a list of files one
 
 ## Notes
 
-- Entries with `size == 0` are empty and are skipped.
-- Entries whose `offset + size` goes past the end of the file are skipped.
-- The AFS format doesn't store the type of each file, so the extension of each extracted file is detected from its magic (see [Home](Home#magic-numbers)); unknown files are saved as `.bin`.
-- Extracted files are named after the matching [IDX](IDX) entry, or by index (`0000.bin`, `0001.pvr`, ...) when there is no IDX file. Duplicated names get the entry index appended (`name_0012.ext`).
+- Entries with `size == 0` are empty.
+- The AFS format doesn't store the name or the type of each file. The names are in the [IDX](IDX) file, and the type can be identified from the magic of the data (see [Home](Home#magic-numbers)).

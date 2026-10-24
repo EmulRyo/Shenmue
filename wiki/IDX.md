@@ -4,7 +4,6 @@ An IDX file holds the names of the files stored in the [AFS](AFS) container with
 
 - **Extension:** `.idx`
 - **Magic:** `IDX0` (`49 44 58 30`) for the IDX0 variant, none for `humans.idx`
-- **Source:** [`src/idx.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/idx.c)
 
 ## IDX0 variant
 
@@ -29,7 +28,7 @@ An IDX file holds the names of the files stored in the [AFS](AFS) container with
 
 ## `humans.idx` variant
 
-It has no magic. A file is treated as this variant when it isn't IDX0, `count > 0` and the name table fits in the file.
+It has no magic: the file starts directly with the number of names.
 
 | Offset    | Size | Type        | Name      | Description                              |
 |----------:|-----:|-------------|-----------|------------------------------------------|
@@ -37,8 +36,4 @@ It has no magic. A file is treated as this variant when it isn't IDX0, `count > 
 | 0x04      | 4×N  | char[4][N]  | `entries` | Names, 4 characters each (e.g. a character ID like `AKMI`) |
 | 0x04+4×N  | 4×N  | uint32[N]   | —         | Unknown table, one value per name        |
 
-Each name can be shared by several consecutive AFS entries (e.g. a [PKF](PKF) and a [PKS](PKS) per character). When the AFS entry count is a multiple of `count`, every name is used by `afsCount / count` consecutive entries.
-
-## Notes
-
-- Opening an IDX file prints its contents and then extracts the matching AFS container.
+Each name can be shared by several consecutive AFS entries (e.g. a [PKF](PKF) and a [PKS](PKS) per character). When the AFS entry count is a multiple of `count`, every name belongs to `afsCount / count` consecutive entries.

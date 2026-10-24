@@ -8,6 +8,7 @@ Whenever a format is added, or what is known about one changes (new fields, size
 
 - Add or update the format page `wiki/<FORMAT>.md`: description, extension, magic, layout diagram, and a table per structure with offset, size, type, name and description of every field. Unknown fields are documented as unknown, not omitted.
 - Add the format to the table and the nesting tree in `wiki/Home.md`, to the magic numbers table if it is detected by magic, and to `wiki/_Sidebar.md`.
-- Use wiki-style links between pages (`[PKF](PKF)`, no `.md`) and absolute GitHub URLs (`https://github.com/EmulRyo/Shenmue/blob/master/...`) for source files, so the pages work when copied to the GitHub wiki repository.
+- The wiki documents only the formats and the particularities found in the files (variants, unknown or unreliable fields, wrong extensions, statistics over the game files...). It never mentions this application, its source code, its resources or how it handles the files (extraction, naming, viewer, workarounds, what it supports).
+- Use wiki-style links between pages (`[PKF](PKF)`, no `.md`), so the pages work when copied to the GitHub wiki repository.
 - Values are little-endian; write offsets in hexadecimal.
 - Don't edit the GitHub wiki directly: `.github/workflows/wiki.yml` copies `wiki/` to it on every push to master, overwriting it.

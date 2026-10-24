@@ -1,6 +1,6 @@
 # Shenmue file formats
 
-This wiki describes the file formats of Shenmue that the tool can read, with their fields and sizes.
+This wiki describes the file formats of Shenmue, with their fields and sizes.
 
 ## Formats
 
@@ -40,15 +40,15 @@ TAD/TAC
 
 ## Magic numbers
 
-The extension of extracted files is detected from their first bytes:
+Most formats can be identified by their first bytes. This is useful in containers that don't store the type of their files ([AFS](AFS)) or store it wrong ([IPAC](IPAC)):
 
 | Magic (bytes)                 | Extension | Format                  |
 |-------------------------------|-----------|-------------------------|
 | `RIFF` .... `WAVE`            | `.wav`    | WAVE audio              |
 | `RIFF` .... `XWMA`            | `.xwm`    | xWMA audio              |
-| `DXBC`                        | `.hlsl`   | Compiled DirectX shader |
+| `DXBC`                        | —         | Compiled DirectX shader |
 | `CHRS`                        | `.chrt`   | [CHRT](CHRT)            |
-| `HRCM`                        | `.mt5`    | [MT5](MT5) (IPAC entries with the `CHRM` extension keep `.chrm`) |
+| `HRCM`                        | `.mt5` `.chrm` | [MT5 / CHRM](MT5)  |
 | `PAKF`                        | `.pkf`    | [PKF](PKF)              |
 | `PAKS`                        | `.pks`    | [PKS](PKS)              |
 | `TEXN`                        | `.spr`    | [SPR](SPR)              |
@@ -59,4 +59,4 @@ The extension of extracted files is detected from their first bytes:
 
 ## Compression
 
-[PKF](PKF), [PKS](PKS), [CHRT](CHRT), [MT5](MT5) files and [IPAC](IPAC) entries can be compressed with **gzip** (RFC 1952). They are detected by the bytes `1F 8B 08` and decompressed before being read. The uncompressed size is the last 4 bytes of the file (gzip trailer).
+[PKF](PKF), [PKS](PKS), [CHRT](CHRT), [MT5](MT5) files and [IPAC](IPAC) entries can be compressed with **gzip** (RFC 1952). A compressed file starts with the bytes `1F 8B 08`. The uncompressed size is the last 4 bytes of the file (gzip trailer).

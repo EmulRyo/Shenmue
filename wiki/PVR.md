@@ -4,7 +4,6 @@ PVR is the texture format of the Dreamcast (PowerVR GPU). A PVR file is an optio
 
 - **Extension:** `.pvr`
 - **Magic:** `GBIX` (`47 42 49 58`) or `PVRT` (`50 56 52 54`)
-- **Source:** [`src/pvr.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/pvr.c), [`src/pvr.h`](https://github.com/EmulRyo/Shenmue/blob/master/src/pvr.h)
 
 ## Layout
 
@@ -41,43 +40,43 @@ PVR is the texture format of the Dreamcast (PowerVR GPU). A PVR file is an optio
 
 ### Pixel formats
 
-| Value | Name        | Bits | Description                                         | Supported |
-|------:|-------------|-----:|-----------------------------------------------------|:---------:|
-| 0x00  | ARGB1555    | 16   | 1 bit alpha, 5 bits per RGB channel                 | ✅ |
-| 0x01  | RGB565      | 16   | No alpha, 5 bits red, 6 bits green, 5 bits blue     | ✅ |
-| 0x02  | ARGB4444    | 16   | 4 bits per channel                                  | ✅ |
-| 0x03  | YUV422      | 16   | YUV 4:2:2                                           | ❌ |
-| 0x04  | BUMP88      | 16   | Bump map                                            | ❌ |
-| 0x05  | RGB555      | 16   | PCX compatible only                                 | ❌ |
-| 0x06  | ARGB8888    | 32   | Palettes only                                       | ❌ |
-| 0x80  | DDS DXT1    | —    | DDS DXT1 RGB, no transparency (PC version)          | ❌ |
-| 0x81  | DDS DXT3    | —    | DDS DXT3 RGBA (PC version)                          | ❌ |
+| Value | Name        | Bits | Description                                         |
+|------:|-------------|-----:|-----------------------------------------------------|
+| 0x00  | ARGB1555    | 16   | 1 bit alpha, 5 bits per RGB channel                 |
+| 0x01  | RGB565      | 16   | No alpha, 5 bits red, 6 bits green, 5 bits blue     |
+| 0x02  | ARGB4444    | 16   | 4 bits per channel                                  |
+| 0x03  | YUV422      | 16   | YUV 4:2:2                                           |
+| 0x04  | BUMP88      | 16   | Bump map                                            |
+| 0x05  | RGB555      | 16   | PCX compatible only                                 |
+| 0x06  | ARGB8888    | 32   | Palettes only                                       |
+| 0x80  | DDS DXT1    | —    | DDS DXT1 RGB, no transparency (PC version)          |
+| 0x81  | DDS DXT3    | —    | DDS DXT3 RGBA (PC version)                          |
 
 ### Data formats
 
-| Value | Name                             | Supported |
-|------:|----------------------------------|:---------:|
-| 0x00  | RAW                              | ❌ |
-| 0x01  | SQUARE_TWIDDLED                  | ✅ |
-| 0x02  | SQUARE_TWIDDLED_MIPMAP           | ✅ |
-| 0x03  | VECTOR_QUANTIZATION              | ✅ |
-| 0x04  | VECTOR_QUANTIZATION_MIPMAP       | ❌ |
-| 0x05  | PALETTIZE_4BIT                   | ❌ |
-| 0x06  | PALETTIZE_4BIT_MIPMAP            | ❌ |
-| 0x07  | PALETTIZE_8BIT                   | ❌ |
-| 0x08  | PALETTIZE_8BIT_MIPMAP            | ❌ |
-| 0x09  | RECTANGLE                        | ✅ |
-| 0x0A  | RECTANGLE_MIPMAP                 | ❌ |
-| 0x0B  | RECTANGLE_STRIDE                 | ❌ |
-| 0x0C  | RECTANGLE_STRIDE_MIPMAP          | ❌ |
-| 0x0D  | RECTANGLE_TWIDDLED               | ✅ |
-| 0x0E  | BMP                              | ❌ |
-| 0x0F  | BMP_MIPMAP                       | ❌ |
-| 0x10  | VECTOR_QUANTIZATION_SMALL        | ❌ |
-| 0x11  | VECTOR_QUANTIZATION_SMALL_MIPMAP | ❌ |
-| 0x12  | SQUARE_TWIDDLED_MIPMAP_ALT       | ❌ |
-| 0x80  | DDS                              | ❌ |
-| 0x87  | DDS_2                            | ❌ |
+| Value | Name                             |
+|------:|----------------------------------|
+| 0x00  | RAW                              |
+| 0x01  | SQUARE_TWIDDLED                  |
+| 0x02  | SQUARE_TWIDDLED_MIPMAP           |
+| 0x03  | VECTOR_QUANTIZATION              |
+| 0x04  | VECTOR_QUANTIZATION_MIPMAP       |
+| 0x05  | PALETTIZE_4BIT                   |
+| 0x06  | PALETTIZE_4BIT_MIPMAP            |
+| 0x07  | PALETTIZE_8BIT                   |
+| 0x08  | PALETTIZE_8BIT_MIPMAP            |
+| 0x09  | RECTANGLE                        |
+| 0x0A  | RECTANGLE_MIPMAP                 |
+| 0x0B  | RECTANGLE_STRIDE                 |
+| 0x0C  | RECTANGLE_STRIDE_MIPMAP          |
+| 0x0D  | RECTANGLE_TWIDDLED               |
+| 0x0E  | BMP                              |
+| 0x0F  | BMP_MIPMAP                       |
+| 0x10  | VECTOR_QUANTIZATION_SMALL        |
+| 0x11  | VECTOR_QUANTIZATION_SMALL_MIPMAP |
+| 0x12  | SQUARE_TWIDDLED_MIPMAP_ALT       |
+| 0x80  | DDS                              |
+| 0x87  | DDS_2                            |
 
 ## Image data
 
@@ -96,5 +95,5 @@ The 4 pixels of a codebook entry are stored in twiddled order: top-left, bottom-
 
 ## Notes
 
-- Mipmapped formats store the smaller mipmaps before the full size image. The decoder doesn't skip them yet, so mipmapped textures may not be decoded correctly.
+- Mipmapped formats store the smaller mipmaps before the full size image.
 - PVR textures are also found inside `TEXN` blocks of [PKF](PKF) and [SPR](SPR) files.

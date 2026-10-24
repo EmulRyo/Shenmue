@@ -4,7 +4,6 @@ An SPR file is a single `TEXN` block (the same one used by [PKF](PKF)) that wrap
 
 - **Extension:** `.spr`
 - **Magic:** `TEXN` (`54 45 58 4E`), at offset 0x00 or 0x10
-- **Source:** [`src/spr.c`](https://github.com/EmulRyo/Shenmue/blob/master/src/spr.c), [`src/spr.h`](https://github.com/EmulRyo/Shenmue/blob/master/src/spr.h)
 
 ## Layout
 
@@ -29,4 +28,4 @@ An SPR file is a single `TEXN` block (the same one used by [PKF](PKF)) that wrap
 
 ## Notes
 
-- When the file doesn't start with `TEXN`, the first 16 bytes are skipped and the `TEXN` block is expected at 0x10. The meaning of those 16 bytes is unknown.
+- Some SPR files start with a 16-byte header of unknown meaning, and the `TEXN` block is at 0x10.
