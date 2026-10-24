@@ -63,6 +63,8 @@ The transform of a node is relative to its parent and is applied in this order: 
 
 The feet of the bodies (`0x0012` and `0x0017`) are rotated (`0x2000`, `0xC000`, `0x2000`), i.e. (45°, −90°, 45°), or a value close to it (e.g. `0x2018`): 1202 of the 1345 feet. In 16 feet of 8 models (`SGD_L`, `SGE_L`, `SGI_L`, `SGK_L`, `SGM_L` and `SGN_L.chrm` of `scene/01/stream/humans`, and one foot of `BGA_L.chrm` and `model/chara/bga_l.mt5`) the rotation around Y is `0xFFFF` (almost 0) instead of `0xC000`, and the feet point sideways; with `0xC000` they are like the rest. In the game the motions replace the rotations of the bones, so it isn't seen. The viewer uses −90° in the feet with Y = `0xFFFF` and X and Z close to 45°. Most of the other feet (125) have no rotation (0, 0, 0).
 
+In the pose of the files the arms of the bodies hang close to the body, and the sleeves go through it; the viewer opens the upper arms (`0x0005` under `0x0004` and `0x000A` under `0x0009`) 12° around the Y axis of the shoulders.
+
 ## Mesh header (0x20 bytes)
 
 | Offset | Size | Type     | Name             | Description                                                    |

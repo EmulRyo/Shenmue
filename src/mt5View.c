@@ -15,6 +15,7 @@
 
 #define MT5VIEW_FOVY 45.0f
 #define MT5VIEW_FRAME_RATE 15.0f
+#define MT5VIEW_ARM_SPREAD 12.0f // Degrees
 
 // Triangles that share texture, list type and texture wrapping, drawn with one mesh
 typedef struct {
@@ -115,13 +116,29 @@ static float NodeRotationY(const MT5_Node* node) {
 	return node->rotation[1];
 }
 
-// Scale, rotation around X, Y and Z, and translation, relative to the parent
-static Matrix NodeMatrix(const MT5_Node* node) {
+// Scale, rotation around X, Y and Z, and translation, relative to the parent. spread rotates the node around the Y axis
+// of the parent (see ArmSpread)
+static Matrix NodeMatrix(const MT5_Node* node, float spread) {
 	Matrix matrix = MatrixScale(node->scale[0], node->scale[1], node->scale[2]);
 	matrix = MatrixMultiply(matrix, MatrixRotateX(node->rotation[0] * DEG2RAD));
 	matrix = MatrixMultiply(matrix, MatrixRotateY(NodeRotationY(node) * DEG2RAD));
 	matrix = MatrixMultiply(matrix, MatrixRotateZ(node->rotation[2] * DEG2RAD));
+	matrix = MatrixMultiply(matrix, MatrixRotateY(spread * DEG2RAD));
 	return MatrixMultiply(matrix, MatrixTranslate(node->position[0], node->position[1], node->position[2]));
+}
+
+// In the pose of the files the arms of the bodies hang close to the body and the sleeves go through it (the motions
+// move them in the game). The upper arms (5 and 0xA, under the shoulders 4 and 9) are opened a few degrees around the
+// front-back axis of the shoulders; their side is the sign of their Z position
+static float ArmSpread(const MT5_Model* model, uint32_t node) {
+	int32_t parent = model->nodes[node].parent;
+	if (parent < 0)
+		return 0.0f;
+	uint32_t id = model->nodes[node].id & 0xFFFF;
+	uint32_t parentID = model->nodes[parent].id & 0xFFFF;
+	if ((id == 0x05 && parentID == 0x04) || (id == 0x0A && parentID == 0x09))
+		return model->nodes[node].position[2] >= 0.0f ? MT5VIEW_ARM_SPREAD : -MT5VIEW_ARM_SPREAD;
+	return 0.0f;
 }
 
 static Vector3 TransformNormal(const float normal[3], Matrix normalMatrix) {
@@ -349,10 +366,11 @@ static bool BuildMeshes(const MT5_Model* model) {
 	g_view.frameCount = FindFrames(model, nodeFrame);
 	Matrix part;
 	bool isPart = PartMatrix(model, &part);
+	bool body = FindHead(model) >= 0;
 	// The nodes are in depth first order, the parents are before their children
 	for (uint32_t i = 0; i < model->nodeCount; i++) {
 		int32_t parent = model->nodes[i].parent;
-		Matrix local = NodeMatrix(&model->nodes[i]);
+		Matrix local = NodeMatrix(&model->nodes[i], body ? ArmSpread(model, i) : 0.0f);
 		world[i] = parent >= 0 ? MatrixMultiply(local, world[parent]) : MatrixMultiply(local, part);
 		normalMatrix[i] = MatrixTranspose(MatrixInvert(world[i]));
 		hidden[i] = IsAlternativeRoot(model, i) || (parent >= 0 && hidden[parent]);
