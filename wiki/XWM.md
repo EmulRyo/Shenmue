@@ -46,6 +46,10 @@ A `WAVEFORMATEX` structure. Its size is always 18 bytes, with no extra data.
 | 0x0E   | 2    | uint16 | `bitsPerSample`   | 16, the bits per sample of the decoded PCM             |
 | 0x10   | 2    | uint16 | `cbSize`          | 0                                                      |
 
+WMA v2 normally has 10 bytes of extra data (`samplesPerBlock` uint32, `encodeOptions` uint16, `superBlockAlign` uint32), but the clips have none, so a decoder has to assume the encode options. With `encodeOptions` 0x1F every clip decodes to the size given by the `dpds` table, except the clip at 32000 Hz (`jap/e1030.afs`), which needs 0x17.
+
+The decoded audio of some clips has a DC offset: the silences between the words are not at 0 (e.g. around −5773 in `01BEDAC003`).
+
 Variants found in the game files (all the xWMA entries of the audio AFS files, 111,330 clips, 59,352 different ones):
 
 | `samplesPerSec` | `avgBytesPerSec` | `blockAlign` | Clips   | Files                                                    |

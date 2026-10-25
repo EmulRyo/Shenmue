@@ -38,5 +38,9 @@ set(SRC
     src/tac.h
     src/tad.c
     src/tad.h
+    src/xwm.c
+    src/xwm.h
+    src/xwmView.c
+    src/xwmView.h
     PARENT_SCOPE
 )

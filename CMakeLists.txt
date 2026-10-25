@@ -44,6 +44,11 @@ set_target_properties(
   target_link_libraries(${PROJECT_NAME} PRIVATE raylib)
   target_link_libraries(${PROJECT_NAME} PRIVATE nfd)
 
+# Media Foundation, for the WMA decoder of the xWMA files
+if (WIN32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE mfplat mfuuid ole32 wmcodecdspuuid)
+endif()
+
 # Checks if OSX and links appropriate frameworks (only required on MacOS)
 if (APPLE)
     target_link_libraries(${PROJECT_NAME} "-framework IOKit")
