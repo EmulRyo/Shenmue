@@ -41,3 +41,8 @@ Run the program from the repository folder (it reads `resources/FilenameDatabase
   - Audio clips (`.xwm`, extracted from the audio `.afs` files, e.g. `scene/01/stream/pc/eng/01beda.afs`) are played with their waveform. `Space` plays and pauses, the left and right arrows go back and forward 1 second, `Home` goes to the start, and clicking or dragging on the waveform seeks.
   - Files can also be opened from the command line: `Shenmue <file>`.
 - **Save file**: save the texture being shown as an image.
+
+## Acknowledgements
+
+- [Raymonf](https://github.com/Raymonf) of [Wulinshu](https://wulinshu.com/) for the TAD hash database (`resources/FilenameDatabase.json`) used to restore the original filenames.
+- [ShenmueDKSharp](https://github.com/philyeahz/ShenmueDKSharp) for the documentation of some of the file formats.
