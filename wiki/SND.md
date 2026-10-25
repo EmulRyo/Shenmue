@@ -242,7 +242,7 @@ The data of the first sample starts 16 bytes after the end of the sample table (
 
 The data is **16-bit signed PCM** (mono), whatever the format given by bits 23-24: `loopEnd` is the number of samples (`size` / 2) minus 1 to 6. The exceptions:
 
-- 116 samples (most of `system1.snd` and `f1doujou.snd`) have a `loopEnd` of about 2 × `size`: their data looks like 4-bit ADPCM (2 samples per byte).
+- 116 samples (most of `sound/system1.snd` and `f1doujou.snd`) have a `loopEnd` of about 2 × `size`: their data is the 4-bit Yamaha ADPCM of the AICA, 2 samples per byte, the low nibble first. Silence is encoded as `80` bytes. Each nibble has a sign bit (bit 3) and a magnitude `m` (bits 0-2): the signal changes by ±(2 × `m` + 1) × `step` / 8, and then `step` is multiplied by `E6`, `E6`, `E6`, `E6`, `133`, `199`, `200` or `266` (for `m` = 0 to 7) and divided by `100`, kept between `7F` and `6000`. The signal starts at 0 and `step` at `7F`. The decoded signal can keep a DC offset at the end of the sample.
 - In 20 samples (`a1_okozu.snd`, `amb012.snd`) `loopEnd` is about `size`, more than the samples of the 16-bit data.
 
 ## Notes

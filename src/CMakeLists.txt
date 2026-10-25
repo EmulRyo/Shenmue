@@ -30,6 +30,10 @@ set(SRC
     src/raygui.h
     src/scnf.c
     src/scnf.h
+    src/snd.c
+    src/snd.h
+    src/sndView.c
+    src/sndView.h
     src/spr.c
     src/spr.h
     src/stringBuilder.c

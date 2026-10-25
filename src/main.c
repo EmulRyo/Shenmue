@@ -23,6 +23,7 @@
 #include "mt5.h"
 #include "mt5View.h"
 #include "xwmView.h"
+#include "sndView.h"
 #include "file.h"
 
 static HashTable g_filenameDB;
@@ -143,6 +144,7 @@ static void CloseImage() {
 static void ShowImage(uint32_t* pixels, uint16_t width, uint16_t height) {
     MT5View_Close();
     XWMView_Close();
+    SNDView_Close();
     if (g_image.data != NULL) {
         UnloadImage(g_image);
 	}
@@ -203,6 +205,7 @@ static void OpenFileMT5(const char* filename) {
     MT5_Print(filename);
     if (MT5View_Open(filename)) {
         XWMView_Close();
+        SNDView_Close();
         CloseImage();
     }
     else
@@ -220,6 +223,7 @@ static void OpenFileSCNF(const char* filename) {
 static void OpenFileXWM(const char* filename) {
     if (XWMView_Open(filename)) {
         MT5View_Close();
+        SNDView_Close();
         CloseImage();
     }
     else
@@ -235,6 +239,16 @@ static const char* GetExtensionFromMagic(const char* filename) {
     const char* ext = File_ExtensionFromMagic(buffer, size);
     free(buffer);
     return ext;
+}
+
+static void OpenFileSND(const char* filename) {
+    if (SNDView_Open(filename)) {
+        MT5View_Close();
+        XWMView_Close();
+        CloseImage();
+    }
+    else
+        printf("Failed to load SND file: %s\n", filename);
 }
 
 static void OpenKnownFile(const char* filename) {
@@ -258,6 +272,8 @@ static void OpenKnownFile(const char* filename) {
         OpenFileSCNF(filename);
     else if (IsFileExtension(filename, ".xwm"))
         OpenFileXWM(filename);
+    else if (IsFileExtension(filename, ".snd"))
+        OpenFileSND(filename);
     else {
         // Files with a generic extension (e.g. ".bin") are opened by their magic
         const char* ext = GetExtensionFromMagic(filename);
@@ -265,6 +281,8 @@ static void OpenKnownFile(const char* filename) {
             OpenFileSCNF(filename);
         else if (ext != NULL && strcmp(ext, "xwm") == 0)
             OpenFileXWM(filename);
+        else if (ext != NULL && strcmp(ext, "snd") == 0)
+            OpenFileSND(filename);
         else
             printf("File not implemented yet: %s\n", filename);
     }
@@ -367,6 +385,8 @@ static void DrawContent(Rectangle dst) {
         MT5View_Draw(dst);
     else if (XWMView_IsOpen())
         XWMView_Draw(dst);
+    else if (SNDView_IsOpen())
+        SNDView_Draw(dst);
     else if (g_texture.id > 0) {
 		float ar = (float)g_texture.width / (float)g_texture.height;
 		float height = dst.height;
@@ -431,6 +451,7 @@ void main(int argc, char** argv) {
 
     MT5View_Close();
     XWMView_Close();
+    SNDView_Close();
     if (IsAudioDeviceReady())
         CloseAudioDevice();
     CloseWindow();

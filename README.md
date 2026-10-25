@@ -12,6 +12,7 @@ Tool to explore and extract the files of Shenmue I & II (PC version). It is writ
 - Print the dialogue lines of `SCNF` files: voice, speaker, duration and subtitle (converted from EUC-JP), and disassemble the script that chooses them.
 - View `MT5`/`CHRM` models in 3D, with their textures, and print their node tree, meshes and textures.
 - Play `XWM` (xWMA) audio clips, the voices and music of the game, with their waveform (Windows only: they are decoded with the WMA decoder of Media Foundation).
+- Play the samples of `SND` (DTPK) sound banks, the instruments and sound effects of the music and the areas, with their waveform and loop.
 
 The file formats are described in the [wiki](https://github.com/EmulRyo/Shenmue/wiki) (source pages in [`wiki/`](wiki)).
 
@@ -39,6 +40,7 @@ Run the program from the repository folder (it reads `resources/FilenameDatabase
   - Dialogues (`.scnf`, or `.bin` files that start with `SCNF`, e.g. `scene/01/stream/humans/AKMI/AKMI.bin`) are printed to the console.
   - Models (`.mt5`, `.chrm`) are shown in a 3D viewer and described in the console. Drag with the left button to rotate, with the right or middle button to pan, and use the wheel to zoom; `R` resets the camera, `W` toggles the wireframe and `C` toggles drawing the back faces. Models made of animation frames (e.g. the birds of `model/object`) are played; `Space` pauses them and the left and right arrows show the previous and next frame. The textures of a `.chrm` file are read from its folder, so extract the `.pkf` of the scene first (e.g. `atrk.pkf` for `atrk/ATRS500G.chrm`).
   - Audio clips (`.xwm`, extracted from the audio `.afs` files, e.g. `scene/01/stream/pc/eng/01beda.afs`) are played with their waveform. `Space` plays and pauses, the left and right arrows go back and forward 1 second, `Home` goes to the start, and clicking or dragging on the waveform seeks.
+  - Sound banks (`.snd`, e.g. `scene/01/sound/a1_neko1.snd`) list their samples, and the selected one is played with its waveform, repeating its loop. The banks don't store the sample rate, so it is chosen below the waveform (11025, 22050 or 44100 Hz; 22050 by default). `Space` plays and pauses, the up and down arrows select the previous and next sample, the left and right arrows go back and forward 1 second, `Home` goes to the start, `L` turns the loop on and off, and clicking or dragging on the waveform seeks. The sequences (the songs) are not played.
   - Files can also be opened from the command line: `Shenmue <file>`.
 - **Save file**: save the texture being shown as an image.
 
