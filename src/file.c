@@ -50,6 +50,7 @@ const char* File_ExtensionFromMagic(const uint8_t* buffer, size_t size) {
         if (memcmp(buffer, "CHRS", 4) == 0) return "chrt";
         if (memcmp(buffer, "HRCM", 4) == 0) return "mt5";
         if (memcmp(buffer, "SCNF", 4) == 0) return "scnf";
+        if (memcmp(buffer, "DTPK", 4) == 0) return "snd";
         if (memcmp(buffer, "PAKF", 4) == 0) return "pkf";
         if (memcmp(buffer, "PAKS", 4) == 0) return "pks";
         if (memcmp(buffer, "TEXN", 4) == 0) return "spr";
