@@ -6,31 +6,61 @@
 #include <raylib.h>
 #include "raygui.h"
 #include "snd.h"
+#include "sndSynth.h"
 #include "sndView.h"
 
 // Columns of the precomputed waveform: the minimum and maximum sample of each range of frames
 #define SNDVIEW_PEAKS 4096
 #define SNDVIEW_LABEL_SIZE 64
-#define SNDVIEW_LIST_WIDTH 280.0f
+#define SNDVIEW_LIST_WIDTH 300.0f
+#define SNDVIEW_DEFAULT_RATE 22050 // For the samples that no split plays
 
-static const uint32_t g_sampleRates[] = { 11025, 22050, 44100 };
-#define SNDVIEW_DEFAULT_RATE 1
+typedef enum {
+	MODE_SEQUENCES,
+	MODE_SAMPLES,
+} Mode;
+
+// Commands sent to the audio thread, which owns the synthesizer while the stream plays
+typedef enum {
+	COMMAND_NONE,
+	COMMAND_SEQUENCE,
+	COMMAND_SAMPLE,
+	COMMAND_SEEK,
+	COMMAND_LOOP,
+	COMMAND_STOP,
+} Command;
+
+static const uint32_t g_sampleRates[] = { 0, 11025, 22050, 44100 }; // 0: the rate of the split
 
 typedef struct {
 	bool			open;
 	char			filename[256];
 	SND_Bank		bank;
-	char			(*labels)[SNDVIEW_LABEL_SIZE];
-	const char**	labelPointers;
-	int				listScroll;
-	int				listFocus;
-	int				rateIndex;
+	SND_Synth*		synth;
 	AudioStream		stream;
-	// Shared with the audio thread, which advances the position while playing
-	volatile int		selected;
-	volatile uint32_t	position; // Frame of the selected sample
+	Mode			mode;
+	// Lists: the sequences that aren't empty, and the samples
+	uint32_t*		sequenceIndices;
+	uint32_t		listedSequences;
+	char			(*labels[2])[SNDVIEW_LABEL_SIZE];
+	const char**	labelPointers[2];
+	int				listScroll[2];
+	int				listFocus;
+	int				selected[2];
+	int				rateIndex;
+	bool			loopEnabled;
+	// Shared with the audio thread
+	volatile Command	command;
+	volatile uint32_t	commandValue;
+	volatile uint32_t	commandRate;
+	volatile uint32_t	commandPosition;
+	volatile bool		paused;
 	volatile bool		playing;
-	volatile bool		loopEnabled;
+	volatile uint32_t	time;
+	volatile uint32_t	samplePosition;
+	volatile uint32_t	voices;
+	volatile float		levels[SND_MAX_CHANNELS];
+	// Waveform of the selected sample
 	int16_t			peakMin[SNDVIEW_PEAKS];
 	int16_t			peakMax[SNDVIEW_PEAKS];
 	uint32_t		peakCount;
@@ -39,41 +69,61 @@ typedef struct {
 
 static SNDView_State g_player;
 
-// Fills the buffer of the audio stream with the next frames of the selected sample, going back to the start of the
-// loop at its end, or with silence when paused
+// Applies the command of the user interface, then renders the next frames, or silence when paused
 static void StreamCallback(void* buffer, unsigned int frames) {
-	int16_t* output = buffer;
-	int selected = g_player.selected;
-	const SND_Sample* sample = &g_player.bank.samples[selected];
-	uint32_t position = g_player.position;
-	// After a seek past the end of the loop, the sample plays up to its end
-	bool looping = g_player.loopEnabled && sample->loop && position <= sample->loopEnd;
-	uint32_t end = looping ? sample->loopEnd : sample->frameCount;
-	unsigned int count = 0;
-	while (g_player.playing && count < frames) {
-		if (position >= end) {
-			if (!looping) {
-				g_player.playing = false;
-				break;
-			}
-			position = sample->loopStart;
-		}
-		uint32_t chunk = end - position;
-		if (chunk > frames - count)
-			chunk = frames - count;
-		memcpy(output + count, sample->pcm + position, (size_t)chunk * sizeof(int16_t));
-		position += chunk;
-		count += chunk;
+	SND_Synth* synth = g_player.synth;
+	Command command = g_player.command;
+	switch (command) {
+	case COMMAND_SEQUENCE:
+		SND_SynthPlaySequence(synth, g_player.commandValue);
+		break;
+	case COMMAND_SAMPLE:
+		SND_SynthPlaySample(synth, g_player.commandValue, g_player.commandRate, g_player.loopEnabled);
+		SND_SynthSeekSample(synth, g_player.commandPosition);
+		break;
+	case COMMAND_SEEK:
+		SND_SynthSeekSample(synth, g_player.commandPosition);
+		break;
+	case COMMAND_LOOP:
+		SND_SynthSetSampleLoop(synth, g_player.loopEnabled);
+		break;
+	case COMMAND_STOP:
+		SND_SynthStop(synth);
+		break;
+	default:
+		break;
 	}
-	// The sample may have been changed while filling the buffer: then its position has already been reset
-	if (g_player.selected == selected)
-		g_player.position = position;
-	memset(output + count, 0, (size_t)(frames - count) * sizeof(int16_t));
+	g_player.command = COMMAND_NONE;
+
+	if (g_player.paused)
+		memset(buffer, 0, (size_t)frames * 2 * sizeof(int16_t));
+	else
+		SND_SynthRender(synth, buffer, frames);
+	g_player.playing = SND_SynthIsPlaying(synth);
+	g_player.time = SND_SynthTime(synth);
+	g_player.samplePosition = SND_SynthSamplePosition(synth);
+	g_player.voices = SND_SynthActiveVoices(synth);
+	float levels[SND_MAX_CHANNELS];
+	SND_SynthChannelLevels(synth, levels);
+	for (int i = 0; i < SND_MAX_CHANNELS; i++)
+		g_player.levels[i] = levels[i];
+}
+
+static void SendCommand(Command command, uint32_t value) {
+	g_player.commandValue = value;
+	g_player.command = command;
+}
+
+static uint32_t SampleRate(uint32_t sample) {
+	if (g_sampleRates[g_player.rateIndex] != 0)
+		return g_sampleRates[g_player.rateIndex];
+	uint32_t rate = g_player.bank.samples[sample].sampleRate;
+	return rate != 0 ? rate : SNDVIEW_DEFAULT_RATE;
 }
 
 // Computes the minimum and maximum of the selected sample for each column of the waveform
 static void ComputePeaks(void) {
-	const SND_Sample* sample = &g_player.bank.samples[g_player.selected];
+	const SND_Sample* sample = &g_player.bank.samples[g_player.selected[MODE_SAMPLES]];
 	uint32_t frameCount = sample->frameCount;
 	g_player.peakCount = frameCount < SNDVIEW_PEAKS ? frameCount : SNDVIEW_PEAKS;
 	for (uint32_t i = 0; i < g_player.peakCount; i++) {
@@ -90,89 +140,130 @@ static void ComputePeaks(void) {
 	}
 }
 
-static uint32_t SampleRate(void) {
-	return g_sampleRates[g_player.rateIndex];
+static int ItemCount(Mode mode) {
+	return (int)(mode == MODE_SEQUENCES ? g_player.listedSequences : g_player.bank.sampleCount);
 }
 
-static void UnloadStream(void) {
+static void PlaySample(uint32_t position) {
+	uint32_t sample = g_player.selected[MODE_SAMPLES];
+	g_player.commandRate = SampleRate(sample);
+	g_player.commandPosition = position;
+	g_player.paused = false;
+	SendCommand(COMMAND_SAMPLE, sample);
+}
+
+// Selects an item of the list of the current mode and plays it from the start
+static void Select(int index) {
+	if (index < 0 || index >= ItemCount(g_player.mode))
+		return;
+	g_player.selected[g_player.mode] = index;
+	g_player.paused = false;
+	if (g_player.mode == MODE_SEQUENCES)
+		SendCommand(COMMAND_SEQUENCE, g_player.sequenceIndices[index]);
+	else {
+		ComputePeaks();
+		PlaySample(0);
+	}
+}
+
+static void SetMode(Mode mode) {
+	if (mode == g_player.mode || ItemCount(mode) == 0)
+		return;
+	g_player.mode = mode;
+	g_player.listFocus = -1;
+	Select(g_player.selected[mode]);
+}
+
+void SNDView_Close(void) {
 	if (IsAudioStreamValid(g_player.stream)) {
 		StopAudioStream(g_player.stream);
 		UnloadAudioStream(g_player.stream);
 	}
-	g_player.stream = (AudioStream) { 0 };
-}
-
-static bool LoadStream(void) {
-	UnloadStream();
-	g_player.stream = LoadAudioStream(SampleRate(), 16, 1);
-	if (!IsAudioStreamValid(g_player.stream)) {
-		fputs("[SNDView]: Failed to create the audio stream\n", stderr);
-		return false;
-	}
-	SetAudioStreamCallback(g_player.stream, StreamCallback);
-	PlayAudioStream(g_player.stream);
-	return true;
-}
-
-// Selects a sample and plays it from the start
-static void Select(int index) {
-	if (index < 0 || (uint32_t)index >= g_player.bank.sampleCount)
-		return;
-	g_player.playing = false;
-	g_player.selected = index;
-	g_player.position = 0;
-	ComputePeaks();
-	g_player.playing = g_player.bank.samples[index].frameCount > 0;
-}
-
-void SNDView_Close(void) {
-	UnloadStream();
+	SND_SynthDestroy(g_player.synth);
 	SND_Free(&g_player.bank);
-	free(g_player.labels);
-	free(g_player.labelPointers);
+	for (int i = 0; i < 2; i++) {
+		free(g_player.labels[i]);
+		free(g_player.labelPointers[i]);
+	}
+	free(g_player.sequenceIndices);
 	memset(&g_player, 0, sizeof(g_player));
+}
+
+static const char* FormatMilliseconds(uint32_t milliseconds) {
+	uint32_t centiseconds = milliseconds / 10;
+	return TextFormat("%u:%02u.%02u", centiseconds / 6000, centiseconds / 100 % 60, centiseconds % 100);
+}
+
+static bool CreateLabels(void) {
+	const SND_Bank* bank = &g_player.bank;
+	g_player.sequenceIndices = malloc((bank->sequenceCount + 1) * sizeof(uint32_t));
+	for (uint32_t i = 0; i < bank->sequenceCount; i++) {
+		if (bank->sequences[i].type != SND_SEQUENCE_EMPTY)
+			g_player.sequenceIndices[g_player.listedSequences++] = i;
+	}
+	uint32_t counts[2] = { g_player.listedSequences, bank->sampleCount };
+	for (int m = 0; m < 2; m++) {
+		g_player.labels[m] = malloc((counts[m] + 1) * sizeof(*g_player.labels[m]));
+		g_player.labelPointers[m] = malloc((counts[m] + 1) * sizeof(*g_player.labelPointers[m]));
+		if (g_player.sequenceIndices == NULL || g_player.labels[m] == NULL || g_player.labelPointers[m] == NULL)
+			return false;
+		for (uint32_t i = 0; i < counts[m]; i++)
+			g_player.labelPointers[m][i] = g_player.labels[m][i];
+	}
+	for (uint32_t i = 0; i < g_player.listedSequences; i++) {
+		const SND_Sequence* sequence = &bank->sequences[g_player.sequenceIndices[i]];
+		if (sequence->type == SND_SEQUENCE_MUSIC)
+			snprintf(g_player.labels[MODE_SEQUENCES][i], SNDVIEW_LABEL_SIZE, "%u-%u: music, %u:%02u%s", sequence->group,
+				sequence->index, sequence->duration / 60000, sequence->duration / 1000 % 60, sequence->loop ? ", loop" : "");
+		else
+			snprintf(g_player.labels[MODE_SEQUENCES][i], SNDVIEW_LABEL_SIZE, "%u-%u: effect", sequence->group, sequence->index);
+	}
+	for (uint32_t i = 0; i < bank->sampleCount; i++) {
+		const SND_Sample* sample = &bank->samples[i];
+		snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, "%u: %s, %u frames%s", i,
+			sample->encoding == SND_ENCODING_ADPCM ? "ADPCM" : "PCM", sample->frameCount, sample->loop ? ", loop" : "");
+	}
+	return true;
 }
 
 bool SNDView_Open(const char* filepath) {
 	SND_Bank bank;
 	if (!SND_Load(filepath, &bank))
 		return false;
-	if (bank.sampleCount == 0) {
-		printf("%s: the bank has no samples\n", GetFileName(filepath));
-		SND_Free(&bank);
-		return false;
-	}
 
 	SNDView_Close();
 	if (!IsAudioDeviceReady())
 		InitAudioDevice();
 	snprintf(g_player.filename, sizeof(g_player.filename), "%s", GetFileName(filepath));
 	g_player.bank = bank;
-	g_player.rateIndex = SNDVIEW_DEFAULT_RATE;
 	g_player.loopEnabled = true;
-	g_player.labels = malloc(bank.sampleCount * sizeof(*g_player.labels));
-	g_player.labelPointers = malloc(bank.sampleCount * sizeof(*g_player.labelPointers));
-	if (g_player.labels == NULL || g_player.labelPointers == NULL) {
+	g_player.listFocus = -1;
+	g_player.synth = SND_SynthCreate(&g_player.bank);
+	if (g_player.synth == NULL || !CreateLabels()) {
 		SNDView_Close();
 		return false;
 	}
-	for (uint32_t i = 0; i < bank.sampleCount; i++) {
-		const SND_Sample* sample = &bank.samples[i];
-		snprintf(g_player.labels[i], SNDVIEW_LABEL_SIZE, "%u: %s, %u frames%s", i,
-			sample->encoding == SND_ENCODING_ADPCM ? "ADPCM" : "PCM", sample->frameCount, sample->loop ? ", loop" : "");
-		g_player.labelPointers[i] = g_player.labels[i];
-	}
-	g_player.selected = 0;
-	ComputePeaks();
-	if (!LoadStream()) {
+	g_player.mode = g_player.listedSequences > 0 ? MODE_SEQUENCES : MODE_SAMPLES;
+	if (ItemCount(g_player.mode) == 0) {
+		printf("%s: the bank has nothing to play\n", g_player.filename);
 		SNDView_Close();
 		return false;
 	}
 
-	printf("%s: DTPK sound bank, %u samples, %u programs, %u sequences%s\n", g_player.filename, bank.sampleCount,
-		bank.programCount, bank.sequenceCount, bank.hasDSP ? ", DSP settings" : "");
-	g_player.open = true;
+	g_player.stream = LoadAudioStream(SND_SYNTH_RATE, 16, 2);
+	if (!IsAudioStreamValid(g_player.stream)) {
+		fputs("[SNDView_Open]: Failed to create the audio stream\n", stderr);
+		SNDView_Close();
+		return false;
+	}
+	SetAudioStreamCallback(g_player.stream, StreamCallback);
 	Select(0);
+	PlayAudioStream(g_player.stream);
+
+	printf("%s: DTPK sound bank, %u sequences (%u not empty), %u programs, %u parts, %u samples%s\n", g_player.filename,
+		bank.sequenceCount, g_player.listedSequences, bank.programCount, bank.partCount, bank.sampleCount,
+		bank.dsp.present ? ", DSP program" : "");
+	g_player.open = true;
 	return true;
 }
 
@@ -180,48 +271,54 @@ bool SNDView_IsOpen(void) {
 	return g_player.open;
 }
 
-static const SND_Sample* Selected(void) {
-	return &g_player.bank.samples[g_player.selected];
+static const SND_Sample* SelectedSample(void) {
+	return &g_player.bank.samples[g_player.selected[MODE_SAMPLES]];
 }
 
 static void TogglePlay(void) {
-	const SND_Sample* sample = Selected();
-	if (!g_player.playing && g_player.position >= sample->frameCount)
-		g_player.position = 0; // Play again from the start
-	g_player.playing = !g_player.playing && sample->frameCount > 0;
+	if (!g_player.playing && !g_player.paused)
+		Select(g_player.selected[g_player.mode]); // Play again from the start
+	else
+		g_player.paused = !g_player.paused;
 }
 
 static void Seek(int64_t frame) {
+	const SND_Sample* sample = SelectedSample();
 	if (frame < 0)
 		frame = 0;
-	if (frame > Selected()->frameCount)
-		frame = Selected()->frameCount;
-	g_player.position = (uint32_t)frame;
-}
-
-static void SetRate(int rateIndex) {
-	if (rateIndex == g_player.rateIndex)
-		return;
-	g_player.rateIndex = rateIndex;
-	LoadStream();
+	if (frame >= sample->frameCount)
+		frame = sample->frameCount > 0 ? sample->frameCount - 1 : 0;
+	g_player.commandPosition = (uint32_t)frame;
+	// A sample that has ended plays again from the new position
+	if (!g_player.playing)
+		PlaySample((uint32_t)frame);
+	else
+		SendCommand(COMMAND_SEEK, 0);
 }
 
 static void UpdateInput(Rectangle waveform) {
-	int64_t second = SampleRate();
 	if (IsKeyPressed(KEY_SPACE))
 		TogglePlay();
 	if (IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP))
-		Select(g_player.selected - 1);
+		Select(g_player.selected[g_player.mode] - 1);
 	if (IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN))
-		Select(g_player.selected + 1);
-	if (IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT))
-		Seek((int64_t)g_player.position - second);
-	if (IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT))
-		Seek((int64_t)g_player.position + second);
+		Select(g_player.selected[g_player.mode] + 1);
 	if (IsKeyPressed(KEY_HOME))
-		Seek(0);
-	if (IsKeyPressed(KEY_L))
+		Select(g_player.selected[g_player.mode]);
+	if (IsKeyPressed(KEY_TAB))
+		SetMode(g_player.mode == MODE_SEQUENCES ? MODE_SAMPLES : MODE_SEQUENCES);
+	if (g_player.mode != MODE_SAMPLES)
+		return;
+
+	int64_t second = SampleRate(g_player.selected[MODE_SAMPLES]);
+	if (IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT))
+		Seek((int64_t)g_player.samplePosition - second);
+	if (IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT))
+		Seek((int64_t)g_player.samplePosition + second);
+	if (IsKeyPressed(KEY_L)) {
 		g_player.loopEnabled = !g_player.loopEnabled;
+		SendCommand(COMMAND_LOOP, 0);
+	}
 
 	Vector2 mouse = GetMousePosition();
 	if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mouse, waveform))
@@ -230,17 +327,12 @@ static void UpdateInput(Rectangle waveform) {
 		g_player.seeking = false;
 	if (g_player.seeking) {
 		float t = (mouse.x - waveform.x) / waveform.width;
-		Seek((int64_t)(t * Selected()->frameCount));
+		Seek((int64_t)(t * SelectedSample()->frameCount));
 	}
 }
 
-static const char* FormatTime(uint32_t frame) {
-	uint32_t centiseconds = (uint32_t)((uint64_t)frame * 100 / SampleRate());
-	return TextFormat("%u:%02u.%02u", centiseconds / 6000, centiseconds / 100 % 60, centiseconds % 100);
-}
-
 static void DrawWaveform(Rectangle area) {
-	const SND_Sample* sample = Selected();
+	const SND_Sample* sample = SelectedSample();
 	DrawRectangleRec(area, (Color) { 30, 30, 32, 255 });
 	float center = area.y + area.height * 0.5f;
 	float scale = area.height * 0.5f / 32768.0f;
@@ -261,7 +353,7 @@ static void DrawWaveform(Rectangle area) {
 	}
 
 	int width = (int)area.width;
-	float playedX = area.x + area.width * g_player.position / (float)sample->frameCount;
+	float playedX = area.x + area.width * g_player.samplePosition / (float)sample->frameCount;
 	for (int x = 0; x < width && g_player.peakCount > 0; x++) {
 		uint32_t start = (uint32_t)((uint64_t)x * g_player.peakCount / width);
 		uint32_t end = (uint32_t)((uint64_t)(x + 1) * g_player.peakCount / width);
@@ -281,6 +373,26 @@ static void DrawWaveform(Rectangle area) {
 	DrawRectangleLinesEx(area, 1.0f, (Color) { 112, 112, 112, 255 });
 }
 
+// Level of the voices of each MIDI channel
+static void DrawChannelMeters(Rectangle area, Font font, float fontSize) {
+	DrawRectangleRec(area, (Color) { 30, 30, 32, 255 });
+	float labelHeight = fontSize * 1.2f;
+	float slot = area.width / SND_MAX_CHANNELS;
+	float barHeight = area.height - labelHeight - 10.0f;
+	for (int c = 0; c < SND_MAX_CHANNELS; c++) {
+		float level = g_player.levels[c];
+		// Show the level in dB, from -48 dB to 0 dB
+		float height = level > 0.0f ? fmaxf(0.0f, 1.0f + 20.0f * log10f(level) / 48.0f) * barHeight : 0.0f;
+		Rectangle bar = { area.x + c * slot + slot * 0.2f, area.y + 5.0f, slot * 0.6f, barHeight };
+		DrawRectangleRec(bar, (Color) { 42, 42, 46, 255 });
+		DrawRectangleRec((Rectangle) { bar.x, bar.y + bar.height - height, bar.width, height }, (Color) { 90, 170, 255, 255 });
+		const char* label = TextFormat("%d", c);
+		Vector2 size = MeasureTextEx(font, label, fontSize, 1.0f);
+		DrawTextEx(font, label, (Vector2) { bar.x + (bar.width - size.x) * 0.5f, bar.y + barHeight + 3.0f }, fontSize, 1.0f, LIGHTGRAY);
+	}
+	DrawRectangleLinesEx(area, 1.0f, (Color) { 112, 112, 112, 255 });
+}
+
 void SNDView_Draw(Rectangle area) {
 	if (!g_player.open || area.width <= 0.0f || area.height <= 0.0f)
 		return;
@@ -289,61 +401,103 @@ void SNDView_Draw(Rectangle area) {
 	float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
 	float lineHeight = fontSize * 1.2f;
 	const SND_Bank* bank = &g_player.bank;
-	const SND_Sample* sample = Selected();
+	uint32_t music = 0;
+	for (uint32_t i = 0; i < bank->sequenceCount; i++)
+		music += bank->sequences[i].type == SND_SEQUENCE_MUSIC;
 	const char* lines[3] = {
 		g_player.filename,
-		TextFormat("DTPK sound bank, %u samples, %u programs, %u sequences%s", bank->sampleCount, bank->programCount,
-			bank->sequenceCount, bank->hasDSP ? ", DSP settings" : ""),
-		"Space: play/pause   Up/Down: previous/next sample   Left/Right: back/forward 1 s   Home: start   L: loop   Click on the waveform: seek",
+		TextFormat("DTPK sound bank, %u music and %u effect sequences, %u programs, %u samples%s", music,
+			g_player.listedSequences - music, bank->programCount, bank->sampleCount, bank->dsp.present ? ", reverb" : ""),
+		g_player.mode == MODE_SEQUENCES ?
+			"Space: play/pause   Up/Down: previous/next sequence   Home: start   Tab: samples" :
+			"Space: play/pause   Up/Down: previous/next sample   Left/Right: back/forward 1 s   Home: start   L: loop   Tab: sequences   Click on the waveform: seek",
 	};
 
 	float margin = 10.0f;
 	float controlsHeight = 30.0f;
 	float top = area.y + margin * 2.0f + 3 * lineHeight;
-	Rectangle list = { area.x + margin, top, SNDVIEW_LIST_WIDTH, area.height - margin * 3.0f - 3 * lineHeight };
-	Rectangle waveform = {
+	Rectangle modes = { area.x + margin, top, SNDVIEW_LIST_WIDTH, controlsHeight };
+	Rectangle list = { area.x + margin, top + controlsHeight + margin, SNDVIEW_LIST_WIDTH,
+		area.height - margin * 4.0f - 3 * lineHeight - controlsHeight };
+	Rectangle panel = {
 		list.x + list.width + margin,
 		top + lineHeight + margin,
 		area.width - list.width - margin * 3.0f,
 		area.height - margin * 5.0f - 4 * lineHeight - controlsHeight,
 	};
-	if (list.height <= 0.0f || waveform.width <= 0.0f || waveform.height <= 0.0f)
+	if (list.height <= 0.0f || panel.width <= 0.0f || panel.height <= 0.0f)
 		return;
-	UpdateInput(waveform);
+	UpdateInput(panel);
 
 	DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
 	for (int i = 0; i < 3; i++)
 		DrawTextEx(font, lines[i], (Vector2) { area.x + margin, area.y + margin + i * lineHeight }, fontSize, 1.0f, LIGHTGRAY);
 
-	int active = g_player.selected;
-	GuiListViewEx(list, g_player.labelPointers, (int)bank->sampleCount, &g_player.listScroll, &active, &g_player.listFocus);
-	if (active >= 0 && active != g_player.selected)
-		Select(active);
-
-	const char* info = TextFormat("Sample %d: %s, %u bytes at 0x%X, %u frames%s", g_player.selected,
-		sample->encoding == SND_ENCODING_ADPCM ? "4-bit ADPCM" : "16-bit PCM", sample->size, sample->offset, sample->frameCount,
-		sample->loop ? TextFormat(", loop %u-%u", sample->loopStart, sample->loopEnd) : ", no loop");
-	DrawTextEx(font, info, (Vector2) { waveform.x, top }, fontSize, 1.0f, LIGHTGRAY);
-	DrawWaveform(waveform);
-
-	float controlsY = waveform.y + waveform.height + margin;
-	float x = waveform.x;
-	if (GuiButton((Rectangle) { x, controlsY, 100.0f, controlsHeight }, g_player.playing ? "Pause" : "Play"))
-		TogglePlay();
-	x += 110.0f;
-	bool loopEnabled = g_player.loopEnabled;
-	GuiCheckBox((Rectangle) { x, controlsY + (controlsHeight - 20.0f) * 0.5f, 20.0f, 20.0f }, "Loop", &loopEnabled);
-	g_player.loopEnabled = loopEnabled;
-	x += 90.0f;
-	// The style of the application draws the pressed controls like the normal ones: highlight the selected rate
-	int rateIndex = g_player.rateIndex;
+	// The style of the application draws the pressed controls like the normal ones: highlight the selected toggles
 	int pressedColor = GuiGetStyle(TOGGLE, BASE_COLOR_PRESSED);
 	GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, 0x2F5F8FFF);
-	GuiToggleGroup((Rectangle) { x, controlsY, 80.0f, controlsHeight }, "11025 Hz;22050 Hz;44100 Hz", &rateIndex);
+	int mode = g_player.mode;
+	float toggleWidth = (SNDVIEW_LIST_WIDTH - GuiGetStyle(TOGGLE, GROUP_PADDING)) / 2.0f;
+	GuiToggleGroup((Rectangle) { modes.x, modes.y, toggleWidth, modes.height }, "Sequences;Samples", &mode);
 	GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, pressedColor);
-	SetRate(rateIndex);
-	x += 3 * 80.0f + 2 * GuiGetStyle(TOGGLE, GROUP_PADDING) + margin;
+	SetMode((Mode)mode);
+
+	int active = g_player.selected[g_player.mode];
+	GuiListViewEx(list, g_player.labelPointers[g_player.mode], ItemCount(g_player.mode), &g_player.listScroll[g_player.mode],
+		&active, &g_player.listFocus);
+	if (active >= 0 && active != g_player.selected[g_player.mode])
+		Select(active);
+
+	float controlsY = panel.y + panel.height + margin;
+	float x = panel.x;
+	if (GuiButton((Rectangle) { x, controlsY, 100.0f, controlsHeight }, g_player.playing && !g_player.paused ? "Pause" : "Play"))
+		TogglePlay();
+	x += 110.0f;
+
+	if (g_player.mode == MODE_SEQUENCES) {
+		const SND_Sequence* sequence = &bank->sequences[g_player.sequenceIndices[g_player.selected[MODE_SEQUENCES]]];
+		const char* info = sequence->type == SND_SEQUENCE_MUSIC ?
+			TextFormat("Sequence %u-%u: music, %s%s", sequence->group, sequence->index, FormatMilliseconds(sequence->duration),
+				sequence->loop ? ", then loops" : "") :
+			TextFormat("Sequence %u-%u: effect", sequence->group, sequence->index);
+		DrawTextEx(font, info, (Vector2) { panel.x, top }, fontSize, 1.0f, LIGHTGRAY);
+		DrawChannelMeters(panel, font, fontSize);
+		if (GuiButton((Rectangle) { x, controlsY, 100.0f, controlsHeight }, "Stop")) {
+			g_player.paused = false;
+			SendCommand(COMMAND_STOP, 0);
+		}
+		x += 110.0f;
+		const char* status = TextFormat("%s   %u/%u voices", FormatMilliseconds(g_player.time), g_player.voices, SND_SYNTH_VOICES);
+		DrawTextEx(font, status, (Vector2) { x, controlsY + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
+		return;
+	}
+
+	const SND_Sample* sample = SelectedSample();
+	uint32_t rate = SampleRate(g_player.selected[MODE_SAMPLES]);
+	const char* info = TextFormat("Sample %d: %s, %u bytes at 0x%X, %u frames, %u Hz%s", g_player.selected[MODE_SAMPLES],
+		sample->encoding == SND_ENCODING_ADPCM ? "4-bit ADPCM" : "16-bit PCM", sample->size, sample->offset, sample->frameCount,
+		rate, sample->loop ? TextFormat(", loop %u-%u", sample->loopStart, sample->loopEnd) : ", no loop");
+	DrawTextEx(font, info, (Vector2) { panel.x, top }, fontSize, 1.0f, LIGHTGRAY);
+	DrawWaveform(panel);
+
+	bool loopEnabled = g_player.loopEnabled;
+	GuiCheckBox((Rectangle) { x, controlsY + (controlsHeight - 20.0f) * 0.5f, 20.0f, 20.0f }, "Loop", &loopEnabled);
+	if (loopEnabled != g_player.loopEnabled) {
+		g_player.loopEnabled = loopEnabled;
+		SendCommand(COMMAND_LOOP, 0);
+	}
+	x += 90.0f;
+	int rateIndex = g_player.rateIndex;
+	GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, 0x2F5F8FFF);
+	GuiToggleGroup((Rectangle) { x, controlsY, 80.0f, controlsHeight }, "Auto;11025 Hz;22050 Hz;44100 Hz", &rateIndex);
+	GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, pressedColor);
+	if (rateIndex != g_player.rateIndex) {
+		g_player.rateIndex = rateIndex;
+		PlaySample(g_player.samplePosition);
+	}
+	x += 4 * 80.0f + 3 * GuiGetStyle(TOGGLE, GROUP_PADDING) + margin;
 	// TextFormat uses a rotating buffer, so the two times can be formatted in the same call
-	const char* time = TextFormat("%s / %s", FormatTime(g_player.position), FormatTime(sample->frameCount));
+	const char* time = TextFormat("%s / %s", FormatMilliseconds((uint32_t)((uint64_t)g_player.samplePosition * 1000 / rate)),
+		FormatMilliseconds((uint32_t)((uint64_t)sample->frameCount * 1000 / rate)));
 	DrawTextEx(font, time, (Vector2) { x, controlsY + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
 }

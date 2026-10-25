@@ -32,6 +32,8 @@ set(SRC
     src/scnf.h
     src/snd.c
     src/snd.h
+    src/sndSynth.c
+    src/sndSynth.h
     src/sndView.c
     src/sndView.h
     src/spr.c
