@@ -12,7 +12,7 @@ An IDX file holds the names of the files stored in the [AFS](AFS) container with
 | Offset | Size | Type     | Name      | Description                         |
 |-------:|-----:|----------|-----------|-------------------------------------|
 | 0x00   | 4    | char[4]  | `id`      | Magic `IDX0`                        |
-| 0x04   | 2    | uint16   | `count1`  | Unknown, usually related to `count` |
+| 0x04   | 2    | uint16   | `afsCount` | Number of entries of the AFS (including the [lip-sync tables](Lip-sync), which have no name) |
 | 0x06   | 2    | uint16   | `count`   | Number of entries                   |
 | 0x08   | 12   | uint8[12]| `padding` | Unused                              |
 | 0x14   | 20×N | Entry[N] | `entries` | Entry table (see below)             |
@@ -23,8 +23,10 @@ An IDX file holds the names of the files stored in the [AFS](AFS) container with
 |-------:|-----:|----------|----------------|-----------------------------------------------|
 | 0x00   | 12   | char[12] | `filename`     | File name without extension, not always null terminated |
 | 0x0C   | 2    | uint16   | `afsIndex`     | Index of the AFS entry this name belongs to   |
-| 0x0E   | 2    | uint16   | `afsLastIndex` | Unknown, looks like the last AFS index of a group |
-| 0x10   | 4    | uint32   | `unknown`      | Unknown                                       |
+| 0x0E   | 2    | uint16   | `lipSyncIndex` | Index of the AFS entry with the [lip-sync table](Lip-sync) of the clip, `0xFFFF` if it has none (music) |
+| 0x10   | 4    | uint32   | `lipSyncOffset` | Offset of the record of the clip in the lip-sync table, `0xFFFFFFFF` if it has none |
+
+The IDX0 files are the indexes of the audio AFS files, whose entries are [xWMA](XWM) clips (e.g. `01BEDAA001`) and lip-sync tables. The clips of a group share the same `lipSyncIndex`. In 716 of the 738 IDX0 files whose AFS is known, `count` + the number of lip-sync tables is the number of AFS entries. In the others some entries have no name, e.g. `free01.afs` (12,262 entries, 12,135 names, 125 tables) or `jap/free02.afs` (21,362 entries, 9,059 names, 177 tables).
 
 ## `humans.idx` variant
 

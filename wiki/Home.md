@@ -14,6 +14,8 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [IPAC](IPAC)       | —             | `IPAC`           | Container (block) | Named files inside PKF/PKS                   |
 | [CHRT](CHRT)       | `.chrt`       | `CHRS`           | Script            | Character script                             |
 | [SCNF](SCNF)       | — (`BIN`)     | `SCNF`           | Dialogue          | Voice and subtitle of each dialogue line     |
+| [Lip-sync](Lip-sync) | —           | —                | Dialogue          | Speaker, subtitle and mouth movements of each voice clip |
+| [XWM](XWM)         | `.xwm`        | `RIFF` .... `XWMA` | Audio           | xWMA audio clip (voices and music)           |
 | [MT5 / CHRM](MT5)  | `.mt5` `.chrm` | `HRCM`          | Model             | 3D model (CHRM: textures stored in the PKF)  |
 | [PVR](PVR)         | `.pvr`        | `GBIX` / `PVRT`  | Texture           | PowerVR texture                              |
 | [SPR](SPR)         | `.spr`        | `TEXN`           | Texture           | TEXN block with a PVR texture                |
@@ -23,6 +25,7 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 ```
 TAD/TAC
  ├─ AFS (+ IDX for the names)
+ │   ├─ XWM (+ Lip-sync table per group of clips)
  │   ├─ PKF ─┬─ TEXN → PVR / DDS
  │   │       └─ IPAC → CHRT, PVR, ...
  │   └─ PKS ─── IPAC → CHRT, CHRM (textures in the PKF), SCNF, PVR, ...
@@ -46,7 +49,7 @@ Most formats can be identified by their first bytes. This is useful in container
 | Magic (bytes)                 | Extension | Format                  |
 |-------------------------------|-----------|-------------------------|
 | `RIFF` .... `WAVE`            | `.wav`    | WAVE audio              |
-| `RIFF` .... `XWMA`            | `.xwm`    | xWMA audio              |
+| `RIFF` .... `XWMA`            | `.xwm`    | [XWM](XWM)              |
 | `DXBC`                        | —         | Compiled DirectX shader |
 | `CHRS`                        | `.chrt`   | [CHRT](CHRT)            |
 | `SCNF`                        | —         | [SCNF](SCNF)            |

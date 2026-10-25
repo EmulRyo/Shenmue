@@ -16,6 +16,10 @@
 
 **Dialogues**
 - [SCNF](SCNF)
+- [Lip-sync](Lip-sync)
+
+**Audio**
+- [XWM](XWM)
 
 **Textures**
 - [PVR](PVR)
