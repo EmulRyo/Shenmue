@@ -109,8 +109,8 @@ Unknown content, usually (593 files) `00 7F 00 00 FF 00 00 00 83 0F 00 00 00 7F 
 | 0x09   | 1    | uint8     | `level`    | Direct level of the AICA (`DISDL`, 0 to 15), for the splits that don't set it. 12 (4,506 parts), 15 (2,280)... |
 | 0x0A   | 1    | uint8     | `volume`   | Initial volume of the channel, like the MIDI controller 7: 127 (4,846 parts), 0 (601), 100, 120... |
 | 0x0B   | 1    | uint8     | `pan`      | Pan of the AICA (`DIPAN`, see [levels and pan](#levels-and-pan)), for the splits that don't set it. 0 (5,376 parts), 15, 31, 5... |
-| 0x0C   | 1    | int8      | `transpose` | Semitones added to the notes: 0, −12, 12, −24, 24...           |
-| 0x0D   | 1    | uint8     | `unknown2` | Unknown, usually 0 (also 36, `F4`, 4, `FB`...)                   |
+| 0x0C   | 1    | int8      | `transpose` | Semitones added to the notes (7-bit signed number): 0, −12, 12, −24, 24... |
+| 0x0D   | 1    | int8      | `fine`     | Fine tune added to the notes, in 1/64 semitone (7-bit signed number): 0 (6,967 parts), 36, −12 (`F4`), 4, −5 (`FB`)... |
 | 0x0E   | 0x12 | uint8[18] | `unknown3` | Unknown, usually 0                                               |
 
 ## Section 1: Program bank
@@ -121,7 +121,7 @@ A list of offsets with one bank (in all the files), and the bank is a list of of
 
 | Offset | Size | Type       | Name           | Description                                                    |
 |-------:|-----:|------------|----------------|----------------------------------------------------------------|
-| 0x00   | 4    | uint32     | `flags`        | Bit 0: the layers have a key map (drum kits). Values: 0, 1, 2 (only in the [effect program](#section-4-effect-program)), `80000000`, `00400000` |
+| 0x00   | 4    | uint32     | `flags`        | The first byte gives the kind of program: 1, the layers have a [key map](#key-map) (drum kits); 2, the [effect program](#section-4-effect-program), whose splits are taken by index; other values, a normal program. Values: 0, 1, 2, `80000000`, `00400000` |
 | 0x04   | 4    | uint32     | `unknown`      | Unknown, usually 0 (also 10, 12, 20)                           |
 | 0x08   | 8    | uint16[4]  | `layerOffsets` | Offsets of up to 4 layers, from the start of the program; 0 means no layer. The first one is always 0x10 |
 | 0x10   | ...  | Layer[]    | `layers`       | Layers                                                         |
@@ -132,14 +132,18 @@ A list of offsets with one bank (in all the files), and the bank is a list of of
 |-------:|---------:|-----------|------------|-----------------------------------------------------------------|
 | 0x00   | 1        | uint8     | `last`     | Number of splits minus one                                      |
 | 0x01   | 1        | uint8     | `unknown1` | Unknown, always 0                                               |
-| 0x02   | 1        | uint8     | `lowKey`   | First key of the layer (always 0)                               |
-| 0x03   | 1        | uint8     | `highKey`  | Last key of the layer (`7F`, 0 in 6 layers)                     |
-| 0x04   | 0x1E     | uint8[30] | `unknown2` | Unknown. Usually 0, with `02 7F` at 0x08 (815 layers) and `0F 7F` at 0x10 |
-| 0x22   | 1        | uint8     | `bendRange` | Probably the range of the pitch bend, in semitones: 2 (3,529 layers), 12 (33), 8 (3) |
-| 0x23   | 0x1D     | uint8[29] | `unknown3` | Unknown, usually 0                                              |
-
-The bytes 0x20 and 0x21 are usually 1 or 0, and 2 or 12.
-| 0x40   | K        | KeyMap    | `keyMap`   | Only when bit 0 of the program flags is set                     |
+| 0x02   | 1        | uint8     | `lowVelocity` | In a normal program, the layer plays the notes whose velocity is from `lowVelocity` to `highVelocity` (always 0). Not used in the key maps and the effect program, whose splits have their own [velocity range](#velocity-range) |
+| 0x03   | 1        | uint8     | `highVelocity` | `7F` (0 in 6 layers, which are never played)                 |
+| 0x04   | 2        | uint8[2]  | `unknown2` | Unknown, always 0                                               |
+| 0x06   | 1        | uint8     | `curve`    | Index of the velocity curve of the layer in the [curves](#section-2-curves) (the first curve when it is higher than the last index). Always 0 |
+| 0x07   | 0x19     | uint8[25] | `unknown3` | Unknown. Usually 0, with `02 7F` at 0x08 (815 layers) and `0F 7F` at 0x10 |
+| 0x20   | 1        | uint8     | `unknown4` | Unknown, 1 or 0                                                 |
+| 0x21   | 1        | uint8     | `bendUp`   | Range of the pitch bend up, in semitones (see [pitch](#pitch))  |
+| 0x22   | 1        | uint8     | `bendDown` | Range of the pitch bend down, in semitones. With `bendUp`: 2 and 2 (3,529 layers), 0 and 0 (361, the effect programs), 12 and 12 (31), 8 and 8 (3), 2 and 12 (2) |
+| 0x23   | 5        | uint8[5]  | `unknown5` | Unknown, usually 0                                              |
+| 0x28   | 1        | uint8     | `panPattern` | Bits 0-4: 1 to 8, the successive notes of the layer take the pans of a pattern of the sound driver (see [levels and pan](#levels-and-pan)); 0, no pattern. Always 0 |
+| 0x29   | 0x17     | uint8[23] | `unknown6` | Unknown, usually 0. The sound driver keeps the position in the pan pattern at 0x2A |
+| 0x40   | K        | KeyMap    | `keyMap`   | Only in the key map programs                                    |
 | 0x40+K | 0x40×N   | Split[N]  | `splits`   | Splits, ordered by key                                          |
 
 #### Key map
@@ -153,39 +157,75 @@ The bytes 0x20 and 0x21 are usually 1 or 0, and 2 or 12.
 
 #### Split (0x40 bytes)
 
-A split plays one sample over a range of keys. Most of its fields are registers of a voice of the AICA. A value of `80` in the pan, the level and the effect send means that the split doesn't set it: the value of the [part](#part-0x20-bytes) is used.
+A split plays one sample over a range of keys and a [range of velocities](#velocity-range). In a layer without key map, a key plays the first split whose `highKey` is above or equal to it. In 60 programs the high keys are not in increasing order (e.g. `2A 2F 36 47 42 7F` in `bgm023.snd`, `7B 48` in `tsm004.snd`), while the pitches of the splits are: some splits are never played. Most of the fields of a split are registers of a voice of the AICA. A value of `80` in the pan, the level and the effect send means that the split doesn't set it: the value of the [part](#part-0x20-bytes) is used.
 
 | Offset | Size | Type      | Name         | Description                                                       |
 |-------:|-----:|-----------|--------------|-------------------------------------------------------------------|
 | 0x00   | 1    | uint8     | `highKey`    | Last key of the split (`7F` when there is only one split). In the [effect program](#section-4-effect-program), the index of the effect |
-| 0x01   | 1    | uint8     | `flags`      | Bit 7: the pitch doesn't follow the key, the sample always plays as at note 60 (drum kits and effects) |
+| 0x01   | 1    | uint8     | `flags`      | Unknown. Bit 7 is set in all the splits of the effect program and in most splits of the key maps (3,773 of 4,244), never in the other splits |
 | 0x02   | 1    | uint8     | `sample`     | Index of the sample in the [sample table](#section-7-sample-table). In 23 splits it is higher than the index of the last sample of the file |
 | 0x03   | 1    | uint8     | `unknown1`   | Unknown: 1, or 0                                                  |
 | 0x04   | 2    | uint16    | `unknown2`   | Unknown, almost always 0                                          |
 | 0x06   | 1    | uint8     | `pan`        | Pan of the AICA (`DIPAN`, see [levels and pan](#levels-and-pan)), or `80` |
 | 0x07   | 1    | uint8     | `level`      | Direct level of the AICA (`DISDL`, 0 to 15), or `80`              |
-| 0x08   | 2    | uint16    | `unknown3`   | Unknown, always `FFFF`                                            |
+| 0x08   | 1    | uint8     | `velocityLevel` | Bits 1-7: scale of the level given by the velocity (see [levels and pan](#levels-and-pan)), 127 for no change: `FF` (18,450 splits), `F1` (371), `C9` (95), `DD` (79), 0 (57, silent)... |
+| 0x09   | 1    | uint8     | `unknown3`   | Unknown, usually the same value as `velocityLevel`                |
 | 0x0A   | 1    | int8      | `transpose`  | Pitch, in semitones (see [pitch](#pitch))                         |
 | 0x0B   | 1    | int8      | `fine`       | Pitch, in 1/64 semitone (see [pitch](#pitch))                     |
 | 0x0C   | 2    | uint16    | `envelope1`  | Envelope rates of the AICA: attack (`AR`, bits 0-4), decay 1 (`D1R`, bits 6-10) and decay 2 (`D2R`, bits 11-15). Usually `001F`: instant attack, no decay |
 | 0x0E   | 2    | uint16    | `envelope2`  | Release rate (`RR`, bits 0-4), decay level (`DL`, bits 5-9) and key rate scaling (`KRS`, bits 10-13) of the AICA. Usually `001F` |
-| 0x10   | 0x0A | uint16[5] | `unknown4`   | Unknown. Usually `0000 07FD 07FD 07FD 27FD`, maybe the levels of the filter of the AICA |
-| 0x1A   | 4    | uint8[4]  | `unknown5`   | Unknown, usually 0                                                |
-| 0x1E   | 2    | uint8[2]  | `lfo`        | Probably the LFO register of the AICA with its bytes swapped: frequency (`LFOF`, bits 2-6 of the first byte) and the waveforms and depths of the pitch and the amplitude (second byte). The second byte is `80` when the depths are not set (4,752 splits) |
-| 0x20   | 1    | uint8     | `unknown6`   | Unknown, usually 0                                                |
-| 0x21   | 1    | uint8     | `unknown7`   | Unknown: `7F` (with `80` at 0x31) or 0                            |
-| 0x22   | 0x0E | uint8[14] | `unknown8`   | Unknown, usually 0                                                |
-| 0x30   | 1    | uint8     | `send`       | Effect send of the AICA (`IMXL`, bits 4-7, and `ISEL`, bits 0-3)  |
-| 0x31   | 1    | uint8     | `unknown9`   | `80` when the split doesn't set the effect send; `D2`, `D6`, `62`... otherwise |
-| 0x32   | 0x0E | uint8[14] | `unknown10`  | Unknown, usually 0                                                |
+| 0x10   | 0x0A | uint16[5] | `filter`     | Low-pass filter of the AICA, see [filter](#filter). Usually `0000 07FD 07FD 07FD 27FD`: no filter |
+| 0x1A   | 2    | uint8[2]  | `unknown4`   | Unknown, usually 0                                                |
+| 0x1C   | 1    | uint8     | `detune`     | Random pitch of each note, up to `detune` × 6/256 semitone up or down: 0 (19,199 splits), 4 (169)... |
+| 0x1D   | 1    | uint8     | `unknown5`   | Unknown, usually 0                                                |
+| 0x1E   | 1    | uint8     | `sendFlags`  | Bit 7 set: the split doesn't set the effect send, the send of the [part](#part-0x20-bytes) is used. 0 (12,814 splits) or `80` (6,562, the splits of the normal programs) |
+| 0x1F   | 1    | uint8     | `send`       | Effect send of the AICA (`IMXL`, bits 4-7, and `ISEL`, bits 0-3), when bit 7 of `sendFlags` is clear: 0 (2,501 splits), `40` (2,127), `30` (1,741), `50` (1,220)... |
+| 0x20   | 1    | uint8     | `lowVelocity` | First velocity of the split, in the key maps and the effect program (see [velocity range](#velocity-range)) |
+| 0x21   | 1    | uint8     | `highVelocity` | Last velocity of the split. `00 7F` in the key maps and the effect program (13,254 splits), `00 00` in the normal programs, where it is not used |
+| 0x22   | 0x0E | uint8[14] | `unknown6`   | Unknown, usually 0                                                |
+| 0x30   | 2    | uint16    | `lfo`        | LFO register of the AICA: reset (`LFORE`, bit 15), frequency (`LFOF`, bits 10-14), waveform and depth of the pitch (`PLFOWS`, bits 8-9, `PLFOS`, bits 5-7) and of the amplitude (`ALFOWS`, bits 3-4, `ALFOS`, bits 0-2). `8000` (13,254 splits), `D210` (4,951), `D600` (791), `6290` (168, a vibrato)...: the LFO is usually held in reset, with a frequency in the normal programs |
+| 0x32   | 0x0E | uint8[14] | `unknown7`   | Unknown, usually 0                                                |
+
+#### Velocity range
+
+A note plays a split only when its velocity is in the range of the split: the range of the layer (0x02 and 0x03 of the [layer](#layer)) in the normal programs, the range of the split itself (0x20 and 0x21) in the key maps and the effect program. For the [effects](#effect-sequence), the velocity is the volume of the effect.
+
+#### Filter
+
+5 words, each with a level of the filter (bits 0-10, the 11 high bits of the 13-bit `FLV` registers of the AICA) and a rate (bits 11-15). When the first level is 0, the filter is off (`LPOFF`): 17,142 splits. The other 2,424 splits use the filter.
+
+| Word | Level (bits 0-10)                | Rate (bits 11-15)                                                    |
+|-----:|----------------------------------|----------------------------------------------------------------------|
+| 0    | `FLV0`: cutoff at the key on     | `FAR`: rate of the attack of the filter envelope, towards `FLV1`     |
+| 1    | `FLV1`: cutoff after the attack  | `FD1R`: rate of the decay 1, towards `FLV2`                          |
+| 2    | `FLV2`: cutoff after the decay 1 | `FD2R`: rate of the decay 2, towards `FLV3`                          |
+| 3    | `FLV3`: cutoff after the decay 2 | `FRR`: rate of the release, towards `FLV4`                           |
+| 4    | `FLV4`: cutoff after the release | `Q`: resonance (0 to 31, −3 dB to 20.25 dB)                          |
+
+`07FD` is the highest level (the filter open). Most of the filtered splits only set `FLV0`, with the rates at 0 and the other levels at `07FD`, and a resonance of 4 (`27FD`): e.g. `075E 07FD 07FD 07FD 27FD` (192 splits), `07B8 ...` (95), `06F2 ...` (93).
 
 #### Pitch
 
-The AICA plays a sample at 44100 Hz × 2^(`semitones` / 12), where `semitones` = note + `transpose` of the part + `transpose` + `fine` / 64 − 60, with the note 60 when bit 7 of `flags` is set. So 44100 × 2^((`transpose` + `fine` / 64) / 12) is the sample rate of the recording: e.g. `transpose` −18 and `fine` 29 give 16000 Hz, −24 and 0 give 11025 Hz, −30 and 29 give 8000 Hz. The samples at [half sample rate](#sample-0x10-bytes) play twice as fast, as their data has been doubled.
+The AICA plays a sample at 44100 Hz × 2^(`semitones` / 12), where `semitones` = note − 60 + `transpose` of the part + `transpose` + (`fine` of the part + `fine`) / 64, plus the random `detune` and the pitch bend. In the key maps (one key per split) and in the effect program, the pitch doesn't follow the key: the sample plays as at note 60, but the transpose and the fine tune of the part still apply. The pitch bend (0 to 127, 64 is the center) moves the pitch by (bend − 63) / 64 × `bendUp` of the [layer](#layer) semitones above the center, and by (bend − 64) / 64 × `bendDown` semitones below. So 44100 × 2^((`transpose` + `fine` / 64) / 12) is the sample rate of the recording: e.g. `transpose` −18 and `fine` 29 give 16000 Hz, −24 and 0 give 11025 Hz, −30 and 29 give 8000 Hz. The samples at [half sample rate](#sample-0x10-bytes) play twice as fast, as their data has been doubled.
 
 #### Levels and pan
 
 The levels of the AICA (`DISDL`, `IMXL`, `EFSDL`) go from 0 (off) to 15 (0 dB), 3 dB per step. The pan (`DIPAN`, `EFPAN`) attenuates one side by 3 dB per step of bits 0-3 (15: off): the left side when bit 4 is clear, the right side when it is set. 0 and `10` are the center, `0F` is right only and `1F` left only.
+
+The velocity, the volume of the channel and its expression set the total level of the AICA (`TL`), which attenuates by 0.375 dB per step. The sound driver of the game (`sound/aicadrv.bin`) takes the value of the velocity in the [curve](#section-2-curves) of the layer (0 to 254) and scales it successively by `velocityLevel` of the split, the volume and the expression (0 to 127 each: `level` = `level` × `scale` × 2 / 256, plus 1 when the result is not 0). Then `TL` = (255 − `level`) / 2, or 255 (silence) when the level is 0. So the full velocity and volume give 0 dB, a velocity of 64 about −10 dB, and a volume of 64 about −24 dB.
+
+When the split sets its pan and its layer has a `panPattern`, each note takes the next pan of a pattern of the sound driver, starting again after the last one (16 values, or before `FF`):
+
+| Pattern | Pans                                              |
+|--------:|---------------------------------------------------|
+| 1       | `11 01`                                           |
+| 2       | `14 04`                                           |
+| 3       | `1F 0F`                                           |
+| 4       | `18 08 14 04`                                     |
+| 5       | `02 04 08 0F 08 04 02 00 12 14 18 1F 18 14 12 00` |
+| 6       | `02 04 08 0F 1F 18 14 12`                         |
+| 7       | `12 14 18 1F 0F 08 04 02`                         |
+| 8       | `08 1F 02 18 08 14 02 00 14 08 02 1F 04 12 08 18` |
 
 ## Section 2: Curves
 
@@ -194,7 +234,7 @@ The levels of the AICA (`DISDL`, `IMXL`, `EFSDL`) go from 0 (off) to 15 (0 dB), 
 | 0x00   | 4        | uint32        | `last`   | Number of curves minus one: 0 (712 files) or 1 (82) |
 | 0x04   | 0x80×N   | uint8[N][128] | `curves` | Curves of 128 values                               |
 
-The first curve is the same in every file: it rises from 0 (`00 00 07 0E 15 1C 24 ...`) to `FE`, quickly at first and slowly at the end. It is probably the curve that turns the velocity of the notes (0 to 127) into a level.
+The curves turn the velocity of the notes (0 to 127) into a level (0 to 254, see [levels and pan](#levels-and-pan)); each [layer](#layer) chooses its curve. The first curve is the same in every file, and the same as the default curve of the sound driver: it rises from 0 (`00 07 0E 15 1C 24 ...`) to `FE`, quickly at first and slowly at the end (64 gives `C9`).
 
 ## Section 3: Sequence bank
 
@@ -276,7 +316,7 @@ All the channels in a single stream of [events](#events), ending with the MIDI e
 
 ## Section 4: Effect program
 
-A single [program](#program) (flags 2, one layer without key map) with one split per sound effect, played by the [effect sequences](#effect-sequence). The first byte of each split is its index instead of a key, and bit 7 of the flags of the splits is set: the effects play at the rate of their recording.
+A single [program](#program) (flags 2, one layer without key map) with one split per sound effect, played by the [effect sequences](#effect-sequence). The first byte of each split is its index instead of a key, and the effects play at the rate of their recording, whatever the [pitch](#pitch) of the note.
 
 ## Section 5: Unknown table
 

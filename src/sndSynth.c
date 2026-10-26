@@ -7,11 +7,12 @@
 
 #define CHANNEL_COUNT       (SND_MAX_CHANNELS * 2) // Music channels, then effect channels
 #define CONTROL_PERIOD      32      // Samples between the updates of the pitch, the LFO and the levels
-#define MASTER_GAIN         0.4f
+#define MASTER_GAIN         0.6f
 #define MAX_EVENTS_PER_SAMPLE 4096  // Stops a sequence that loops without advancing in time
 #define SAMPLES_PER_MS      (SND_SYNTH_RATE / 1000.0)
 #define DSP_RAM_MASK        0xFFFF
 #define FADE_MS             5.0f    // Fade out of the voices that reach a loop that would hold them forever
+#define PI                  3.14159265f
 
 // Times of the AICA envelope, in milliseconds, for the effective rates 0 to 63 (attack, and decay and release)
 static const float g_attackTimes[64] = {
@@ -37,6 +38,24 @@ static const float g_pitchLfoCents[8] = { 0.0f, 7.0f, 13.5f, 27.0f, 55.0f, 112.0
 static const float g_ampLfoDb[8] = { 0.0f, 0.4f, 0.8f, 1.5f, 3.0f, 6.0f, 12.0f, 24.0f };
 #define DEFAULT_LFO_FREQUENCY   19      // When the split doesn't set it (4.79 Hz)
 #define MODULATION_CENTS        100.0f  // Depth of the vibrato of the modulation wheel at 127
+// Attenuation of each bit of the AICA total level (TL), in dB
+static const float g_totalLevelDb[8] = { 0.4f, 0.8f, 1.5f, 3.0f, 6.0f, 12.0f, 24.0f, 48.0f };
+
+// Pan patterns of the sound driver: the successive notes of a layer take the next pan (AICA DIPAN) of the pattern, up to
+// the end of the pattern (16 values or 0xFF) and again from the start
+#define PAN_PATTERNS        8
+#define PAN_PATTERN_SIZE    16
+#define PAN_LAYERS          64      // Layers whose position in their pattern is kept
+static const uint8_t g_panPatterns[PAN_PATTERNS][PAN_PATTERN_SIZE] = {
+	{ 0x11, 0x01, 0xFF },
+	{ 0x14, 0x04, 0xFF },
+	{ 0x1F, 0x0F, 0xFF },
+	{ 0x18, 0x08, 0x14, 0x04, 0xFF },
+	{ 0x02, 0x04, 0x08, 0x0F, 0x08, 0x04, 0x02, 0x00, 0x12, 0x14, 0x18, 0x1F, 0x18, 0x14, 0x12, 0x00 },
+	{ 0x02, 0x04, 0x08, 0x0F, 0x1F, 0x18, 0x14, 0x12, 0xFF },
+	{ 0x12, 0x14, 0x18, 0x1F, 0x0F, 0x08, 0x04, 0x02, 0xFF },
+	{ 0x08, 0x1F, 0x02, 0x18, 0x08, 0x14, 0x02, 0x00, 0x14, 0x08, 0x02, 0x1F, 0x04, 0x12, 0x08, 0x18 },
+};
 
 typedef enum {
 	ENVELOPE_ATTACK,
@@ -59,13 +78,22 @@ typedef struct {
 	double				step;       // Frames per output sample
 	float				pitch;      // Semitones from the rate of 44100 Hz, without bend and LFO
 	float				rateFactor; // 2 for the samples doubled from half the sample rate
-	float				bendRange;
+	float				bendUp, bendDown;
 	// Envelope: the level goes from 0 (-96 dB) to 1023 (0 dB), linearly in dB
 	bool				useEnvelope;
 	EnvelopeState		state;
 	float				level;
 	float				attackStep, decay1Step, decay2Step, releaseStep, decayLevel;
-	// Levels: velocity and DISDL, then the channel, the pan and the effect send
+	// Filter: the envelope moves the cutoff level (FLV, 0 to 8191) towards the level of the next state, every control
+	// period; a resonant low-pass biquad
+	bool				filter;
+	EnvelopeState		filterState;
+	float				filterLevel;
+	float				filterSteps[4];
+	float				b0, b1, b2, a1, a2;
+	float				x1, x2, y1, y2;
+	// Levels: the velocity through the curve (0 to 254) and DISDL, then the channel, the pan and the effect send
+	int					velocityLevel;
 	float				baseGain;
 	uint8_t				pan;        // AICA DIPAN of the split or the part
 	float				sendGain;
@@ -127,6 +155,9 @@ struct SND_Synth {
 	uint32_t		age;
 	uint32_t		controlCounter;
 	float			levelTable[1024];   // Gain of each level of the envelope
+	float			totalLevelTable[256]; // Gain of each AICA total level
+	const SND_Layer* panLayers[PAN_LAYERS]; // Position of the layers with a pan pattern in their pattern
+	uint8_t			panPositions[PAN_LAYERS];
 	DSP				dsp;
 	float			outputLeft[16], outputRight[16]; // EFSDL and EFPAN of the effect outputs
 };
@@ -134,6 +165,18 @@ struct SND_Synth {
 // AICA levels (DISDL, IMXL, EFSDL): 15 is 0 dB, each step is -3 dB, 0 is off
 static float LevelGain(int level) {
 	return level <= 0 ? 0.0f : powf(10.0f, -3.0f * (15 - level) / 20.0f);
+}
+
+// Level of the sound driver (0 to 254) scaled by a value from 0 to 127, rounded up
+static int ScaleLevel(int level, int scale) {
+	int result = (level * scale * 2) >> 8;
+	return result != 0 ? result + 1 : 0;
+}
+
+// The sound driver turns the level (0 to 254: the velocity through the curve, scaled by the volume and the expression)
+// into the AICA total level (TL), which attenuates in steps of 0.375 dB: TL = (255 - level) / 2
+static float TotalLevelGain(const SND_Synth* synth, int level) {
+	return level <= 0 ? 0.0f : synth->totalLevelTable[(255 - level) >> 1];
 }
 
 // AICA pan: bits 0-3 attenuate a side by 3 dB per step (15: off), the right one below 0x10 and the left one above
@@ -348,6 +391,41 @@ static void SetEnvelope(Voice* voice) {
 	voice->decay2Step = EnvelopeStep(g_decayTimes, base + 2 * split->decay2Rate);
 	voice->releaseStep = EnvelopeStep(g_decayTimes, base + 2 * split->releaseRate);
 	voice->decayLevel = (float)((0x1F - split->decayLevel) << 5);
+	// The filter envelope: the rates of the split, over the whole range of the cutoff level, every control period
+	for (int i = 0; i < 4; i++)
+		voice->filterSteps[i] = EnvelopeStep(g_decayTimes, 2 * split->filterRates[i]) * (8191.0f / 1023.0f) * CONTROL_PERIOD;
+}
+
+// Cutoff of the filter from the level FLV (13 bits, 256 steps per octave, 0x1FF8 is open) and resonance from Q
+// (-3 dB to 20.25 dB, 0.75 dB per step): coefficients of a low-pass biquad
+static void SetFilter(Voice* voice) {
+	int level = (int)voice->filterLevel;
+	float coefficient = (float)(((((level & 0xFF) | 0x100) << 4) >> ((level >> 8) ^ 0x1F))) / 8192.0f;
+	float cutoff = -logf(1.0f - coefficient) * SND_SYNTH_RATE / (2.0f * PI);
+	cutoff = fminf(fmaxf(cutoff, 10.0f), SND_SYNTH_RATE * 0.45f);
+	float q = powf(10.0f, (-3.0f + 0.75f * voice->split->resonance) / 20.0f);
+	float w = 2.0f * PI * cutoff / SND_SYNTH_RATE;
+	float alpha = sinf(w) / (2.0f * q);
+	float cosine = cosf(w);
+	float a0 = 1.0f + alpha;
+	voice->b1 = (1.0f - cosine) / a0;
+	voice->b0 = voice->b2 = voice->b1 * 0.5f;
+	voice->a1 = -2.0f * cosine / a0;
+	voice->a2 = (1.0f - alpha) / a0;
+}
+
+// The filter envelope goes to FLV1 (attack), FLV2 (decay 1) and FLV3 (decay 2), and to FLV4 at the release
+static void UpdateFilterEnvelope(Voice* voice) {
+	const SND_Split* split = voice->split;
+	float target = split->filterLevels[voice->filterState + 1];
+	float step = voice->filterSteps[voice->filterState];
+	if (voice->filterLevel < target)
+		voice->filterLevel = fminf(voice->filterLevel + step, target);
+	else
+		voice->filterLevel = fmaxf(voice->filterLevel - step, target);
+	if (voice->filterLevel == target && (voice->filterState == ENVELOPE_ATTACK || voice->filterState == ENVELOPE_DECAY1))
+		voice->filterState++;
+	SetFilter(voice);
 }
 
 static void UpdateVoiceControl(SND_Synth* synth, Voice* voice);
@@ -355,6 +433,7 @@ static void UpdateVoiceControl(SND_Synth* synth, Voice* voice);
 static void KeyOff(Voice* voice) {
 	voice->keyOff = true;
 	voice->sustained = false;
+	voice->filterState = ENVELOPE_RELEASE;
 	if (!voice->useEnvelope)
 		voice->active = false;
 	else
@@ -374,6 +453,28 @@ static Voice* AllocateVoice(SND_Synth* synth) {
 	return best;
 }
 
+// Next pan of the pattern of a layer. The pan of the split is kept for the patterns that don't exist
+static uint8_t NextPan(SND_Synth* synth, const SND_Layer* layer, uint8_t pan) {
+	if (layer->panPattern > PAN_PATTERNS)
+		return pan;
+	int slot = 0;
+	while (slot < PAN_LAYERS && synth->panLayers[slot] != NULL && synth->panLayers[slot] != layer)
+		slot++;
+	if (slot == PAN_LAYERS)
+		slot = 0;
+	if (synth->panLayers[slot] != layer) {
+		synth->panLayers[slot] = layer;
+		synth->panPositions[slot] = 0;
+	}
+	const uint8_t* pattern = g_panPatterns[layer->panPattern - 1];
+	uint8_t position = synth->panPositions[slot];
+	pan = pattern[position++];
+	if (position == PAN_PATTERN_SIZE || pattern[position] == 0xFF)
+		position = 0;
+	synth->panPositions[slot] = position;
+	return pan;
+}
+
 static void StartVoice(SND_Synth* synth, int channel, uint8_t key, uint8_t velocity, const SND_Layer* layer,
 	const SND_Split* split, const SND_Part* part) {
 	const SND_Bank* bank = synth->bank;
@@ -390,44 +491,66 @@ static void StartVoice(SND_Synth* synth, int channel, uint8_t key, uint8_t veloc
 	voice->loop = sample->loop;
 	voice->age = synth->age++;
 	voice->rateFactor = sample->halfRate ? 2.0f : 1.0f;
-	voice->bendRange = layer->bendRange != 0 ? layer->bendRange : 2.0f;
+	voice->bendUp = layer->bendUp;
+	voice->bendDown = layer->bendDown;
+	// Pitch: the key (unless the pitch is fixed), the transpose and fine tune of the part and of the split, and a random
+	// detune of the split
 	voice->pitch = split->transpose + split->fine / 64.0f;
+	if (part != NULL)
+		voice->pitch += part->transpose + part->fine / 64.0f;
 	if (!split->fixedPitch)
-		voice->pitch += key - 60 + (part != NULL ? part->transpose : 0);
+		voice->pitch += key - 60;
+	if (split->detune != 0)
+		voice->pitch += split->detune * 6 * ((rand() & 0xFF) - 128) / 128 / 256.0f;
 
 	voice->useEnvelope = true;
 	voice->state = ENVELOPE_ATTACK;
 	SetEnvelope(voice);
+	voice->filter = split->filter;
+	voice->filterState = ENVELOPE_ATTACK;
+	voice->filterLevel = split->filterLevels[0];
+	if (voice->filter)
+		SetFilter(voice);
 
-	float velocityLevel = bank->velocityCurve[velocity & 0x7F] / 254.0f;
+	const uint8_t* curve = bank->curves[layer->curve < bank->curveCount ? layer->curve : 0];
+	voice->velocityLevel = ScaleLevel(curve[velocity & 0x7F], split->velocityLevel);
 	uint8_t level = split->level != SND_UNSET ? split->level : (part != NULL ? part->level : 15);
-	voice->baseGain = velocityLevel * velocityLevel * LevelGain(level);
-	voice->pan = split->pan != SND_UNSET ? split->pan : (part != NULL ? part->pan : 0);
+	voice->baseGain = LevelGain(level);
+	if (split->pan == SND_UNSET)
+		voice->pan = part != NULL ? part->pan : 0;
+	else
+		voice->pan = layer->panPattern != 0 ? NextPan(synth, layer, split->pan) : split->pan;
 	uint8_t send = split->sendSet ? split->send : (part != NULL ? part->send : 0);
 	voice->sendGain = LevelGain(send >> 4);
 	voice->isel = send & 0x0F;
 
-	// LFO: the frequency and waveforms of the split; the depths of the split when they are set (low byte not 0x80)
+	// LFO: the frequency and waveforms of the split, also for the modulation wheel; the depths of the split when the
+	// LFO isn't held in reset (bit 15)
 	int frequency = (split->lfo >> 10) & 0x1F;
-	if ((split->lfo & 0xFF) == 0x80 && frequency == 0)
+	bool reset = (split->lfo & 0x8000) != 0;
+	if (reset && frequency == 0)
 		frequency = DEFAULT_LFO_FREQUENCY;
 	voice->lfoStep = g_lfoFrequencies[frequency] / SND_SYNTH_RATE * CONTROL_PERIOD;
 	voice->pitchWave = (split->lfo >> 8) & 3;
 	voice->ampWave = (split->lfo >> 3) & 3;
-	if ((split->lfo & 0xFF) != 0x80) {
+	if (!reset) {
 		voice->pitchDepth = g_pitchLfoCents[(split->lfo >> 5) & 7];
 		voice->ampDepth = g_ampLfoDb[split->lfo & 7];
 	}
 	UpdateVoiceControl(synth, voice);
 }
 
+// Each layer plays the split of the key, if the velocity is in the range of the split
 static void StartNote(SND_Synth* synth, const SND_Program* program, int channel, uint8_t key, uint8_t velocity,
 	const SND_Part* part) {
 	for (uint32_t l = 0; l < program->layerCount; l++) {
 		const SND_Layer* layer = &program->layers[l];
-		if (key < layer->lowKey || key > layer->highKey || layer->keyMap[key] < 0)
+		if (layer->keyMap[key] < 0)
 			continue;
-		StartVoice(synth, channel, key, velocity, layer, &layer->splits[layer->keyMap[key]], part);
+		const SND_Split* split = &layer->splits[layer->keyMap[key]];
+		if (velocity < split->lowVelocity || velocity > split->highVelocity)
+			continue;
+		StartVoice(synth, channel, key, velocity, layer, split, part);
 	}
 }
 
@@ -632,7 +755,9 @@ static void UpdateVoiceControl(SND_Synth* synth, Voice* voice) {
 	voice->lfoPhase -= floorf(voice->lfoPhase);
 
 	float pitchDepth = fmaxf(voice->pitchDepth, channel->modulation * MODULATION_CENTS / 127.0f);
-	float semitones = voice->pitch + (channel->bend - 64) / 64.0f * voice->bendRange;
+	// The bend goes up to (63 + 1) / 64 of the range up, and down to -64 / 64 of the range down
+	int bend = channel->bend - 64;
+	float semitones = voice->pitch + (bend > 0 ? (bend + 1) * voice->bendUp : bend * voice->bendDown) / 64.0f;
 	if (pitchDepth > 0.0f) {
 		// A sawtooth vibrato sounds wrong: the modulation wheel uses a triangle
 		int wave = voice->pitchDepth > 0.0f ? voice->pitchWave : 2;
@@ -640,9 +765,11 @@ static void UpdateVoiceControl(SND_Synth* synth, Voice* voice) {
 	}
 	voice->step = exp2f(semitones / 12.0f) * voice->rateFactor;
 
-	float volume = channel->volume / 127.0f;
-	float expression = channel->expression / 127.0f;
-	float gain = voice->baseGain * volume * volume * expression * expression;
+	if (voice->filter)
+		UpdateFilterEnvelope(voice);
+
+	int level = ScaleLevel(ScaleLevel(voice->velocityLevel, channel->volume), channel->expression);
+	float gain = voice->baseGain * TotalLevelGain(synth, level);
 	if (voice->ampDepth > 0.0f)
 		gain *= powf(10.0f, -voice->ampDepth * (LfoWave(voice->ampWave, voice->lfoPhase) + 1.0f) * 0.5f / 20.0f);
 	float left, right;
@@ -731,6 +858,15 @@ void SND_SynthRender(SND_Synth* synth, int16_t* output, uint32_t frames) {
 				voice->active = false;
 				continue;
 			}
+			if (voice->filter) {
+				float filtered = voice->b0 * value + voice->b1 * voice->x1 + voice->b2 * voice->x2 -
+					voice->a1 * voice->y1 - voice->a2 * voice->y2;
+				voice->x2 = voice->x1;
+				voice->x1 = value;
+				voice->y2 = voice->y1;
+				voice->y1 = filtered;
+				value = filtered;
+			}
 			float envelope = 1.0f;
 			if (voice->useEnvelope) {
 				UpdateEnvelope(voice);
@@ -770,6 +906,12 @@ SND_Synth* SND_SynthCreate(const SND_Bank* bank) {
 	synth->bank = bank;
 	for (int i = 0; i < 1024; i++)
 		synth->levelTable[i] = powf(10.0f, -(1023 - i) * (96.0f / 1024.0f) / 20.0f);
+	for (int i = 0; i < 256; i++) {
+		float db = 0.0f;
+		for (int bit = 0; bit < 8; bit++)
+			db += (i >> bit) & 1 ? g_totalLevelDb[bit] : 0.0f;
+		synth->totalLevelTable[i] = powf(10.0f, -db / 20.0f);
+	}
 	const SND_DSP* program = &bank->dsp;
 	if (program->present) {
 		// The program ends after its last step that isn't 0
@@ -795,6 +937,7 @@ void SND_SynthDestroy(SND_Synth* synth) {
 void SND_SynthStop(SND_Synth* synth) {
 	StopSequence(synth);
 	memset(synth->voices, 0, sizeof(synth->voices));
+	memset((void*)synth->panLayers, 0, sizeof(synth->panLayers));
 	ResetChannels(synth);
 	synth->time = 0;
 }

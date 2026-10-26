@@ -117,26 +117,40 @@ static void ReadSplit(const uint8_t* p, SND_Split* split) {
 	uint16_t envelope1 = ReadU16(p + 0x0C);
 	uint16_t envelope2 = ReadU16(p + 0x0E);
 	split->highKey = p[0x00];
-	split->fixedPitch = (p[0x01] & 0x80) != 0;
 	split->sample = p[0x02];
 	split->pan = p[0x06] & 0x80 ? SND_UNSET : p[0x06] & 0x1F;
 	split->level = p[0x07] & 0x80 ? SND_UNSET : p[0x07] & 0x0F;
+	split->velocityLevel = p[0x08] >> 1;
 	split->transpose = (int8_t)p[0x0A];
 	split->fine = (int8_t)p[0x0B];
+	split->detune = p[0x1C];
+	split->lowVelocity = p[0x20];
+	split->highVelocity = p[0x21];
 	split->attackRate = envelope1 & 0x1F;
 	split->decay1Rate = (envelope1 >> 6) & 0x1F;
 	split->decay2Rate = (envelope1 >> 11) & 0x1F;
 	split->releaseRate = envelope2 & 0x1F;
 	split->decayLevel = (envelope2 >> 5) & 0x1F;
 	split->keyRateScaling = (envelope2 >> 10) & 0x0F;
-	split->lfo = (uint16_t)((p[0x1E] << 8) | p[0x1F]);
-	split->sendSet = p[0x31] != 0x80;
-	split->send = p[0x30];
+	// Filter: 5 words with a level (FLV, bits 0-10, 2 bits left out) and a rate (bits 11-15): FAR, FD1R, FD2R, FRR and Q.
+	// The filter is off when the first level is 0
+	for (int i = 0; i < 5; i++) {
+		uint16_t word = ReadU16(p + 0x10 + i * 2);
+		split->filterLevels[i] = (uint16_t)((word & 0x7FF) << 2);
+		if (i < 4)
+			split->filterRates[i] = (uint8_t)(word >> 11);
+		else
+			split->resonance = (uint8_t)(word >> 11);
+	}
+	split->filter = split->filterLevels[0] != 0;
+	split->sendSet = (p[0x1E] & 0x80) == 0;
+	split->send = p[0x1F];
+	split->lfo = ReadU16(p + 0x30);
 }
 
-// Reads the layers of the program at p. Bit 0 of the flags: the layers have a key map (low key, high key and the offset
-// of the split of each key) between the layer header and the splits
-static bool ReadProgram(SND_Bank* bank, uint32_t p, SND_Program* program) {
+// Reads the layers of the program at p (the effect program when effects is true). Bit 0 of the flags: the layers have a
+// key map (low key, high key and the offset of the split of each key) between the layer header and the splits
+static bool ReadProgram(SND_Bank* bank, uint32_t p, SND_Program* program, bool effects) {
 	if (!InFile(bank, p, 0x10))
 		return false;
 	uint32_t flags = ReadU32(bank->data + p);
@@ -150,9 +164,10 @@ static bool ReadProgram(SND_Bank* bank, uint32_t p, SND_Program* program) {
 		const uint8_t* header = bank->data + l;
 		SND_Layer* layer = &program->layers[program->layerCount];
 		layer->splitCount = header[0] + 1u;
-		layer->lowKey = header[2];
-		layer->highKey = header[3];
-		layer->bendRange = header[0x22];
+		layer->curve = header[0x06];
+		layer->bendUp = header[0x21];
+		layer->bendDown = header[0x22];
+		layer->panPattern = header[0x28] & 0x1F;
 		for (int key = 0; key < 128; key++)
 			layer->keyMap[key] = -1;
 
@@ -187,13 +202,22 @@ static bool ReadProgram(SND_Bank* bank, uint32_t p, SND_Program* program) {
 			}
 		}
 		else {
-			// The splits are ordered by key: each one covers the keys up to its high key
-			uint32_t s = 0;
+			// A key plays the first split whose high key is above or equal to it
 			for (int key = 0; key < 128; key++) {
-				while (s < layer->splitCount && layer->splits[s].highKey < key)
-					s++;
-				if (s < layer->splitCount)
-					layer->keyMap[key] = (int16_t)s;
+				for (uint32_t s = 0; s < layer->splitCount && layer->keyMap[key] < 0; s++) {
+					if (layer->splits[s].highKey >= key)
+						layer->keyMap[key] = (int16_t)s;
+				}
+			}
+		}
+		// The splits of a key map (one key each) and of the effects play at the rate of their recording, and have their
+		// own velocity range. The splits of the other programs take the velocity range of the layer
+		for (uint32_t s = 0; s < layer->splitCount; s++) {
+			SND_Split* split = &layer->splits[s];
+			split->fixedPitch = (flags & 1) || effects;
+			if (!split->fixedPitch) {
+				split->lowVelocity = header[0x02];
+				split->highVelocity = header[0x03];
 			}
 		}
 	}
@@ -216,7 +240,7 @@ static void ReadPrograms(SND_Bank* bank, uint32_t section) {
 		return;
 	bank->programCount = count;
 	for (uint32_t i = 0; i < count; i++)
-		ReadProgram(bank, list + ReadU16(bank->data + list + 2 + i * 2), &bank->programs[i]);
+		ReadProgram(bank, list + ReadU16(bank->data + list + 2 + i * 2), &bank->programs[i], false);
 }
 
 // The part table is a list of blocks: settings (0x28 bytes) and lists of parts. Only the first list is used: it is the
@@ -246,7 +270,8 @@ static void ReadParts(SND_Bank* bank, uint32_t section) {
 		part->level = p[0x09] & 0x0F;
 		part->volume = p[0x0A] & 0x7F;
 		part->pan = p[0x0B] & 0x1F;
-		part->transpose = (int8_t)p[0x0C];
+		part->transpose = (int8_t)(p[0x0C] << 1) >> 1; // 7 bits
+		part->fine = (int8_t)(p[0x0D] << 1) >> 1;
 	}
 }
 
@@ -420,6 +445,7 @@ void SND_Free(SND_Bank* bank) {
 	}
 	FreeProgram(&bank->effectProgram);
 	free(bank->parts);
+	free(bank->curves);
 	free(bank->sequences);
 	free(bank->data);
 	memset(bank, 0, sizeof(*bank));
@@ -473,15 +499,25 @@ bool SND_Load(const char* filepath, SND_Bank* bank) {
 	ReadPrograms(bank, sections[SND_SECTION_PROGRAMS]);
 	// The effect program: a program with one split per effect
 	if (sections[SND_SECTION_EFFECTS] != 0)
-		bank->hasEffectProgram = ReadProgram(bank, sections[SND_SECTION_EFFECTS], &bank->effectProgram);
-	// The first curve turns the velocity into a level
+		bank->hasEffectProgram = ReadProgram(bank, sections[SND_SECTION_EFFECTS], &bank->effectProgram, true);
+	// The curves turn the velocity into a level. Without them, a linear curve
 	uint32_t curves = sections[SND_SECTION_CURVES];
-	if (curves != 0 && InFile(bank, curves + 4, 128))
-		memcpy(bank->velocityCurve, buffer + curves + 4, 128);
-	else {
-		for (int i = 0; i < 128; i++)
-			bank->velocityCurve[i] = (uint8_t)(i * 2);
+	uint32_t curveCount = curves != 0 && InFile(bank, curves, 4) ? ReadU32(buffer + curves) + 1 : 0;
+	if (curveCount == 0 || curveCount > 256 || !InFile(bank, curves + 4, (size_t)curveCount * 128))
+		curveCount = 0;
+	bank->curves = malloc((curveCount != 0 ? curveCount : 1) * sizeof(bank->curves[0]));
+	if (bank->curves == NULL) {
+		SND_Free(bank);
+		return false;
 	}
+	if (curveCount != 0)
+		memcpy(bank->curves, buffer + curves + 4, (size_t)curveCount * 128);
+	else {
+		curveCount = 1;
+		for (int i = 0; i < 128; i++)
+			bank->curves[0][i] = (uint8_t)(i * 2);
+	}
+	bank->curveCount = curveCount;
 	ReadSequences(bank, sections[SND_SECTION_SEQUENCES]);
 	ReadDSP(bank, sections[SND_SECTION_DSP]);
 

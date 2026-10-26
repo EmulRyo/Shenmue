@@ -6,8 +6,8 @@
 #include "snd.h"
 
 // Plays the sequences and samples of a SND bank as the Dreamcast does: a sequencer drives up to 64 voices of the AICA
-// (sample playback with pitch, envelope, LFO, level and pan), mixed with the reverb of the DSP program of the bank.
-// The output is 16-bit stereo at 44100 Hz. The functions are not thread-safe: the caller serializes them
+// (sample playback with pitch, envelope, LFO, filter, level and pan), mixed with the reverb of the DSP program of the
+// bank. The output is 16-bit stereo at 44100 Hz. The functions are not thread-safe: the caller serializes them
 
 #define SND_SYNTH_RATE      44100
 #define SND_SYNTH_VOICES    64

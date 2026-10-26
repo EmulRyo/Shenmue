@@ -34,10 +34,15 @@ typedef struct {
 // A sample played over a range of keys
 typedef struct {
 	uint8_t		highKey;    // Last key of the split (the index of the effect in the effect program)
-	bool		fixedPitch; // The pitch doesn't follow the key: the sample plays as at note 60 (drums, effects)
+	bool		fixedPitch; // The pitch doesn't follow the key, the sample plays as at note 60: the splits of the key maps
+	                        // (drum kits) and of the effect program
 	uint8_t		sample;
+	uint8_t		lowVelocity;    // The split plays the velocities from lowVelocity to highVelocity: the range of the
+	uint8_t		highVelocity;   // layer in the normal programs, of the split in the key maps and the effect program
+	uint8_t		velocityLevel;  // Scales the level of the velocity, 0 to 127 (127: no change)
 	int8_t		transpose;  // Semitones: the sample plays at 44100 Hz at note 60 - transpose - fine / 64
 	int8_t		fine;       // 1/64 semitone
+	uint8_t		detune;     // Random pitch of each note, up to detune × 6/256 semitone up or down
 	uint8_t		pan;        // AICA DIPAN (bit 4: left), or SND_UNSET
 	uint8_t		level;      // AICA DISDL (0 to 15, 3 dB steps), or SND_UNSET
 	uint8_t		attackRate;     // AICA envelope rates (0 to 31) and decay level
@@ -46,16 +51,21 @@ typedef struct {
 	uint8_t		releaseRate;
 	uint8_t		decayLevel;
 	uint8_t		keyRateScaling;
-	uint16_t	lfo;        // AICA LFO register (reset, frequency, pitch and amplitude waveform and depth); the low byte
-	                        // is 0x80 when the depths are not set
+	bool		filter;     // The low-pass filter of the AICA is on
+	uint16_t	filterLevels[5];    // AICA FLV0 to FLV4 (13 bits): cutoff at the key on, then after the attack, the
+	                                // decay 1, the decay 2 and the release of the filter envelope
+	uint8_t		filterRates[4];     // AICA FAR, FD1R, FD2R and FRR (0 to 31)
+	uint8_t		resonance;  // AICA Q (0 to 31: -3 dB to 20.25 dB)
+	uint16_t	lfo;        // AICA LFO register: reset (bit 15), frequency, pitch and amplitude waveform and depth
 	uint8_t		send;       // AICA IMXL (bits 4-7) and ISEL (bits 0-3) of the effect send
 	bool		sendSet;    // false: the effect send of the part is used
 } SND_Split;
 
 typedef struct {
-	uint8_t		lowKey;
-	uint8_t		highKey;
-	uint8_t		bendRange;  // Semitones
+	uint8_t		curve;      // Velocity curve (an index of bank->curves)
+	uint8_t		bendUp;     // Range of the pitch bend, in semitones, up and down
+	uint8_t		bendDown;
+	uint8_t		panPattern; // 1 to 8: the pan of the successive notes follows a pattern of the sound driver; 0: none
 	uint32_t	splitCount;
 	SND_Split*	splits;
 	int16_t		keyMap[128]; // Split of each key, -1 if none; when the layer has no key map, the split covering the key
@@ -74,6 +84,7 @@ typedef struct {
 	uint8_t		volume;     // 0 to 127
 	uint8_t		pan;        // DIPAN
 	int8_t		transpose;
+	int8_t		fine;       // 1/64 semitone
 } SND_Part;
 
 typedef enum {
@@ -108,7 +119,8 @@ typedef struct {
 	SND_Program*	programs;
 	bool			hasEffectProgram;
 	SND_Program		effectProgram;
-	uint8_t			velocityCurve[128];
+	uint32_t		curveCount;
+	uint8_t			(*curves)[128]; // Velocity curves: the velocity (0 to 127) to a level (0 to 254)
 	uint32_t		sequenceCount;
 	SND_Sequence*	sequences;
 	SND_DSP			dsp;
