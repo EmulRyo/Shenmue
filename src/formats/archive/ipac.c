@@ -4,8 +4,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <raylib.h>
-#include "file.h"
-#include "ipac.h"
+#include "core/file.h"
+#include "formats/archive/ipac.h"
 
 #define IPAC_PATH_SIZE 1024
 #define IPAC_FILENAME_SIZE 32

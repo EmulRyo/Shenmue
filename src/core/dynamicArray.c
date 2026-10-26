@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "dynamicArray.h"
+#include "core/dynamicArray.h"
 
 typedef struct DynamicArrayInstance {
     size_t count;

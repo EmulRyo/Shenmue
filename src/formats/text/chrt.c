@@ -2,8 +2,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "file.h"
-#include "chrt.h"
+#include "core/file.h"
+#include "formats/text/chrt.h"
 
 // A CHRT file is a CHRS block with a list of commands followed by a STRG block with the strings.
 // Each command is:

@@ -3,12 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "dir.h"
-#include "hashTable.h"
-#include "stringBuilder.h"
-#include "tac.h"
-#include "file.h"
-#include "tad.h"
+#include "core/dir.h"
+#include "core/hashTable.h"
+#include "core/stringBuilder.h"
+#include "formats/archive/tac.h"
+#include "core/file.h"
+#include "formats/archive/tad.h"
 
 size_t TAD_GetBasename(const char* filepath, StringBuilder sb) {
     char* lastSlash = strrchr(filepath, '\\');

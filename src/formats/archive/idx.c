@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include "file.h"
-#include "afs.h"
-#include "idx.h"
+#include "core/file.h"
+#include "formats/archive/afs.h"
+#include "formats/archive/idx.h"
 
 typedef struct {
 	char		filename[0x0C];

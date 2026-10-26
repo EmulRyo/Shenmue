@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-#include "pvr.h"
-#include "spr.h"
+#include "formats/texture/pvr.h"
+#include "formats/texture/spr.h"
 
 bool SPR_Load(const char* filepath, uint16_t* width, uint16_t* height, uint32_t** pixels) {
 	printf("[SPR_Load]: Loading SPR file: %s\n", filepath);

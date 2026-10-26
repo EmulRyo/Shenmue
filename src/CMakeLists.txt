@@ -1,52 +1,59 @@
 set(SRC
-    src/afs.c
-    src/afs.h
-    src/chrt.c
-    src/chrt.h
     src/CMakeLists.txt
-    src/dir.c
-    src/dir.h
-    src/dynamicArray.c
-    src/dynamicArray.h
-    src/file.c
-    src/file.h
-    src/hashTable.c
-    src/hashTable.h
-    src/idx.c
-    src/idx.h
-    src/ipac.c
-    src/ipac.h
     src/main.c
-    src/mt5.c
-    src/mt5.h
-    src/mt5View.c
-    src/mt5View.h
-    src/pkf.c
-    src/pkf.h
-    src/pks.c
-    src/pks.h
-    src/pvr.c
-    src/pvr.h
-    src/raygui.h
-    src/scnf.c
-    src/scnf.h
-    src/snd.c
-    src/snd.h
-    src/sndSynth.c
-    src/sndSynth.h
-    src/sndView.c
-    src/sndView.h
-    src/spr.c
-    src/spr.h
-    src/stringBuilder.c
-    src/stringBuilder.h
-    src/tac.c
-    src/tac.h
-    src/tad.c
-    src/tad.h
-    src/xwm.c
-    src/xwm.h
-    src/xwmView.c
-    src/xwmView.h
+
+    src/audio/sndSynth.c
+    src/audio/sndSynth.h
+
+    src/core/dir.c
+    src/core/dir.h
+    src/core/dynamicArray.c
+    src/core/dynamicArray.h
+    src/core/file.c
+    src/core/file.h
+    src/core/hashTable.c
+    src/core/hashTable.h
+    src/core/stringBuilder.c
+    src/core/stringBuilder.h
+
+    src/formats/archive/afs.c
+    src/formats/archive/afs.h
+    src/formats/archive/idx.c
+    src/formats/archive/idx.h
+    src/formats/archive/ipac.c
+    src/formats/archive/ipac.h
+    src/formats/archive/pkf.c
+    src/formats/archive/pkf.h
+    src/formats/archive/pks.c
+    src/formats/archive/pks.h
+    src/formats/archive/tac.c
+    src/formats/archive/tac.h
+    src/formats/archive/tad.c
+    src/formats/archive/tad.h
+
+    src/formats/model/mt5.c
+    src/formats/model/mt5.h
+
+    src/formats/sound/snd.c
+    src/formats/sound/snd.h
+    src/formats/sound/xwm.c
+    src/formats/sound/xwm.h
+
+    src/formats/text/chrt.c
+    src/formats/text/chrt.h
+    src/formats/text/scnf.c
+    src/formats/text/scnf.h
+
+    src/formats/texture/pvr.c
+    src/formats/texture/pvr.h
+    src/formats/texture/spr.c
+    src/formats/texture/spr.h
+
+    src/views/mt5View.c
+    src/views/mt5View.h
+    src/views/sndView.c
+    src/views/sndView.h
+    src/views/xwmView.c
+    src/views/xwmView.h
     PARENT_SCOPE
 )

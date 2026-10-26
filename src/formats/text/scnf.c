@@ -6,8 +6,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
-#include "file.h"
-#include "scnf.h"
+#include "core/file.h"
+#include "formats/text/scnf.h"
 
 // A SCNF file is a header followed by blocks, one per character (or group of lines).
 // Each block has a script, a table of lines and the strings: voice names and subtitles in EUC-JP.

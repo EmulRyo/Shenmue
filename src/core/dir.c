@@ -6,7 +6,7 @@
 #define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
 #endif
 
-#include "dir.h"
+#include "core/dir.h"
 
 #ifdef _WIN32
 #include <direct.h>

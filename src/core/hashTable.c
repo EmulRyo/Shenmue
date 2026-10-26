@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "hashTable.h"
+#include "core/hashTable.h"
 
 typedef enum {
     ENTRY_EMPTY,

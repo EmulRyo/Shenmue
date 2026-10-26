@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <raylib.h>
-#include "file.h"
+#include "core/file.h"
 
 uint8_t* File_LoadToMemoryEx(const char* filepath, size_t* outSize) {
     FILE* file = fopen(filepath, "rb");

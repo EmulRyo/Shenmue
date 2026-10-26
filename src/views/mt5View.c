@@ -8,10 +8,10 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "raygui.h"
-#include "file.h"
-#include "pvr.h"
-#include "mt5.h"
-#include "mt5View.h"
+#include "core/file.h"
+#include "formats/texture/pvr.h"
+#include "formats/model/mt5.h"
+#include "views/mt5View.h"
 
 #define MT5VIEW_FOVY 45.0f
 #define MT5VIEW_FRAME_RATE 15.0f

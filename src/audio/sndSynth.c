@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "sndSynth.h"
+#include "audio/sndSynth.h"
 
 #define CHANNEL_COUNT       (SND_MAX_CHANNELS * 2) // Music channels, then effect channels
 #define CONTROL_PERIOD      32      // Samples between the updates of the pitch, the LFO and the levels

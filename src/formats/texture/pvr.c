@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-#include "pvr.h"
+#include "formats/texture/pvr.h"
 
 static char* PVR_PixelFormatToString(PVR_PixelFormat pf) {
 	switch (pf) {

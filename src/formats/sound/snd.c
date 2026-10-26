@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "file.h"
-#include "snd.h"
+#include "core/file.h"
+#include "formats/sound/snd.h"
 
 #define SND_HEADER_SIZE     0x60
 #define SND_SECTION_COUNT   8

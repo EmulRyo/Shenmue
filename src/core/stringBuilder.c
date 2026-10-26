@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "dynamicArray.h"
-#include "stringBuilder.h"
+#include "core/dynamicArray.h"
+#include "core/stringBuilder.h"
 
 typedef struct DynamicArrayInstance StringBuilderInstance;
 

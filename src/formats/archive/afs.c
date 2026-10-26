@@ -2,10 +2,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "dir.h"
-#include "file.h"
-#include "idx.h"
-#include "afs.h"
+#include "core/dir.h"
+#include "core/file.h"
+#include "formats/archive/idx.h"
+#include "formats/archive/afs.h"
 
 #define AFS_PATH_SIZE 1024
 #define AFS_FILENAME_SIZE 64

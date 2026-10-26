@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "snd.h"
+#include "formats/sound/snd.h"
 
 // Plays the sequences and samples of a SND bank as the Dreamcast does: a sequencer drives up to 64 voices of the AICA
 // (sample playback with pitch, envelope, LFO, filter, level and pan), mixed with the reverb of the DSP program of the

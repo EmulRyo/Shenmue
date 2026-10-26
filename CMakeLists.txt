@@ -23,12 +23,15 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 add_subdirectory(src)
 add_subdirectory(vendor/nativefiledialog-extended)
+set(RAYGUI
+    vendor/raygui/raygui.h)
 set(CJSON
     vendor/cJSON/cJSON.h
     vendor/cJSON/cJSON.c)
 
-source_group(src   FILES ${SRC})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src PREFIX src FILES ${SRC})
 source_group(cJSON   FILES ${CJSON})
+source_group(raygui   FILES ${RAYGUI})
 add_executable(Shenmue)
 
 set_target_properties(
@@ -37,9 +40,9 @@ set_target_properties(
   
   set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Shenmue)
   
-  target_sources(Shenmue PRIVATE ${SRC} ${CJSON})
+  target_sources(Shenmue PRIVATE ${SRC} ${RAYGUI} ${CJSON})
 
-  target_include_directories(${PROJECT_NAME} PRIVATE vendor/cJSON)
+  target_include_directories(${PROJECT_NAME} PRIVATE src vendor/raygui vendor/cJSON)
   
   target_link_libraries(${PROJECT_NAME} PRIVATE raylib)
   target_link_libraries(${PROJECT_NAME} PRIVATE nfd)

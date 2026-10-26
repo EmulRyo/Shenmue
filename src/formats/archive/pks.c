@@ -2,11 +2,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "dir.h"
-#include "file.h"
-#include "ipac.h"
-#include "pkf.h"
-#include "pks.h"
+#include "core/dir.h"
+#include "core/file.h"
+#include "formats/archive/ipac.h"
+#include "formats/archive/pkf.h"
+#include "formats/archive/pks.h"
 
 #define PKS_PATH_SIZE 1024
 

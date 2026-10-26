@@ -5,9 +5,9 @@
 #include <math.h>
 #include <raylib.h>
 #include "raygui.h"
-#include "snd.h"
-#include "sndSynth.h"
-#include "sndView.h"
+#include "formats/sound/snd.h"
+#include "audio/sndSynth.h"
+#include "views/sndView.h"
 
 // Columns of the precomputed waveform: the minimum and maximum sample of each range of frames
 #define SNDVIEW_PEAKS 4096

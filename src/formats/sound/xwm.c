@@ -12,8 +12,8 @@
 #include <mferror.h>
 #include <wmcodecdsp.h>
 #endif
-#include "file.h"
-#include "xwm.h"
+#include "core/file.h"
+#include "formats/sound/xwm.h"
 
 typedef struct {
 	const uint8_t*	format;   // WAVEFORMATEX

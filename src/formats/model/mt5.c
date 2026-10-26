@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include "file.h"
-#include "mt5.h"
+#include "core/file.h"
+#include "formats/model/mt5.h"
 
 // An MT5 file is a header, the data of the meshes (faces, vertices and mesh header of each one), the node
 // hierarchy and a TEXD block followed by the textures (TEXN), or their IDs (NAME) in CHRM files, a TEXL block

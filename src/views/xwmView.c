@@ -5,8 +5,8 @@
 #include <math.h>
 #include <raylib.h>
 #include "raygui.h"
-#include "xwm.h"
-#include "xwmView.h"
+#include "formats/sound/xwm.h"
+#include "views/xwmView.h"
 
 // Columns of the precomputed waveform: the minimum and maximum sample of each range of frames
 #define XWMVIEW_PEAKS 4096

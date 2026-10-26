@@ -2,11 +2,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "hashTable.h"
-#include "stringBuilder.h"
-#include "file.h"
-#include "tad.h"
-#include "tac.h"
+#include "core/hashTable.h"
+#include "core/stringBuilder.h"
+#include "core/file.h"
+#include "formats/archive/tad.h"
+#include "formats/archive/tac.h"
 
 FILE* TAC_Open(const char* filepath) {
     FILE* tacFile = fopen(filepath, "rb");
