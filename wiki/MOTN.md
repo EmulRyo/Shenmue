@@ -77,7 +77,7 @@ Every motion starts with a 32-bit word:
 |------:|----------|---------------------------------------------------------------------------------|
 | 0–14  | `frames` | Length of the motion in frames: the keys go from frame 0 to frame `frames`      |
 | 15    | `wide`   | The keyframe counts are uint16 instead of uint8 (61 motions, from 446 to 4412 frames) |
-| 16–31 | `type`   | `0xFFFF`: [sampled motion](#sampled-motions). Bit 31 set: [raw motion](#raw-motions). Otherwise a [keyframe motion](#keyframe-motions), and the value is unknown (0 to 20; 0 in 1711 motions, 10 in 789, 13 in 503). The raw motions use the same values in bits 16–30 |
+| 16–31 | `type`   | `0xFFFF`: [sampled motion](#sampled-motions). Bit 31 set: [raw motion](#raw-motions). Otherwise a [keyframe motion](#keyframe-motions), and the value is a [character type](#character-types) (0 to 20). The raw motions use the same values in bits 16–30 |
 
 | Variant   | Motions | Files |
 |-----------|--------:|-------|
@@ -125,7 +125,17 @@ The usual format: the motion is a list of channels (one value of one bone), and 
 | 8    | Position X                                                                            |
 | 9–15 | Bone number (0 to 42)                                                                 |
 
-The channels are numbered in the order of the list, and inside a bone from bit 8 down to bit 3 (the axis order X, Y, Z is likely but not verified). Almost every bone has only the rotation (`0x038`). Bone 0 (the root) has position and rotation (`0x1F8`); its position Y is the height of the body (about 1.13). A few bones have only the position (`0x1C0`): 8, 15, 20, 23, 29 and 35, probably targets for the arms and legs. The bones 0, 1, 5, 8, 9, 15, 16, 18 and 21 are in almost all the motions.
+The channels are numbered in the order of the list, and inside a bone from bit 8 down to bit 3 (the axis order X, Y, Z is likely but not verified). Almost every bone has only the rotation (`0x038`). Bone 0 (the root) has position and rotation (`0x1F8`); its position Y is the height of the body (about 1.13). A few bones have only the position (`0x1C0`), between bones with rotation (e.g. `5r 8p 9r`), probably targets for the arms and legs. The bone numbers are not the node IDs of the [MT5 / CHRM](MT5) models: a body has the nodes `0x01`, `0x04`–`0x06`, `0x09`–`0x0B`, `0x0E`, `0x10`–`0x13`, `0x15`–`0x18`… (e.g. `TAT_M.chrm`), with no node for some of the bones of the motions.
+
+**Bone sets.** All the keyframe motions use one of three sets of bones (`p` = position, `r` = rotation, `pr` = both). A motion lists the bones of its set, and some motions leave out a few of them.
+
+| Set | Motions | Character types | Bones |
+|-----|--------:|-----------------|-------|
+| Human | 3381 | 0–5, 7, 8, 10, 12, 13 | `0pr 1r 5r 8p 9r 12r 15p 16r 18r 20p 21r 23p 25r 26r 29p 30r 31r 32r 35p 36r`. 211 motions add `4r` and `11r` |
+| Human, other numbering | 121 | 9, 15, 19 | `0pr 1r 5r 8p 9r 11r 14p 15r 16r 18p 19r 21p 23r 24r 27p 28r 29r 30r 33p 34r`: the same structure as the human set, from bone 11 on numbered one or two lower |
+| Quadruped | 115 | 18, 20 | `0pr 1r 4r 5r 8p 9r 10r 11r 14p 15r 16r 17r 18r 19r 21p 22r 25r 27p 31r 32r 35p 36r 37r 38r 41p 42r` |
+
+(Counts of different motions, without the repeated files. One motion of type 20 is in the second set but with the bones of the quadruped one.)
 
 **Section 0 — Keyframe counts.** One uint8 per channel (uint16 if `wide` is set): the number of keys of the channel besides the first and the last one, which always exist. If the next section uses uint16 and the size is odd, one padding byte follows.
 
@@ -189,6 +199,33 @@ Bit 31 of the first word is set. The motion stores a block of the same size for 
 | 0x06   | 6             | uint16[3] | `unknown`   | Unknown, probably a mask of the stored channels: `0x52A2, 0xD625, 0x0015` with `frameSize = 0x62` |
 | 0x0C   | 2             | uint16    | `unknown`   | Always 0                                                    |
 | 0x0E   | frames × size | —         | frames      | 16-bit values for each frame (meaning unknown)              |
+
+## Character types
+
+The value of bits 16–30 of the first word of a keyframe or raw motion depends on the character, given by the prefix of the motion name: all the motions with the same prefix have the same type, except `DMY` (types 0, 1, 5, 10 and 13). Several characters share a type, and different types use the same [bone set](#keyframe-motions), so the type is not the skeleton.
+
+| Type | Motions | Prefixes |
+|-----:|--------:|----------|
+| 0    | 1711 | `AKI` (1392, Ryo), `TKA`, `TA`, `JACKY`, `WOLF`, `SAM`, `OHS`, `GRD`, `WLF`, `JEF`, `TOU`, `SEK`… |
+| 1    | 18   | `BIG`, `DMY` |
+| 2    | 34   | `CHA` |
+| 3    | 17   | `DEB`, `BKB`, `BKF` |
+| 4    | 67   | `GAK`, `JAK` |
+| 5    | 36   | `GEN`, `GIW`, `DMY` |
+| 7    | 108  | `JIJ`, `INE` |
+| 8    | 32   | `KOD` |
+| 9    | 7    | `KOK` |
+| 10   | 789  | `OTH` (700), `IWA`, `LLY`, `FUK`, `BKA`, `BKG`, `BKD`, `DMY` |
+| 12   | 66   | `SYP` |
+| 13   | 503  | `YKI` (407), `KIS`, `CIN`, `DMY`, `KEB`, `JIM`, `BKE`, `TAT`, `BKC`, `BKH`, `SMM` |
+| 15   | 107  | `SIN` |
+| 18   | 21   | `DOG` |
+| 19   | 6    | `PNW` |
+| 20   | 95   | `KCT` |
+
+The raw motions (prefix `EXB`) have the types 0, 7, 10, 12, 13 and 16.
+
+The files don't reference any model or skeleton, and their names (`M_01TE`, `M_ZAKO`…) are not the names of the characters: a motion is bound to a character by its [motion ID](#motion-ids), used by the cutscenes ([AUTH](AUTH)) together with the ID of the character.
 
 ## Timestamp
 
