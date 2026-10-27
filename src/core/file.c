@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <raylib.h>
+#include "core/bytes.h"
 #include "core/file.h"
 
 uint8_t* File_LoadToMemoryEx(const char* filepath, size_t* outSize) {
@@ -78,7 +79,7 @@ uint8_t* File_GzipDecompress(const uint8_t* buffer, size_t size, size_t* outSize
     size_t pos = 10;
     if (flags & 0x04) { // FEXTRA
         if (pos + 2 > size) return NULL;
-        pos += 2 + (buffer[pos] | (buffer[pos + 1] << 8));
+        pos += 2 + Bytes_ReadU16(buffer + pos);
     }
     if (flags & 0x08) { // FNAME
         while (pos < size && buffer[pos] != '\0') pos++;
@@ -97,7 +98,7 @@ uint8_t* File_GzipDecompress(const uint8_t* buffer, size_t size, size_t* outSize
 
     // The trailer contains the CRC32 and the uncompressed size (modulo 2^32)
     const uint8_t* trailer = buffer + size - 8;
-    uint32_t expectedSize = trailer[4] | (trailer[5] << 8) | (trailer[6] << 16) | ((uint32_t)trailer[7] << 24);
+    uint32_t expectedSize = Bytes_ReadU32(trailer + 4);
 
     int decompressedSize = 0;
     uint8_t* data = DecompressData(buffer + pos, (int)(size - 8 - pos), &decompressedSize);

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include "core/bytes.h"
 #include "core/file.h"
 #include "formats/model/mt5.h"
 
@@ -81,28 +82,16 @@ static bool InBounds(size_t size, uint64_t offset, uint64_t length) {
 	return offset <= size && length <= size - offset;
 }
 
-static uint16_t Read16(const uint8_t* data) {
-	uint16_t value;
-	memcpy(&value, data, sizeof(value));
-	return value;
-}
-
-static uint32_t Read32(const uint8_t* data) {
-	uint32_t value;
-	memcpy(&value, data, sizeof(value));
-	return value;
-}
-
 static MT5_Corner ReadCorner(const uint8_t* entry, bool hasUV, bool hasColor, float uvScale, uint32_t baseColor) {
-	MT5_Corner corner = { (int16_t)Read16(entry), 0.0f, 0.0f, baseColor };
+	MT5_Corner corner = { (int16_t)Bytes_ReadU16(entry), 0.0f, 0.0f, baseColor };
 	entry += 2;
 	if (hasUV) {
-		corner.u = (int16_t)Read16(entry) / uvScale;
-		corner.v = (int16_t)Read16(entry + 2) / uvScale;
+		corner.u = (int16_t)Bytes_ReadU16(entry) / uvScale;
+		corner.v = (int16_t)Bytes_ReadU16(entry + 2) / uvScale;
 		entry += 4;
 	}
 	if (hasColor)
-		corner.color = Read32(entry);
+		corner.color = Bytes_ReadU32(entry);
 	return corner;
 }
 
@@ -131,18 +120,18 @@ static bool AddTriangle(MT5_Node* node, MT5_FaceState* state, MT5_Corner a, MT5_
 // Strip chunk: uint16 type, uint16 size (from the next field to the end of the chunk, padded to 4 bytes),
 // uint16 strip count, and for each strip an int16 vertex count (always negative) followed by the vertices
 static bool ReadStrips(const uint8_t* buffer, size_t pos, MT5_Node* node, MT5_FaceState* state) {
-	uint16_t type = Read16(buffer + pos);
+	uint16_t type = Bytes_ReadU16(buffer + pos);
 	bool hasUV = type == MT5_CHUNK_STRIP_UV || type == MT5_CHUNK_STRIP_UV_COLOR;
 	bool hasColor = type == MT5_CHUNK_STRIP_COLOR || type == MT5_CHUNK_STRIP_UV_COLOR;
 	size_t entrySize = 2 + (hasUV ? 4 : 0) + (hasColor ? 4 : 0);
 
-	size_t end = pos + 4 + Read16(buffer + pos + 2);
-	uint16_t count = Read16(buffer + pos + 4);
+	size_t end = pos + 4 + Bytes_ReadU16(buffer + pos + 2);
+	uint16_t count = Bytes_ReadU16(buffer + pos + 4);
 	pos += 6;
 	for (uint16_t i = 0; i < count; i++) {
 		if (pos + 2 > end)
 			return false;
-		size_t length = (size_t)abs((int16_t)Read16(buffer + pos));
+		size_t length = (size_t)abs((int16_t)Bytes_ReadU16(buffer + pos));
 		pos += 2;
 		if (pos + length * entrySize > end)
 			return false;
@@ -165,7 +154,7 @@ static bool ReadStrips(const uint8_t* buffer, size_t pos, MT5_Node* node, MT5_Fa
 static bool ReadFaces(const uint8_t* buffer, size_t size, size_t pos, MT5_Node* node) {
 	MT5_FaceState state = { 0, MT5_LIST_OPAQUE, 0, 0xFFFFFFFF, 256.0f, 0 }; // Without UV divisor chunk (e.g. KOB_L.chrm) the UVs go from 0 to 256
 	while (InBounds(size, pos, 2)) {
-		uint16_t type = Read16(buffer + pos);
+		uint16_t type = Bytes_ReadU16(buffer + pos);
 		if (type == MT5_CHUNK_END)
 			return true;
 		if (type == MT5_CHUNK_PADDING) {
@@ -175,7 +164,7 @@ static bool ReadFaces(const uint8_t* buffer, size_t size, size_t pos, MT5_Node* 
 		if (!InBounds(size, pos, 4))
 			break;
 
-		uint16_t value = Read16(buffer + pos + 2);
+		uint16_t value = Bytes_ReadU16(buffer + pos + 2);
 		switch (type) {
 		case MT5_CHUNK_ATTR_OPAQUE:
 		case MT5_CHUNK_ATTR_TRANSLUCENT:
@@ -185,7 +174,7 @@ static bool ReadFaces(const uint8_t* buffer, size_t size, size_t pos, MT5_Node* 
 			state.listType = (buffer[pos + 7] & 7); // List type of the PCW (bits 24-26)
 			if (value >= 12) {
 				// Flip U and V (bits 18, 17) and clamp U and V (bits 16, 15) of the TSP
-				uint32_t tsp = Read32(buffer + pos + 12);
+				uint32_t tsp = Bytes_ReadU32(buffer + pos + 12);
 				state.uvFlags = ((tsp >> 18) & 1 ? MT5_UV_FLIP_U : 0) | ((tsp >> 17) & 1 ? MT5_UV_FLIP_V : 0) |
 					((tsp >> 16) & 1 ? MT5_UV_CLAMP_U : 0) | ((tsp >> 15) & 1 ? MT5_UV_CLAMP_V : 0);
 			}
@@ -195,7 +184,7 @@ static bool ReadFaces(const uint8_t* buffer, size_t size, size_t pos, MT5_Node* 
 			if (!InBounds(size, pos + 4, value))
 				return false;
 			if (value >= 4)
-				state.baseColor = Read32(buffer + pos + 4);
+				state.baseColor = Bytes_ReadU32(buffer + pos + 4);
 			pos += 4 + value;
 			break;
 		case MT5_CHUNK_UNKNOWN_8:

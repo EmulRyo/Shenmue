@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include "core/bytes.h"
 #include "core/file.h"
 #include "formats/sound/snd.h"
 
@@ -22,21 +23,13 @@
 #define SND_DSP_SIZE            0xC28
 #define SND_MAX_PLAYLIST        64
 
-static uint16_t ReadU16(const uint8_t* p) {
-	return (uint16_t)(p[0] | (p[1] << 8));
-}
-
-static uint32_t ReadU32(const uint8_t* p) {
-	return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
 // True if the range [offset, offset + length) is inside the file
 static bool InFile(const SND_Bank* bank, size_t offset, size_t length) {
 	return offset <= bank->size && length <= bank->size - offset;
 }
 
 uint32_t SND_ReadU32(const SND_Bank* bank, uint32_t pos) {
-	return InFile(bank, pos, 4) ? ReadU32(bank->data + pos) : 0;
+	return InFile(bank, pos, 4) ? Bytes_ReadU32(bank->data + pos) : 0;
 }
 
 // Decodes the 4-bit ADPCM of the AICA: the low nibble first, the step adapts with the 3 low bits of each nibble
@@ -60,15 +53,15 @@ static void DecodeADPCM(const uint8_t* data, uint32_t size, int16_t* output) {
 // Reads an entry of the sample table and decodes its data. The data is 16-bit PCM, whatever the format given by the
 // offset field, except in the samples whose loop end is about twice the size: those are ADPCM
 static bool ReadSample(const uint8_t* buffer, size_t size, const uint8_t* entry, SND_Sample* sample) {
-	uint32_t offsetField = ReadU32(entry);
-	uint32_t loopStart = ReadU16(entry + 4);
-	uint32_t loopEnd = ReadU16(entry + 6);
+	uint32_t offsetField = Bytes_ReadU32(entry);
+	uint32_t loopStart = Bytes_ReadU16(entry + 4);
+	uint32_t loopEnd = Bytes_ReadU16(entry + 6);
 	memset(sample, 0, sizeof(*sample));
 	sample->offset = offsetField & 0x7FFFFF;
-	sample->size = ReadU32(entry + 12);
+	sample->size = Bytes_ReadU32(entry + 12);
 	sample->loop = (offsetField >> 25) & 1;
 	// Half sample rate: the data has been doubled, but the loop points count the samples at half rate
-	sample->halfRate = ReadU32(entry + 8) == 0x80;
+	sample->halfRate = Bytes_ReadU32(entry + 8) == 0x80;
 	if (sample->offset > size || sample->size > size - sample->offset)
 		return false;
 
@@ -88,7 +81,7 @@ static bool ReadSample(const uint8_t* buffer, size_t size, const uint8_t* entry,
 		DecodeADPCM(data, sample->size, sample->pcm);
 	else {
 		for (uint32_t i = 0; i < sample->frameCount; i++)
-			sample->pcm[i] = (int16_t)ReadU16(data + (size_t)i * 2);
+			sample->pcm[i] = (int16_t)Bytes_ReadU16(data + (size_t)i * 2);
 	}
 
 	if (sample->halfRate) {
@@ -114,8 +107,8 @@ static bool ReadSample(const uint8_t* buffer, size_t size, const uint8_t* entry,
 }
 
 static void ReadSplit(const uint8_t* p, SND_Split* split) {
-	uint16_t envelope1 = ReadU16(p + 0x0C);
-	uint16_t envelope2 = ReadU16(p + 0x0E);
+	uint16_t envelope1 = Bytes_ReadU16(p + 0x0C);
+	uint16_t envelope2 = Bytes_ReadU16(p + 0x0E);
 	split->highKey = p[0x00];
 	split->sample = p[0x02];
 	split->pan = p[0x06] & 0x80 ? SND_UNSET : p[0x06] & 0x1F;
@@ -135,7 +128,7 @@ static void ReadSplit(const uint8_t* p, SND_Split* split) {
 	// Filter: 5 words with a level (FLV, bits 0-10, 2 bits left out) and a rate (bits 11-15): FAR, FD1R, FD2R, FRR and Q.
 	// The filter is off when the first level is 0
 	for (int i = 0; i < 5; i++) {
-		uint16_t word = ReadU16(p + 0x10 + i * 2);
+		uint16_t word = Bytes_ReadU16(p + 0x10 + i * 2);
 		split->filterLevels[i] = (uint16_t)((word & 0x7FF) << 2);
 		if (i < 4)
 			split->filterRates[i] = (uint8_t)(word >> 11);
@@ -145,7 +138,7 @@ static void ReadSplit(const uint8_t* p, SND_Split* split) {
 	split->filter = split->filterLevels[0] != 0;
 	split->sendSet = (p[0x1E] & 0x80) == 0;
 	split->send = p[0x1F];
-	split->lfo = ReadU16(p + 0x30);
+	split->lfo = Bytes_ReadU16(p + 0x30);
 }
 
 // Reads the layers of the program at p (the effect program when effects is true). Bit 0 of the flags: the layers have a
@@ -153,9 +146,9 @@ static void ReadSplit(const uint8_t* p, SND_Split* split) {
 static bool ReadProgram(SND_Bank* bank, uint32_t p, SND_Program* program, bool effects) {
 	if (!InFile(bank, p, 0x10))
 		return false;
-	uint32_t flags = ReadU32(bank->data + p);
+	uint32_t flags = Bytes_ReadU32(bank->data + p);
 	for (int i = 0; i < SND_MAX_LAYERS; i++) {
-		uint16_t offset = ReadU16(bank->data + p + 8 + i * 2);
+		uint16_t offset = Bytes_ReadU16(bank->data + p + 8 + i * 2);
 		if (offset == 0)
 			continue;
 		uint32_t l = p + offset;
@@ -193,7 +186,7 @@ static bool ReadProgram(SND_Bank* bank, uint32_t p, SND_Program* program, bool e
 
 		if (flags & 1) {
 			for (int key = mapLow; key <= mapHigh; key++) {
-				uint16_t splitOffset = ReadU16(bank->data + l + SND_LAYER_SIZE + 2 + (key - mapLow) * 2);
+				uint16_t splitOffset = Bytes_ReadU16(bank->data + l + SND_LAYER_SIZE + 2 + (key - mapLow) * 2);
 				if (splitOffset == 0 || l + splitOffset < splits)
 					continue;
 				uint32_t index = (l + splitOffset - splits) / SND_SPLIT_SIZE;
@@ -229,10 +222,10 @@ static bool ReadProgram(SND_Bank* bank, uint32_t p, SND_Program* program, bool e
 static void ReadPrograms(SND_Bank* bank, uint32_t section) {
 	if (section == 0 || !InFile(bank, section, 4))
 		return;
-	uint32_t list = section + ReadU16(bank->data + section + 2);
+	uint32_t list = section + Bytes_ReadU16(bank->data + section + 2);
 	if (!InFile(bank, list, 2))
 		return;
-	uint32_t count = ReadU16(bank->data + list) + 1u;
+	uint32_t count = Bytes_ReadU16(bank->data + list) + 1u;
 	if (!InFile(bank, list + 2, (size_t)count * 2))
 		return;
 	bank->programs = calloc(count, sizeof(SND_Program));
@@ -240,7 +233,7 @@ static void ReadPrograms(SND_Bank* bank, uint32_t section) {
 		return;
 	bank->programCount = count;
 	for (uint32_t i = 0; i < count; i++)
-		ReadProgram(bank, list + ReadU16(bank->data + list + 2 + i * 2), &bank->programs[i], false);
+		ReadProgram(bank, list + Bytes_ReadU16(bank->data + list + 2 + i * 2), &bank->programs[i], false);
 }
 
 // The part table is a list of blocks: settings (0x28 bytes) and lists of parts. Only the first list is used: it is the
@@ -248,10 +241,10 @@ static void ReadPrograms(SND_Bank* bank, uint32_t section) {
 static void ReadParts(SND_Bank* bank, uint32_t section) {
 	if (section == 0 || !InFile(bank, section, 2))
 		return;
-	uint32_t blockCount = ReadU16(bank->data + section) + 1u;
+	uint32_t blockCount = Bytes_ReadU16(bank->data + section) + 1u;
 	if (blockCount < 2 || !InFile(bank, section + 2, (size_t)blockCount * 2))
 		return;
-	uint32_t list = section + ReadU16(bank->data + section + 4);
+	uint32_t list = section + Bytes_ReadU16(bank->data + section + 4);
 	if (!InFile(bank, list, 8))
 		return;
 	uint32_t count = bank->data[list] + 1u;
@@ -281,14 +274,14 @@ static void ReadDSP(SND_Bank* bank, uint32_t section) {
 	const uint8_t* p = bank->data + section;
 	SND_DSP* dsp = &bank->dsp;
 	for (int i = 0; i < 18; i++)
-		dsp->outputs[i] = ReadU16(p + 0x04 + i * 2);
+		dsp->outputs[i] = Bytes_ReadU16(p + 0x04 + i * 2);
 	for (int i = 0; i < 128; i++)
-		dsp->coef[i] = (uint16_t)ReadU32(p + 0x28 + i * 4);
+		dsp->coef[i] = (uint16_t)Bytes_ReadU32(p + 0x28 + i * 4);
 	for (int i = 0; i < 64; i++)
-		dsp->madrs[i] = (uint16_t)ReadU32(p + 0x228 + i * 4);
+		dsp->madrs[i] = (uint16_t)Bytes_ReadU32(p + 0x228 + i * 4);
 	for (int i = 0; i < 128; i++) {
 		for (int j = 0; j < 4; j++)
-			dsp->mpro[i][j] = (uint16_t)ReadU32(p + 0x328 + (i * 4 + j) * 4);
+			dsp->mpro[i][j] = (uint16_t)Bytes_ReadU32(p + 0x328 + (i * 4 + j) * 4);
 	}
 	dsp->present = true;
 }
@@ -385,29 +378,29 @@ static void ReadSequence(SND_Bank* bank, SND_Sequence* sequence) {
 static void ReadSequences(SND_Bank* bank, uint32_t section) {
 	if (section == 0 || !InFile(bank, section, 4))
 		return;
-	uint32_t groupCount = ReadU32(bank->data + section) + 1;
+	uint32_t groupCount = Bytes_ReadU32(bank->data + section) + 1;
 	if (!InFile(bank, section + 4, (size_t)groupCount * 4))
 		return;
 	uint32_t total = 0;
 	for (uint32_t g = 0; g < groupCount; g++) {
-		uint32_t group = section + ReadU16(bank->data + section + 4 + g * 4);
+		uint32_t group = section + Bytes_ReadU16(bank->data + section + 4 + g * 4);
 		if (!InFile(bank, group, 4))
 			return;
-		total += ReadU32(bank->data + group) + 1;
+		total += Bytes_ReadU32(bank->data + group) + 1;
 	}
 	bank->sequences = calloc(total, sizeof(SND_Sequence));
 	if (bank->sequences == NULL)
 		return;
 	for (uint32_t g = 0; g < groupCount; g++) {
-		uint32_t group = section + ReadU16(bank->data + section + 4 + g * 4);
-		uint32_t count = ReadU32(bank->data + group) + 1;
+		uint32_t group = section + Bytes_ReadU16(bank->data + section + 4 + g * 4);
+		uint32_t count = Bytes_ReadU32(bank->data + group) + 1;
 		if (!InFile(bank, group + 4, (size_t)count * 4))
 			return;
 		for (uint32_t i = 0; i < count; i++) {
 			SND_Sequence* sequence = &bank->sequences[bank->sequenceCount++];
 			sequence->group = g;
 			sequence->index = i;
-			sequence->offset = section + ReadU32(bank->data + group + 4 + i * 4);
+			sequence->offset = section + Bytes_ReadU32(bank->data + group + 4 + i * 4);
 			ReadSequence(bank, sequence);
 		}
 	}
@@ -466,14 +459,14 @@ bool SND_Load(const char* filepath, SND_Bank* bank) {
 
 	uint32_t sections[SND_SECTION_COUNT];
 	for (int i = 0; i < SND_SECTION_COUNT; i++)
-		sections[i] = ReadU32(buffer + 0x20 + i * 4);
+		sections[i] = Bytes_ReadU32(buffer + 0x20 + i * 4);
 	uint32_t table = sections[SND_SECTION_SAMPLES];
 	if (table == 0 || !InFile(bank, table, 4)) {
 		SND_Free(bank);
 		return false;
 	}
 	// The table starts with the index of the last sample
-	uint32_t last = ReadU32(buffer + table);
+	uint32_t last = Bytes_ReadU32(buffer + table);
 	if (last >= (size - table - 4) / SND_SAMPLE_ENTRY_SIZE) {
 		SND_Free(bank);
 		return false;
@@ -502,7 +495,7 @@ bool SND_Load(const char* filepath, SND_Bank* bank) {
 		bank->hasEffectProgram = ReadProgram(bank, sections[SND_SECTION_EFFECTS], &bank->effectProgram, true);
 	// The curves turn the velocity into a level. Without them, a linear curve
 	uint32_t curves = sections[SND_SECTION_CURVES];
-	uint32_t curveCount = curves != 0 && InFile(bank, curves, 4) ? ReadU32(buffer + curves) + 1 : 0;
+	uint32_t curveCount = curves != 0 && InFile(bank, curves, 4) ? Bytes_ReadU32(buffer + curves) + 1 : 0;
 	if (curveCount == 0 || curveCount > 256 || !InFile(bank, curves + 4, (size_t)curveCount * 128))
 		curveCount = 0;
 	bank->curves = malloc((curveCount != 0 ? curveCount : 1) * sizeof(bank->curves[0]));

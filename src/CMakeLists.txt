@@ -5,6 +5,7 @@ set(SRC
     src/audio/sndSynth.c
     src/audio/sndSynth.h
 
+    src/core/bytes.h
     src/core/dir.c
     src/core/dir.h
     src/core/dynamicArray.c
@@ -53,6 +54,8 @@ set(SRC
     src/views/mt5View.h
     src/views/sndView.c
     src/views/sndView.h
+    src/views/waveform.c
+    src/views/waveform.h
     src/views/xwmView.c
     src/views/xwmView.h
     PARENT_SCOPE

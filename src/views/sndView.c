@@ -8,9 +8,8 @@
 #include "formats/sound/snd.h"
 #include "audio/sndSynth.h"
 #include "views/sndView.h"
+#include "views/waveform.h"
 
-// Columns of the precomputed waveform: the minimum and maximum sample of each range of frames
-#define SNDVIEW_PEAKS 4096
 #define SNDVIEW_LABEL_SIZE 64
 #define SNDVIEW_LIST_WIDTH 300.0f
 #define SNDVIEW_DEFAULT_RATE 22050 // For the samples that no split plays
@@ -60,11 +59,7 @@ typedef struct {
 	volatile uint32_t	samplePosition;
 	volatile uint32_t	voices;
 	volatile float		levels[SND_MAX_CHANNELS];
-	// Waveform of the selected sample
-	int16_t			peakMin[SNDVIEW_PEAKS];
-	int16_t			peakMax[SNDVIEW_PEAKS];
-	uint32_t		peakCount;
-	bool			seeking;  // Dragging on the waveform
+	Waveform		waveform; // Of the selected sample
 } SNDView_State;
 
 static SNDView_State g_player;
@@ -121,25 +116,6 @@ static uint32_t SampleRate(uint32_t sample) {
 	return rate != 0 ? rate : SNDVIEW_DEFAULT_RATE;
 }
 
-// Computes the minimum and maximum of the selected sample for each column of the waveform
-static void ComputePeaks(void) {
-	const SND_Sample* sample = &g_player.bank.samples[g_player.selected[MODE_SAMPLES]];
-	uint32_t frameCount = sample->frameCount;
-	g_player.peakCount = frameCount < SNDVIEW_PEAKS ? frameCount : SNDVIEW_PEAKS;
-	for (uint32_t i = 0; i < g_player.peakCount; i++) {
-		uint32_t start = (uint32_t)((uint64_t)i * frameCount / g_player.peakCount);
-		uint32_t end = (uint32_t)((uint64_t)(i + 1) * frameCount / g_player.peakCount);
-		int16_t min = 0, max = 0;
-		for (uint32_t frame = start; frame < end; frame++) {
-			int16_t value = sample->pcm[frame];
-			if (value < min) min = value;
-			if (value > max) max = value;
-		}
-		g_player.peakMin[i] = min;
-		g_player.peakMax[i] = max;
-	}
-}
-
 static int ItemCount(Mode mode) {
 	return (int)(mode == MODE_SEQUENCES ? g_player.listedSequences : g_player.bank.sampleCount);
 }
@@ -161,7 +137,8 @@ static void Select(int index) {
 	if (g_player.mode == MODE_SEQUENCES)
 		SendCommand(COMMAND_SEQUENCE, g_player.sequenceIndices[index]);
 	else {
-		ComputePeaks();
+		const SND_Sample* sample = &g_player.bank.samples[index];
+		Waveform_Compute(&g_player.waveform, sample->pcm, sample->frameCount, 1);
 		PlaySample(0);
 	}
 }
@@ -320,57 +297,15 @@ static void UpdateInput(Rectangle waveform) {
 		SendCommand(COMMAND_LOOP, 0);
 	}
 
-	Vector2 mouse = GetMousePosition();
-	if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mouse, waveform))
-		g_player.seeking = true;
-	if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT))
-		g_player.seeking = false;
-	if (g_player.seeking) {
-		float t = (mouse.x - waveform.x) / waveform.width;
-		Seek((int64_t)(t * SelectedSample()->frameCount));
-	}
+	int64_t frame;
+	if (Waveform_UpdateSeek(&g_player.waveform, waveform, &frame))
+		Seek(frame);
 }
 
 static void DrawWaveform(Rectangle area) {
 	const SND_Sample* sample = SelectedSample();
-	DrawRectangleRec(area, (Color) { 30, 30, 32, 255 });
-	float center = area.y + area.height * 0.5f;
-	float scale = area.height * 0.5f / 32768.0f;
-	DrawLineV((Vector2) { area.x, center }, (Vector2) { area.x + area.width, center }, (Color) { 70, 70, 75, 255 });
-	if (sample->frameCount == 0) {
-		DrawRectangleLinesEx(area, 1.0f, (Color) { 112, 112, 112, 255 });
-		return;
-	}
-
-	// Loop region
-	if (sample->loop) {
-		float loopStartX = area.x + area.width * sample->loopStart / (float)sample->frameCount;
-		float loopEndX = area.x + area.width * sample->loopEnd / (float)sample->frameCount;
-		Color color = g_player.loopEnabled ? (Color) { 60, 50, 30, 255 } : (Color) { 42, 42, 44, 255 };
-		DrawRectangleRec((Rectangle) { loopStartX, area.y, fmaxf(loopEndX - loopStartX, 1.0f), area.height }, color);
-		DrawLineV((Vector2) { loopStartX, area.y }, (Vector2) { loopStartX, area.y + area.height }, ORANGE);
-		DrawLineV((Vector2) { loopEndX, area.y }, (Vector2) { loopEndX, area.y + area.height }, ORANGE);
-	}
-
-	int width = (int)area.width;
-	float playedX = area.x + area.width * g_player.samplePosition / (float)sample->frameCount;
-	for (int x = 0; x < width && g_player.peakCount > 0; x++) {
-		uint32_t start = (uint32_t)((uint64_t)x * g_player.peakCount / width);
-		uint32_t end = (uint32_t)((uint64_t)(x + 1) * g_player.peakCount / width);
-		if (end <= start)
-			end = start + 1;
-		int16_t min = 0, max = 0;
-		for (uint32_t i = start; i < end; i++) {
-			if (g_player.peakMin[i] < min) min = g_player.peakMin[i];
-			if (g_player.peakMax[i] > max) max = g_player.peakMax[i];
-		}
-		float px = area.x + x;
-		Color color = px < playedX ? (Color) { 90, 170, 255, 255 } : (Color) { 140, 140, 150, 255 };
-		float top = floorf(center - max * scale);
-		DrawRectangleRec((Rectangle) { px, top, 1.0f, fmaxf(ceilf(center - min * scale) - top, 1.0f) }, color);
-	}
-	DrawLineV((Vector2) { playedX, area.y }, (Vector2) { playedX, area.y + area.height }, WHITE);
-	DrawRectangleLinesEx(area, 1.0f, (Color) { 112, 112, 112, 255 });
+	WaveformLoop loop = { sample->loopStart, sample->loopEnd, g_player.loopEnabled };
+	Waveform_Draw(&g_player.waveform, area, g_player.samplePosition, sample->loop ? &loop : NULL);
 }
 
 // Level of the voices of each MIDI channel

@@ -12,6 +12,7 @@
 #include <mferror.h>
 #include <wmcodecdsp.h>
 #endif
+#include "core/bytes.h"
 #include "core/file.h"
 #include "formats/sound/xwm.h"
 
@@ -24,14 +25,6 @@ typedef struct {
 	uint32_t		dataSize;
 } XWM_Chunks;
 
-static uint16_t ReadU16(const uint8_t* p) {
-	return (uint16_t)(p[0] | (p[1] << 8));
-}
-
-static uint32_t ReadU32(const uint8_t* p) {
-	return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
 // Finds the chunks of the file and reads the format. Returns false if the file is not a valid xWMA file
 static bool ReadChunks(const uint8_t* buffer, size_t size, XWM_Chunks* chunks, XWM_Info* info) {
 	if (size < 12 || memcmp(buffer, "RIFF", 4) != 0 || memcmp(buffer + 8, "XWMA", 4) != 0)
@@ -39,7 +32,7 @@ static bool ReadChunks(const uint8_t* buffer, size_t size, XWM_Chunks* chunks, X
 
 	memset(chunks, 0, sizeof(*chunks));
 	for (size_t pos = 12; pos + 8 <= size;) {
-		uint32_t chunkSize = ReadU32(buffer + pos + 4);
+		uint32_t chunkSize = Bytes_ReadU32(buffer + pos + 4);
 		if (chunkSize > size - pos - 8)
 			return false;
 		const uint8_t* chunk = buffer + pos + 8;
@@ -60,15 +53,15 @@ static bool ReadChunks(const uint8_t* buffer, size_t size, XWM_Chunks* chunks, X
 	if (chunks->format == NULL || chunks->formatSize < 16 || chunks->dpds == NULL || chunks->dpdsCount == 0 || chunks->data == NULL)
 		return false;
 
-	info->formatTag = ReadU16(chunks->format);
-	info->channels = ReadU16(chunks->format + 2);
-	info->sampleRate = ReadU32(chunks->format + 4);
-	info->avgBytesPerSec = ReadU32(chunks->format + 8);
-	info->blockAlign = ReadU16(chunks->format + 12);
+	info->formatTag = Bytes_ReadU16(chunks->format);
+	info->channels = Bytes_ReadU16(chunks->format + 2);
+	info->sampleRate = Bytes_ReadU32(chunks->format + 4);
+	info->avgBytesPerSec = Bytes_ReadU32(chunks->format + 8);
+	info->blockAlign = Bytes_ReadU16(chunks->format + 12);
 	if (info->channels == 0 || info->sampleRate == 0 || info->blockAlign == 0)
 		return false;
 	info->packetCount = chunks->dataSize / info->blockAlign;
-	info->frameCount = ReadU32(chunks->dpds + (size_t)(chunks->dpdsCount - 1) * 4) / (2u * info->channels);
+	info->frameCount = Bytes_ReadU32(chunks->dpds + (size_t)(chunks->dpdsCount - 1) * 4) / (2u * info->channels);
 	return true;
 }
 
