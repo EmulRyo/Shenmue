@@ -1,6 +1,32 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
 #include <raylib.h>
 #include "raygui.h"
 #include "app/style.h"
+
+// Fonts of the user interface on Linux and macOS, after Segoe UI in the folder of Windows
+static const char* g_fonts[] = {
+	"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+	"/System/Library/Fonts/Supplemental/Arial.ttf",
+};
+
+// Path of the first font found. Returns false if there is none
+static bool FindFont(char* path, size_t size) {
+	const char* windowsFolder = getenv("WINDIR");
+	if (windowsFolder != NULL) {
+		snprintf(path, size, "%s\\Fonts\\segoeui.ttf", windowsFolder);
+		if (FileExists(path))
+			return true;
+	}
+	for (size_t i = 0; i < sizeof(g_fonts) / sizeof(g_fonts[0]); i++) {
+		if (FileExists(g_fonts[i])) {
+			snprintf(path, size, "%s", g_fonts[i]);
+			return true;
+		}
+	}
+	return false;
+}
 
 static void SetStyle(int fontSize) {
 	GuiSetStyle(DEFAULT, TEXT_SIZE, fontSize);
@@ -29,10 +55,15 @@ void Style_Init(void) {
 		"1234567890"
 		"?¿!¡ ()[]{};,.:-_'\"#+-*=%&<>@/\\^";
 
-	int numCodepoints = 0;
-	int* codePoints = LoadCodepoints(utf8Chars, &numCodepoints);
 	int fontSize = (int)(16.0f * winDPI.y);
-	Font font = LoadFontEx("C:\\Windows\\Fonts\\segoeui.ttf", fontSize, codePoints, numCodepoints);
-	GuiSetFont(font);
+	char path[512];
+	if (FindFont(path, sizeof(path))) {
+		int numCodepoints = 0;
+		int* codePoints = LoadCodepoints(utf8Chars, &numCodepoints);
+		GuiSetFont(LoadFontEx(path, fontSize, codePoints, numCodepoints));
+		UnloadCodepoints(codePoints);
+	}
+	else
+		fputs("[Style_Init]: No font found, using the default one\n", stderr);
 	SetStyle(fontSize);
 }

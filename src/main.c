@@ -90,7 +90,7 @@ static void Draw() {
     DrawStatusBar((Rectangle) { 0, (float)GetScreenHeight() - 30.0f, (float)GetScreenWidth(), 30.0f });
 }
 
-void main(int argc, char** argv) {
+int main(int argc, char** argv) {
     SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 720, "Shenmue");
 
@@ -114,4 +114,5 @@ void main(int argc, char** argv) {
         CloseAudioDevice();
     CloseWindow();
     NFD_Quit();
+    return 0;
 }
