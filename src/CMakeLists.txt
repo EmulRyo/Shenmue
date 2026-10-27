@@ -11,8 +11,12 @@ set(SRC
     src/app/tadBatch.c
     src/app/tadBatch.h
 
+    src/audio/sndDsp.c
+    src/audio/sndDsp.h
+    src/audio/sndSequencer.c
     src/audio/sndSynth.c
     src/audio/sndSynth.h
+    src/audio/sndSynthInternal.h
 
     src/core/bytes.h
     src/core/dir.c
@@ -61,6 +65,8 @@ set(SRC
 
     src/views/imageView.c
     src/views/imageView.h
+    src/views/mt5Mesh.c
+    src/views/mt5Mesh.h
     src/views/mt5View.c
     src/views/mt5View.h
     src/views/sndView.c

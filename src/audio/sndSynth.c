@@ -3,14 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include "audio/sndSynth.h"
+#include "audio/sndSynthInternal.h"
 
-#define CHANNEL_COUNT       (SND_MAX_CHANNELS * 2) // Music channels, then effect channels
 #define CONTROL_PERIOD      32      // Samples between the updates of the pitch, the LFO and the levels
 #define MASTER_GAIN         0.6f
-#define MAX_EVENTS_PER_SAMPLE 4096  // Stops a sequence that loops without advancing in time
-#define SAMPLES_PER_MS      (SND_SYNTH_RATE / 1000.0)
-#define DSP_RAM_MASK        0xFFFF
 #define FADE_MS             5.0f    // Fade out of the voices that reach a loop that would hold them forever
 #define PI                  3.14159265f
 
@@ -45,7 +41,6 @@ static const float g_totalLevelDb[8] = { 0.4f, 0.8f, 1.5f, 3.0f, 6.0f, 12.0f, 24
 // the end of the pattern (16 values or 0xFF) and again from the start
 #define PAN_PATTERNS        8
 #define PAN_PATTERN_SIZE    16
-#define PAN_LAYERS          64      // Layers whose position in their pattern is kept
 static const uint8_t g_panPatterns[PAN_PATTERNS][PAN_PATTERN_SIZE] = {
 	{ 0x11, 0x01, 0xFF },
 	{ 0x14, 0x04, 0xFF },
@@ -55,111 +50,6 @@ static const uint8_t g_panPatterns[PAN_PATTERNS][PAN_PATTERN_SIZE] = {
 	{ 0x02, 0x04, 0x08, 0x0F, 0x1F, 0x18, 0x14, 0x12, 0xFF },
 	{ 0x12, 0x14, 0x18, 0x1F, 0x0F, 0x08, 0x04, 0x02, 0xFF },
 	{ 0x08, 0x1F, 0x02, 0x18, 0x08, 0x14, 0x02, 0x00, 0x14, 0x08, 0x02, 0x1F, 0x04, 0x12, 0x08, 0x18 },
-};
-
-typedef enum {
-	ENVELOPE_ATTACK,
-	ENVELOPE_DECAY1,
-	ENVELOPE_DECAY2,
-	ENVELOPE_RELEASE,
-} EnvelopeState;
-
-typedef struct {
-	bool				active;
-	const SND_Sample*	sample;
-	const SND_Split*	split;
-	int					channel;    // 0-15: music, 16-31: effects, -1: a sample played alone
-	uint8_t				key;        // Note, or index of the effect
-	bool				keyOff;
-	bool				sustained;  // Released while the sustain pedal is down
-	bool				fading;     // Reached a loop that would hold it forever
-	bool				loop;
-	double				position;   // Frame of the sample
-	double				step;       // Frames per output sample
-	float				pitch;      // Semitones from the rate of 44100 Hz, without bend and LFO
-	float				rateFactor; // 2 for the samples doubled from half the sample rate
-	float				bendUp, bendDown;
-	// Envelope: the level goes from 0 (-96 dB) to 1023 (0 dB), linearly in dB
-	bool				useEnvelope;
-	EnvelopeState		state;
-	float				level;
-	float				attackStep, decay1Step, decay2Step, releaseStep, decayLevel;
-	// Filter: the envelope moves the cutoff level (FLV, 0 to 8191) towards the level of the next state, every control
-	// period; a resonant low-pass biquad
-	bool				filter;
-	EnvelopeState		filterState;
-	float				filterLevel;
-	float				filterSteps[4];
-	float				b0, b1, b2, a1, a2;
-	float				x1, x2, y1, y2;
-	// Levels: the velocity through the curve (0 to 254) and DISDL, then the channel, the pan and the effect send
-	int					velocityLevel;
-	float				baseGain;
-	uint8_t				pan;        // AICA DIPAN of the split or the part
-	float				sendGain;
-	uint8_t				isel;
-	float				gainLeft, gainRight, gainSend; // Updated every control period
-	// LFO
-	float				lfoPhase;
-	float				lfoStep;
-	float				pitchDepth; // Cents
-	float				ampDepth;   // dB
-	int					pitchWave, ampWave;
-	uint32_t			age;
-	float				meter;
-} Voice;
-
-typedef struct {
-	uint8_t		volume;
-	uint8_t		expression;
-	uint8_t		pan;        // MIDI pan, used when panSet
-	bool		panSet;
-	uint8_t		bend;
-	uint8_t		modulation;
-	bool		sustain;
-	int			program;    // Program change, -1 for the programs of the parts
-} Channel;
-
-typedef struct {
-	bool		active;
-	bool		effect;
-	uint32_t	start;      // Offset of the sequence
-	uint32_t	word;       // Offset of the next word of the playlist, from the start
-	uint32_t	pos;        // Position of the next event, 0 between the tracks
-	uint8_t		status;
-	bool		last;       // The track is the last one of the playlist
-	double		wait;       // Samples until the next event
-} Sequencer;
-
-typedef struct {
-	int32_t		temp[128];
-	int32_t		mems[32];
-	int32_t		mixs[16];
-	int32_t		efreg[16];
-	int32_t		acc;
-	int32_t		frcReg;
-	int32_t		yReg;
-	int32_t		adrsReg;
-	int32_t		memVal;
-	uint32_t	dec;
-	int			stepCount;
-	uint16_t	ram[DSP_RAM_MASK + 1];
-} DSP;
-
-struct SND_Synth {
-	const SND_Bank*	bank;
-	Voice			voices[SND_SYNTH_VOICES];
-	Channel			channels[CHANNEL_COUNT];
-	Sequencer		sequencer;
-	uint64_t		time;
-	uint32_t		age;
-	uint32_t		controlCounter;
-	float			levelTable[1024];   // Gain of each level of the envelope
-	float			totalLevelTable[256]; // Gain of each AICA total level
-	const SND_Layer* panLayers[PAN_LAYERS]; // Position of the layers with a pan pattern in their pattern
-	uint8_t			panPositions[PAN_LAYERS];
-	DSP				dsp;
-	float			outputLeft[16], outputRight[16]; // EFSDL and EFPAN of the effect outputs
 };
 
 // AICA levels (DISDL, IMXL, EFSDL): 15 is 0 dB, each step is -3 dB, 0 is off
@@ -203,161 +93,6 @@ static float LfoWave(int wave, float phase) {
 	case 2: return TriangleWave(phase);
 	default: return (float)rand() / RAND_MAX * 2.0f - 1.0f;
 	}
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// DSP: the effect processor of the AICA, running the program of the bank once per output sample
-
-static uint16_t DSP_Pack(int32_t value) {
-	int sign = (value >> 23) & 1;
-	uint32_t temp = (uint32_t)(value ^ (value << 1)) & 0xFFFFFF;
-	int exponent = 0;
-	for (int k = 0; k < 12; k++) {
-		if (temp & 0x800000)
-			break;
-		temp <<= 1;
-		exponent++;
-	}
-	if (exponent < 12)
-		value = (value << exponent) & 0x3FFFFF;
-	else
-		value <<= 11;
-	value >>= 11;
-	value &= 0x7FF;
-	value |= sign << 15;
-	value |= exponent << 11;
-	return (uint16_t)value;
-}
-
-static int32_t DSP_Unpack(uint16_t value) {
-	int sign = (value >> 15) & 1;
-	int exponent = (value >> 11) & 0xF;
-	int32_t result = (value & 0x7FF) << 11;
-	if (exponent > 11) {
-		exponent = 11;
-		result |= sign << 22;
-	}
-	else
-		result |= (sign ^ 1) << 22;
-	result |= sign << 23;
-	result = (int32_t)((uint32_t)result << 8) >> 8;
-	return result >> exponent;
-}
-
-static int32_t SignExtend24(int32_t value) {
-	return (int32_t)((uint32_t)value << 8) >> 8;
-}
-
-static int32_t Clamp24(int64_t value) {
-	if (value > 0x7FFFFF) return 0x7FFFFF;
-	if (value < -0x800000) return -0x800000;
-	return (int32_t)value;
-}
-
-static void DSP_Step(DSP* dsp, const SND_DSP* program) {
-	memset(dsp->efreg, 0, sizeof(dsp->efreg));
-	for (int step = 0; step < dsp->stepCount; step++) {
-		const uint16_t* ins = program->mpro[step];
-		uint32_t tra = (ins[0] >> 9) & 0x7F;
-		uint32_t twt = (ins[0] >> 8) & 0x01;
-		uint32_t twa = (ins[0] >> 1) & 0x7F;
-		uint32_t xsel = (ins[1] >> 15) & 0x01;
-		uint32_t ysel = (ins[1] >> 13) & 0x03;
-		uint32_t ira = (ins[1] >> 7) & 0x3F;
-		uint32_t iwt = (ins[1] >> 6) & 0x01;
-		uint32_t iwa = (ins[1] >> 1) & 0x1F;
-		uint32_t table = (ins[2] >> 15) & 0x01;
-		uint32_t mwt = (ins[2] >> 14) & 0x01;
-		uint32_t mrd = (ins[2] >> 13) & 0x01;
-		uint32_t ewt = (ins[2] >> 12) & 0x01;
-		uint32_t ewa = (ins[2] >> 8) & 0x0F;
-		uint32_t adrl = (ins[2] >> 7) & 0x01;
-		uint32_t frcl = (ins[2] >> 6) & 0x01;
-		uint32_t shift = (ins[2] >> 4) & 0x03;
-		uint32_t yrl = (ins[2] >> 3) & 0x01;
-		uint32_t negb = (ins[2] >> 2) & 0x01;
-		uint32_t zero = (ins[2] >> 1) & 0x01;
-		uint32_t bsel = (ins[2] >> 0) & 0x01;
-		uint32_t nofl = (ins[3] >> 15) & 0x01;
-		uint32_t masa = (ins[3] >> 9) & 0x1F;
-		uint32_t adreb = (ins[3] >> 8) & 0x01;
-		uint32_t nxadr = (ins[3] >> 7) & 0x01;
-
-		// Input: the memory registers, the mixed voices (20 bits) or the external inputs (silent)
-		int32_t inputs;
-		if (ira <= 0x1F)
-			inputs = dsp->mems[ira];
-		else if (ira <= 0x2F)
-			inputs = dsp->mixs[ira - 0x20] << 4;
-		else
-			inputs = 0;
-		inputs = SignExtend24(inputs);
-		if (iwt) {
-			dsp->mems[iwa] = dsp->memVal;
-			if (ira == iwa)
-				inputs = dsp->memVal;
-		}
-
-		int32_t b = 0;
-		if (!zero) {
-			b = bsel ? dsp->acc : SignExtend24(dsp->temp[(tra + dsp->dec) & 0x7F]);
-			if (negb)
-				b = -b;
-		}
-		int32_t x = xsel ? inputs : SignExtend24(dsp->temp[(tra + dsp->dec) & 0x7F]);
-		int32_t y;
-		if (ysel == 0)
-			y = dsp->frcReg;
-		else if (ysel == 1)
-			y = ((int16_t)program->coef[step]) >> 3; // The coefficient of each step
-		else if (ysel == 2)
-			y = (dsp->yReg >> 11) & 0x1FFF;
-		else
-			y = (dsp->yReg >> 4) & 0x0FFF;
-		if (yrl)
-			dsp->yReg = inputs;
-
-		int32_t shifted;
-		if (shift == 0)
-			shifted = Clamp24(dsp->acc);
-		else if (shift == 1)
-			shifted = Clamp24((int64_t)dsp->acc * 2);
-		else if (shift == 2)
-			shifted = SignExtend24(dsp->acc * 2);
-		else
-			shifted = SignExtend24(dsp->acc);
-
-		y = (int32_t)((uint32_t)y << 19) >> 19; // 13 bits
-		dsp->acc = (int32_t)(((int64_t)x * y) >> 12) + b;
-
-		if (twt)
-			dsp->temp[(twa + dsp->dec) & 0x7F] = shifted;
-		if (frcl)
-			dsp->frcReg = shift == 3 ? shifted & 0x0FFF : (shifted >> 11) & 0x1FFF;
-
-		if (mrd || mwt) {
-			uint32_t address = program->madrs[masa];
-			if (!table)
-				address += dsp->dec;
-			if (adreb)
-				address += dsp->adrsReg & 0x0FFF;
-			if (nxadr)
-				address++;
-			address &= DSP_RAM_MASK;
-			// The memory is accessed on the odd steps only
-			if (mrd && (step & 1))
-				dsp->memVal = nofl ? dsp->ram[address] << 8 : DSP_Unpack(dsp->ram[address]);
-			if (mwt && (step & 1))
-				dsp->ram[address] = nofl ? (uint16_t)(shifted >> 8) : DSP_Pack(shifted);
-		}
-
-		if (adrl)
-			dsp->adrsReg = shift == 3 ? (shifted >> 12) & 0x0FFF : inputs >> 16;
-		if (ewt)
-			dsp->efreg[ewa] += shifted >> 8;
-	}
-	dsp->dec--;
-	memset(dsp->mixs, 0, sizeof(dsp->mixs));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -430,7 +165,7 @@ static void UpdateFilterEnvelope(Voice* voice) {
 
 static void UpdateVoiceControl(SND_Synth* synth, Voice* voice);
 
-static void KeyOff(Voice* voice) {
+void Synth_KeyOff(Voice* voice) {
 	voice->keyOff = true;
 	voice->sustained = false;
 	voice->filterState = ENVELOPE_RELEASE;
@@ -541,7 +276,7 @@ static void StartVoice(SND_Synth* synth, int channel, uint8_t key, uint8_t veloc
 }
 
 // Each layer plays the split of the key, if the velocity is in the range of the split
-static void StartNote(SND_Synth* synth, const SND_Program* program, int channel, uint8_t key, uint8_t velocity,
+void Synth_StartNote(SND_Synth* synth, const SND_Program* program, int channel, uint8_t key, uint8_t velocity,
 	const SND_Part* part) {
 	for (uint32_t l = 0; l < program->layerCount; l++) {
 		const SND_Layer* layer = &program->layers[l];
@@ -555,7 +290,7 @@ static void StartNote(SND_Synth* synth, const SND_Program* program, int channel,
 }
 
 // A note on a channel plays the programs of all the parts of the channel
-static void NoteOn(SND_Synth* synth, int channel, uint8_t key, uint8_t velocity) {
+void Synth_NoteOn(SND_Synth* synth, int channel, uint8_t key, uint8_t velocity) {
 	const SND_Bank* bank = synth->bank;
 	int program = synth->channels[channel].program;
 	for (uint32_t i = 0; i < bank->partCount; i++) {
@@ -564,11 +299,11 @@ static void NoteOn(SND_Synth* synth, int channel, uint8_t key, uint8_t velocity)
 			continue;
 		uint32_t index = program >= 0 ? (uint32_t)program : part->program;
 		if (index < bank->programCount)
-			StartNote(synth, &bank->programs[index], channel, key, velocity, part);
+			Synth_StartNote(synth, &bank->programs[index], channel, key, velocity, part);
 	}
 }
 
-static void NoteOff(SND_Synth* synth, int channel, uint8_t key) {
+void Synth_NoteOff(SND_Synth* synth, int channel, uint8_t key) {
 	for (int i = 0; i < SND_SYNTH_VOICES; i++) {
 		Voice* voice = &synth->voices[i];
 		if (!voice->active || voice->keyOff || voice->channel != channel || voice->key != key)
@@ -576,168 +311,8 @@ static void NoteOff(SND_Synth* synth, int channel, uint8_t key) {
 		if (synth->channels[channel].sustain)
 			voice->sustained = true;
 		else
-			KeyOff(voice);
+			Synth_KeyOff(voice);
 	}
-}
-
-static void ResetChannels(SND_Synth* synth) {
-	const SND_Bank* bank = synth->bank;
-	for (int c = 0; c < CHANNEL_COUNT; c++) {
-		Channel* channel = &synth->channels[c];
-		memset(channel, 0, sizeof(*channel));
-		channel->volume = c < SND_MAX_CHANNELS ? 100 : 127;
-		channel->expression = 127;
-		channel->pan = 64;
-		channel->bend = 64;
-		channel->program = -1;
-	}
-	// The volume of the part is the initial volume of its channel
-	for (int i = (int)bank->partCount - 1; i >= 0; i--)
-		synth->channels[bank->parts[i].channel].volume = bank->parts[i].volume;
-}
-
-static void Controller(SND_Synth* synth, int c, uint8_t controller, uint8_t value) {
-	Channel* channel = &synth->channels[c];
-	switch (controller) {
-	case 1:
-		channel->modulation = value;
-		break;
-	case 7:
-		channel->volume = value;
-		break;
-	case 10:
-		channel->pan = value;
-		channel->panSet = true;
-		break;
-	case 11:
-		channel->expression = value;
-		break;
-	case 64:
-		channel->sustain = value >= 64;
-		if (!channel->sustain) {
-			for (int i = 0; i < SND_SYNTH_VOICES; i++) {
-				Voice* voice = &synth->voices[i];
-				if (voice->active && voice->channel == c && voice->sustained)
-					KeyOff(voice);
-			}
-		}
-		break;
-	case 121: // Reset all controllers
-		channel->expression = 127;
-		channel->modulation = 0;
-		channel->bend = 64;
-		channel->sustain = false;
-		break;
-	}
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// Sequencer
-
-static void StopSequence(SND_Synth* synth) {
-	synth->sequencer.active = false;
-}
-
-static void MusicEvent(SND_Synth* synth, const SND_Event* event) {
-	int channel = event->status & 0x0F;
-	switch (event->status >> 4) {
-	case 0x8:
-		NoteOff(synth, channel, event->data[0]);
-		break;
-	case 0x9:
-		if (event->data[1] == 0)
-			NoteOff(synth, channel, event->data[0]);
-		else
-			NoteOn(synth, channel, event->data[0], event->data[1]);
-		break;
-	case 0xB:
-		Controller(synth, channel, event->data[0], event->data[1]);
-		break;
-	case 0xC:
-		synth->channels[channel].program = event->data[0];
-		break;
-	case 0xE:
-		synth->channels[channel].bend = event->data[0];
-		break;
-	}
-}
-
-// Effects: Dx starts the effect data[0] of the effect program with the volume data[1] (0 stops it), Ax is a controller
-static void EffectEvent(SND_Synth* synth, const SND_Event* event) {
-	int channel = SND_MAX_CHANNELS + (event->status & 0x0F);
-	const SND_Bank* bank = synth->bank;
-	switch (event->status >> 4) {
-	case 0xD:
-		if (event->data[1] == 0) {
-			for (int i = 0; i < SND_SYNTH_VOICES; i++) {
-				Voice* voice = &synth->voices[i];
-				if (voice->active && voice->channel == channel && voice->key == event->data[0])
-					KeyOff(voice);
-			}
-		}
-		else if (bank->hasEffectProgram)
-			StartNote(synth, &bank->effectProgram, channel, event->data[0], event->data[1], NULL);
-		break;
-	case 0xA:
-		if (event->data[0] == 7 || event->data[0] == 11)
-			Controller(synth, channel, event->data[0], event->data[1]);
-		break;
-	}
-}
-
-// Moves to the next track of the playlist. Returns false at the end of the playlist
-static bool NextTrack(SND_Synth* synth) {
-	Sequencer* sequencer = &synth->sequencer;
-	if (sequencer->last)
-		return false;
-	for (int i = 0; i < 64; i++) {
-		uint32_t word = SND_ReadU32(synth->bank, sequencer->start + sequencer->word);
-		if (SND_PLAYLIST_COMMAND(word))
-			sequencer->word += 4;
-		else if (SND_PLAYLIST_JUMP(word))
-			sequencer->word = word & 0xFFFFFF;
-		else if (SND_PLAYLIST_TRACK(word) || SND_PLAYLIST_LAST(word)) {
-			sequencer->pos = sequencer->start + (word & 0xFFFFFF);
-			sequencer->status = 0;
-			sequencer->last = SND_PLAYLIST_LAST(word);
-			sequencer->word += 4;
-			return true;
-		}
-		else
-			return false;
-	}
-	return false;
-}
-
-static void UpdateSequencer(SND_Synth* synth) {
-	Sequencer* sequencer = &synth->sequencer;
-	for (int count = 0; sequencer->active && sequencer->wait <= 0.0; count++) {
-		if (count >= MAX_EVENTS_PER_SAMPLE) {
-			StopSequence(synth);
-			return;
-		}
-		if (sequencer->pos == 0 && (sequencer->effect || !NextTrack(synth))) {
-			StopSequence(synth);
-			return;
-		}
-		SND_Event event;
-		uint32_t next = SND_ReadEvent(synth->bank, sequencer->pos, sequencer->effect, &sequencer->status, &event);
-		if (next == 0) {
-			StopSequence(synth);
-			return;
-		}
-		sequencer->pos = next;
-		if (event.status == SND_EVENT_END) {
-			sequencer->pos = 0;
-			continue;
-		}
-		if (sequencer->effect)
-			EffectEvent(synth, &event);
-		else
-			MusicEvent(synth, &event);
-		sequencer->wait += event.delta * SAMPLES_PER_MS;
-	}
-	sequencer->wait -= 1.0;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -842,7 +417,7 @@ static int16_t Clip16(float value) {
 void SND_SynthRender(SND_Synth* synth, int16_t* output, uint32_t frames) {
 	const SND_DSP* program = &synth->bank->dsp;
 	for (uint32_t f = 0; f < frames; f++) {
-		UpdateSequencer(synth);
+		Sequencer_Update(synth);
 		bool control = synth->controlCounter == 0;
 		synth->controlCounter = (synth->controlCounter + 1) % CONTROL_PERIOD;
 
@@ -914,11 +489,7 @@ SND_Synth* SND_SynthCreate(const SND_Bank* bank) {
 	}
 	const SND_DSP* program = &bank->dsp;
 	if (program->present) {
-		// The program ends after its last step that isn't 0
-		for (int step = 0; step < 128; step++) {
-			if (program->mpro[step][0] | program->mpro[step][1] | program->mpro[step][2] | program->mpro[step][3])
-				synth->dsp.stepCount = step + 1;
-		}
+		DSP_Init(&synth->dsp, program);
 		for (int i = 0; i < 16; i++) {
 			float gain = LevelGain((program->outputs[i] >> 8) & 0x0F);
 			PanGains(program->outputs[i] & 0x1F, &synth->outputLeft[i], &synth->outputRight[i]);
@@ -926,7 +497,7 @@ SND_Synth* SND_SynthCreate(const SND_Bank* bank) {
 			synth->outputRight[i] *= gain;
 		}
 	}
-	ResetChannels(synth);
+	Channels_Reset(synth);
 	return synth;
 }
 
@@ -935,10 +506,10 @@ void SND_SynthDestroy(SND_Synth* synth) {
 }
 
 void SND_SynthStop(SND_Synth* synth) {
-	StopSequence(synth);
+	Sequencer_Stop(synth);
 	memset(synth->voices, 0, sizeof(synth->voices));
 	memset((void*)synth->panLayers, 0, sizeof(synth->panLayers));
-	ResetChannels(synth);
+	Channels_Reset(synth);
 	synth->time = 0;
 }
 
@@ -947,15 +518,7 @@ void SND_SynthPlaySequence(SND_Synth* synth, uint32_t index) {
 	const SND_Bank* bank = synth->bank;
 	if (index >= bank->sequenceCount || bank->sequences[index].type == SND_SEQUENCE_EMPTY)
 		return;
-	const SND_Sequence* sequence = &bank->sequences[index];
-	Sequencer* sequencer = &synth->sequencer;
-	memset(sequencer, 0, sizeof(*sequencer));
-	sequencer->active = true;
-	sequencer->effect = sequence->type == SND_SEQUENCE_EFFECT;
-	sequencer->start = sequence->offset;
-	sequencer->word = 4; // The playlist starts after the first word
-	if (sequencer->effect)
-		sequencer->pos = sequence->offset + 1; // After the header byte
+	Sequencer_Start(synth, &bank->sequences[index]);
 }
 
 void SND_SynthPlaySample(SND_Synth* synth, uint32_t index, uint32_t rate, bool loop) {
