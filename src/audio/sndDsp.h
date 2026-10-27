@@ -9,18 +9,18 @@
 #define DSP_RAM_MASK        0xFFFF
 
 typedef struct {
-	int32_t		temp[128];
-	int32_t		mems[32];
-	int32_t		mixs[16];
-	int32_t		efreg[16];
-	int32_t		acc;
-	int32_t		frcReg;
-	int32_t		yReg;
-	int32_t		adrsReg;
-	int32_t		memVal;
-	uint32_t	dec;
-	int			stepCount;
-	uint16_t	ram[DSP_RAM_MASK + 1];
+    int32_t     temp[128];
+    int32_t     mems[32];
+    int32_t     mixs[16];
+    int32_t     efreg[16];
+    int32_t     acc;
+    int32_t     frcReg;
+    int32_t     yReg;
+    int32_t     adrsReg;
+    int32_t     memVal;
+    uint32_t    dec;
+    int         stepCount;
+    uint16_t    ram[DSP_RAM_MASK + 1];
 } DSP;
 
 // Sets the number of steps of the program: it ends after its last step that isn't 0

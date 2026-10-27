@@ -6,17 +6,17 @@
 // Global Index
 // This header is optional
 typedef struct GBIX_Header {
-	char		id[4]; // "GBIX"
-	uint32_t	size;
-	uint8_t     content[];
+    char        id[4]; // "GBIX"
+    uint32_t    size;
+    uint8_t     content[];
 } GBIX_Header;
 
 typedef struct PVR_Header {
-    char		id[4]; // "PVRT"
-    uint32_t	length;
+    char        id[4]; // "PVRT"
+    uint32_t    length;
     uint8_t     pixelFormat;
     uint8_t     dataFormat;
-    uint16_t	unused;
+    uint16_t    unused;
     uint16_t    width;
     uint16_t    height;
     uint8_t     data[];
@@ -24,16 +24,16 @@ typedef struct PVR_Header {
 
 // Pvr Pixel Formats
 typedef enum PVR_PixelFormat {
-	PVR_PF_ARGB1555        = 0x00, //Format consisting of one bit of alpha value and five bits of RGB values. The alpha value indicates transparent when it is 0 and opaque when it is 1.
-	PVR_PF_RGB565          = 0x01, //Format without alpha value and consisting of five bits of RB values and six bits of G value.
-	PVR_PF_ARGB4444        = 0x02, //Format consisting of four bits of alpha value and four bits of RGB values. The alpha value indicates completely transparent when it is 0x0 and completely opaque when it is 0xF.
-	PVR_PF_YUV422          = 0x03, //YUV422 format
-	PVR_PF_BUMP88          = 0x04, //Bump map with positiv only normal vectors (S and R direction angles)
-	PVR_PF_RGB555          = 0x05, //for PCX compatible only
-	PVR_PF_ARGB8888        = 0x06, //Palettize only!
-	PVR_PF_DDS_DXT1_RGB24  = 0x80, //DDS DXT1 RGB, no transparency
-	PVR_PF_DDS_DXT3_RGBA32 = 0x81, //DDS DXT3 RGBA, transparency
-	PVR_PF_UNKNOWN         = 0xFF
+    PVR_PF_ARGB1555        = 0x00, //Format consisting of one bit of alpha value and five bits of RGB values. The alpha value indicates transparent when it is 0 and opaque when it is 1.
+    PVR_PF_RGB565          = 0x01, //Format without alpha value and consisting of five bits of RB values and six bits of G value.
+    PVR_PF_ARGB4444        = 0x02, //Format consisting of four bits of alpha value and four bits of RGB values. The alpha value indicates completely transparent when it is 0x0 and completely opaque when it is 0xF.
+    PVR_PF_YUV422          = 0x03, //YUV422 format
+    PVR_PF_BUMP88          = 0x04, //Bump map with positiv only normal vectors (S and R direction angles)
+    PVR_PF_RGB555          = 0x05, //for PCX compatible only
+    PVR_PF_ARGB8888        = 0x06, //Palettize only!
+    PVR_PF_DDS_DXT1_RGB24  = 0x80, //DDS DXT1 RGB, no transparency
+    PVR_PF_DDS_DXT3_RGBA32 = 0x81, //DDS DXT3 RGBA, transparency
+    PVR_PF_UNKNOWN         = 0xFF
 } PVR_PixelFormat;
 
 // Pvr Data Formats

@@ -11,18 +11,18 @@
 #define WAVEFORM_PEAKS 4096
 
 typedef struct {
-	int16_t		peakMin[WAVEFORM_PEAKS];
-	int16_t		peakMax[WAVEFORM_PEAKS];
-	uint32_t	peakCount;
-	uint32_t	frameCount;
-	bool		seeking;  // Dragging on the waveform
+    int16_t     peakMin[WAVEFORM_PEAKS];
+    int16_t     peakMax[WAVEFORM_PEAKS];
+    uint32_t    peakCount;
+    uint32_t    frameCount;
+    bool        seeking;  // Dragging on the waveform
 } Waveform;
 
 // Loop region drawn behind the waveform, highlighted when it is enabled
 typedef struct {
-	uint32_t	start;
-	uint32_t	end;
-	bool		enabled;
+    uint32_t    start;
+    uint32_t    end;
+    bool        enabled;
 } WaveformLoop;
 
 // Computes the minimum and maximum of the first channel of the interleaved frames for each column of the waveform

@@ -40,7 +40,7 @@ size_t Hash_djb2(const void* data) {
 static size_t IndexOfKey(HashTable ht, const void* key, size_t keySize) {
     size_t entrySize = sizeof(Entry) + ht->keySize + ht->valueSize;
     size_t index = ht->hashFunCB(key) % ht->capacity;
-    keySize = (keySize > ht->keySize) ? ht->keySize : keySize; // Ensure it doesnt exceed the size of the key 
+    keySize = (keySize > ht->keySize) ? ht->keySize : keySize; // Ensure it doesnt exceed the size of the key
     size_t psl = 0;
 
     while (true) {
@@ -114,8 +114,8 @@ void HT_SetEx(HashTable ht, const void* key, size_t keySize, const void* value, 
     size_t entrySize = sizeof(Entry) + ht->keySize + ht->valueSize;
     size_t index = ht->hashFunCB(key) % ht->capacity;
     keySize = (keySize > ht->keySize) ? ht->keySize : keySize; // Ensure it doesnt exceed the size of the key
-	valueSize = (valueSize > ht->valueSize) ? ht->valueSize : valueSize; // Ensure it doesnt exceed the size of the value
-    
+    valueSize = (valueSize > ht->valueSize) ? ht->valueSize : valueSize; // Ensure it doesnt exceed the size of the value
+
     Entry* newEntry = (Entry*)(ht->data + entrySize * ht->capacity); // we use a temporary slot at the end of the array
     newEntry->psl = 0;
     newEntry->state = ENTRY_OCCUPIED;
@@ -157,7 +157,7 @@ void HT_Set(HashTable ht, const void* key, const void* value) {
 }
 
 bool HT_GetEx(HashTable ht, const void* key, size_t keySize, const void* defaultValue, void* out_value) {
-	size_t index = IndexOfKey(ht, key, keySize);
+    size_t index = IndexOfKey(ht, key, keySize);
     if (index == SIZE_MAX) {
         if (defaultValue != NULL) {
             memcpy(out_value, defaultValue, ht->valueSize);
@@ -167,7 +167,7 @@ bool HT_GetEx(HashTable ht, const void* key, size_t keySize, const void* default
     size_t entrySize = sizeof(Entry) + ht->keySize + ht->valueSize;
     Entry* slot = (Entry*)(ht->data + entrySize * index);
     memcpy(out_value, slot->data + ht->keySize, ht->valueSize);
-	return true;
+    return true;
 }
 
 bool HT_GetDefault(HashTable ht, const void* key, const void* defaultValue, void* out_value) {
@@ -179,7 +179,7 @@ bool HT_Get(HashTable ht, const void* key, void* out_value) {
 }
 
 bool HT_ContainsKey(HashTable ht, const void* key) {
-	return IndexOfKey(ht, key, ht->keySize) != SIZE_MAX;
+    return IndexOfKey(ht, key, ht->keySize) != SIZE_MAX;
 }
 
 bool HT_ContainsKeyEx(HashTable ht, const void* key, size_t keySize) {
@@ -194,19 +194,19 @@ bool HT_ContainsValueEx(HashTable ht, const void* value, size_t sizeValue) {
         if (slot->state == ENTRY_OCCUPIED && memcmp(slot->data + ht->keySize, value, sizeValue) == 0) {
             return true;
         }
-	}
+    }
 
-	return false;
+    return false;
 }
 
 bool HT_ContainsValue(HashTable ht, const void* value) {
-	return HT_ContainsValueEx(ht, value, ht->valueSize);
+    return HT_ContainsValueEx(ht, value, ht->valueSize);
 }
 
 bool HT_RemoveEx(HashTable ht, const void* key, size_t keySize) {
     size_t entrySize = sizeof(Entry) + ht->keySize + ht->valueSize;
     size_t index = ht->hashFunCB(key) % ht->capacity;
-    keySize = (keySize > ht->keySize) ? ht->keySize : keySize; // Ensure it doesnt exceed the size of the key 
+    keySize = (keySize > ht->keySize) ? ht->keySize : keySize; // Ensure it doesnt exceed the size of the key
     size_t psl = 0;
 
     while (true) {
@@ -239,7 +239,7 @@ void HT_Destroy(HashTable ht) {
 }
 
 void HT_Debug(HashTable ht, void (*printKeyCB)(const void *), void (*printValueCB)(const void*)) {
-	size_t maxPsl = 0;
+    size_t maxPsl = 0;
     size_t entrySize = sizeof(Entry) + ht->keySize + ht->valueSize;
     printf("------------------ HashTable Debug Info: ------------------\n");
     printf("| capacity: %zu, count: %zu, key size: %zu, value size: %zu     |\n", ht->capacity, ht->count, ht->keySize, ht->valueSize);
@@ -257,9 +257,9 @@ void HT_Debug(HashTable ht, void (*printKeyCB)(const void *), void (*printValueC
             printf("\n");
             if (slot->psl > maxPsl) {
                 maxPsl = slot->psl;
-			}
+            }
         }
     }
     printf("-----------------------------------------------------------\n");
-	printf("| Max PSL: %zu |\n", maxPsl);
+    printf("| Max PSL: %zu |\n", maxPsl);
 }

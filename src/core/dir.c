@@ -45,7 +45,7 @@ static char* strtok_safe(char* str, const char* delim, char** context) {
     return strtok_r(str, delim, context);  // POSIX
 #else
 #warning "No secure strtok available. Using unsafe strtok as fallback."
-	return strtok(str, delim);             // insecure, only as the last resort
+    return strtok(str, delim);             // insecure, only as the last resort
 #endif
 }
 

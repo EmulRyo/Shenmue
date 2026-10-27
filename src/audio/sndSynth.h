@@ -14,24 +14,24 @@
 
 typedef struct SND_Synth SND_Synth;
 
-SND_Synth*	SND_SynthCreate(const SND_Bank* bank);
-void		SND_SynthDestroy(SND_Synth* synth);
+SND_Synth*  SND_SynthCreate(const SND_Bank* bank);
+void        SND_SynthDestroy(SND_Synth* synth);
 // Stops everything and starts a sequence (an index of bank->sequences)
-void		SND_SynthPlaySequence(SND_Synth* synth, uint32_t sequence);
+void        SND_SynthPlaySequence(SND_Synth* synth, uint32_t sequence);
 // Stops everything and plays a sample alone at a rate, repeating its loop if it has one and loop is true
-void		SND_SynthPlaySample(SND_Synth* synth, uint32_t sample, uint32_t rate, bool loop);
-void		SND_SynthStop(SND_Synth* synth);
+void        SND_SynthPlaySample(SND_Synth* synth, uint32_t sample, uint32_t rate, bool loop);
+void        SND_SynthStop(SND_Synth* synth);
 // Frame of the sample played alone, and seek in it
-uint32_t	SND_SynthSamplePosition(const SND_Synth* synth);
-void		SND_SynthSeekSample(SND_Synth* synth, uint32_t frame);
-void		SND_SynthSetSampleLoop(SND_Synth* synth, bool loop);
+uint32_t    SND_SynthSamplePosition(const SND_Synth* synth);
+void        SND_SynthSeekSample(SND_Synth* synth, uint32_t frame);
+void        SND_SynthSetSampleLoop(SND_Synth* synth, bool loop);
 // Renders frames of interleaved stereo samples
-void		SND_SynthRender(SND_Synth* synth, int16_t* output, uint32_t frames);
+void        SND_SynthRender(SND_Synth* synth, int16_t* output, uint32_t frames);
 // True while the sequence or the sample plays, or while voices sound
-bool		SND_SynthIsPlaying(const SND_Synth* synth);
-uint32_t	SND_SynthTime(const SND_Synth* synth);         // Milliseconds since the start
-uint32_t	SND_SynthActiveVoices(const SND_Synth* synth);
+bool        SND_SynthIsPlaying(const SND_Synth* synth);
+uint32_t    SND_SynthTime(const SND_Synth* synth);         // Milliseconds since the start
+uint32_t    SND_SynthActiveVoices(const SND_Synth* synth);
 // Level of the voices of each MIDI channel (0 to 1), for meters
-void		SND_SynthChannelLevels(const SND_Synth* synth, float levels[SND_MAX_CHANNELS]);
+void        SND_SynthChannelLevels(const SND_Synth* synth, float levels[SND_MAX_CHANNELS]);
 
 #endif

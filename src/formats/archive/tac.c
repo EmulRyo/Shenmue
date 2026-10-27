@@ -15,7 +15,7 @@ FILE* TAC_Open(const char* filepath) {
         exit(1);
     }
 
-	return tacFile;
+    return tacFile;
 }
 
 void TAC_Close(FILE* tacFile) {
@@ -44,21 +44,21 @@ bool TAC_SaveFile(FILE* tacFile, TADFileEntry* entry, const char* outputFilename
         return false;
     }
 
-	uint8_t* buffer = TAC_GetFile(tacFile, entry);
+    uint8_t* buffer = TAC_GetFile(tacFile, entry);
 
     const char* lastDot = strrchr(outputFilename, '.');
     if (lastDot == NULL) {
-		const char* ext = File_ExtensionFromMagic(buffer, entry->size);
+        const char* ext = File_ExtensionFromMagic(buffer, entry->size);
         if (ext != NULL) {
-			size_t outputOffset = SB_Count(sb);
-			SB_AppendFormat(sb, "%s.%s", outputFilename, ext);
-			outputFilename = SB_CStrOffset(sb, outputOffset);
+            size_t outputOffset = SB_Count(sb);
+            SB_AppendFormat(sb, "%s.%s", outputFilename, ext);
+            outputFilename = SB_CStrOffset(sb, outputOffset);
         }
     }
 
     FILE* file = fopen(outputFilename, "wb");
     if (file == NULL) {
-		free(buffer);
+        free(buffer);
         return false;
     }
 
@@ -68,5 +68,5 @@ bool TAC_SaveFile(FILE* tacFile, TADFileEntry* entry, const char* outputFilename
 
     free(buffer);
 
-	return true;
+    return true;
 }

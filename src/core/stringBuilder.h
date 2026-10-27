@@ -15,7 +15,7 @@ void          SB_Clear(StringBuilder sb);                                     //
 size_t        SB_Count(StringBuilder sb);                                     // Gets the number of chars contained in the array
 StringBuilder SB_Create(size_t initialCapacity);                              // Initializes a new instance of the array that can hold strings, that is empty and has the specified "initialCapacity"
 const char*   SB_CStr(StringBuilder sb);                                      // Gets a pointer to the internal data structure
-const char*   SB_CStrOffset(StringBuilder sb, size_t offset);				  // Gets a pointer to the internal data structure at the specified offset
+const char*   SB_CStrOffset(StringBuilder sb, size_t offset);                 // Gets a pointer to the internal data structure at the specified offset
 void          SB_Destroy(StringBuilder sb);                                   // Releases the resources allocated by the array
 void          SB_Insert(StringBuilder sb, size_t index, const char* str);     // Inserts a string into the array at the specified index
 void          SB_Remove(StringBuilder sb, size_t start, size_t count);        // Removes the specified range of characters from the string builder

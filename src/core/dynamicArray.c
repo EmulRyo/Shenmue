@@ -12,7 +12,7 @@ typedef struct DynamicArrayInstance {
     size_t elemSize;
     void*  data;
     void*  tmp;
-	DA_CompareFunCB cmp;
+    DA_CompareFunCB cmp;
 } DynamicArrayInstance;
 
 static unsigned int NextPowerOf2(unsigned int n) {
@@ -29,10 +29,10 @@ static unsigned int NextPowerOf2(unsigned int n) {
 
 static void ResizeIfNeeded(DynamicArray da, size_t newSize) {
     if (newSize > da->capacity) {
-		size_t newCapacity = da->capacity * 2;
-		while (newCapacity < newSize) {
-			newCapacity *= 2;
-		}
+        size_t newCapacity = da->capacity * 2;
+        while (newCapacity < newSize) {
+            newCapacity *= 2;
+        }
         void* newPtr = realloc(da->data, newCapacity * da->elemSize);
         if (newPtr == NULL) {
             printf("Error: unable to allocate memory. Aborting\n");
@@ -51,14 +51,14 @@ static inline void* Ptr(DynamicArray da, size_t index) {
 }
 
 static int Compare(DynamicArray da, size_t a, size_t b) {
-	void* p1 = Ptr(da, a);
-	void* p2 = Ptr(da, b);
+    void* p1 = Ptr(da, a);
+    void* p2 = Ptr(da, b);
 
-	return da->cmp(p1, p2);
+    return da->cmp(p1, p2);
 }
 
 static void Swap(DynamicArray da, size_t a, size_t b) {
-	void* p1 = Ptr(da, a);
+    void* p1 = Ptr(da, a);
     void* p2 = Ptr(da, b);
 
     memcpy(da->tmp,      p1, da->elemSize);
@@ -98,13 +98,13 @@ size_t DA_Count(DynamicArray da) {
 DynamicArray DA_Create(size_t initialCapacity, size_t elementSize) {
     initialCapacity = NextPowerOf2((unsigned int)(initialCapacity));
     DynamicArray inst = malloc(sizeof(DynamicArrayInstance));
-	assert(inst && "DA_Create: memory allocation failed");
+    assert(inst && "DA_Create: memory allocation failed");
     inst->capacity = initialCapacity;
     inst->elemSize = elementSize;
     inst->data = malloc(initialCapacity * elementSize);
     inst->count = 0;
-	inst->tmp = NULL;
-	inst->cmp = NULL;
+    inst->tmp = NULL;
+    inst->cmp = NULL;
 
     return inst;
 }
@@ -117,10 +117,10 @@ void DA_Destroy(DynamicArray da) {
         da->capacity = 0;
         da->elemSize = 0;
     }
-	if (da->tmp) {
-		free(da->tmp);
-		da->tmp = NULL;
-	}
+    if (da->tmp) {
+        free(da->tmp);
+        da->tmp = NULL;
+    }
 }
 
 void* DA_Get(DynamicArray da, size_t index) {
@@ -129,7 +129,7 @@ void* DA_Get(DynamicArray da, size_t index) {
 }
 
 void* DA_Data(DynamicArray da) {
-	return da->data;
+    return da->data;
 }
 
 size_t DA_IndexOf(DynamicArray da, const void* element) {
@@ -198,14 +198,14 @@ void DA_Reverse(DynamicArray da) {
     size_t tail = da->count - 1;
 
     for (int i = 0; i < (da->count / 2); i++) {
-		Swap(da, head, tail);
+        Swap(da, head, tail);
 
         head += 1;
         tail -= 1;
     }
 
     free(da->tmp);
-	da->tmp = NULL;
+    da->tmp = NULL;
 }
 
 void DA_Set(DynamicArray da, size_t index, const void* element) {
@@ -215,13 +215,13 @@ void DA_Set(DynamicArray da, size_t index, const void* element) {
 
 void DA_Shuffle(DynamicArray da) {
     static bool randInitialized = false;
-	if (!randInitialized) {
+    if (!randInitialized) {
         srand((unsigned int)time(NULL));
-		randInitialized = true;
-	}
+        randInitialized = true;
+    }
 
     if (da->tmp == NULL)
-	    da->tmp = malloc(da->elemSize);
+        da->tmp = malloc(da->elemSize);
 
     // Durstenfeld
     for (size_t i = da->count - 1; i > 0; i--) {
@@ -229,8 +229,8 @@ void DA_Shuffle(DynamicArray da) {
         Swap(da, i, j);
     }
 
-	free(da->tmp);
-	da->tmp = NULL;
+    free(da->tmp);
+    da->tmp = NULL;
 }
 
 static void InsertionSort(DynamicArray da, size_t begin, size_t end) {
@@ -277,7 +277,7 @@ static size_t MedianOfThree(DynamicArray da, size_t a, size_t b, size_t c) {
     void* B = Ptr(da, b);
     void* C = Ptr(da, c);
 
-	DA_CompareFunCB cmp = da->cmp;
+    DA_CompareFunCB cmp = da->cmp;
 
     if (cmp(A, B) < 0) {
         if (cmp(B, C) < 0) return b;
@@ -298,7 +298,7 @@ static size_t Partition(DynamicArray da, size_t begin, size_t end) {
 
     // Move the pivot value to the begin in order to use it as a fixed reference
     Swap(da, pivotIndex, begin);
-	void* pivotValue = (char*)da->tmp + da->elemSize;
+    void* pivotValue = (char*)da->tmp + da->elemSize;
     memcpy(pivotValue, Ptr(da, begin), da->elemSize); // Copy the value of the pivot
 
     size_t i = begin - 1;
@@ -334,19 +334,19 @@ static void Introsort(DynamicArray da, size_t begin, size_t end, int depthLimit)
 }
 
 void DA_Resize(DynamicArray da, size_t newSize) {
-	assert(newSize >= 0 && "DA_Resize: newSize must be non-negative");
-	ResizeIfNeeded(da, newSize);
-	da->count = newSize;
+    assert(newSize >= 0 && "DA_Resize: newSize must be non-negative");
+    ResizeIfNeeded(da, newSize);
+    da->count = newSize;
 }
 
 void DA_ResizeFillValue(DynamicArray da, size_t newSize, const void* fillValue) {
-	assert(newSize >= 0 && "DA_ResizeFillValue: newSize must be non-negative");
-	ResizeIfNeeded(da, newSize);
-	if (newSize > da->count) {
-		for (size_t i = da->count; i < newSize; i++) {
-			memcpy(Ptr(da, i), fillValue, da->elemSize);
-		}
-	}
+    assert(newSize >= 0 && "DA_ResizeFillValue: newSize must be non-negative");
+    ResizeIfNeeded(da, newSize);
+    if (newSize > da->count) {
+        for (size_t i = da->count; i < newSize; i++) {
+            memcpy(Ptr(da, i), fillValue, da->elemSize);
+        }
+    }
     da->count = newSize;
 }
 
@@ -355,27 +355,27 @@ void DA_Sort(DynamicArray da, DA_CompareFunCB compareFunCB) {
 
     int depthLimit = 2 * (int)log2((double)da->count);
 
-	da->tmp = malloc(da->elemSize*2);
-	da->cmp = compareFunCB;
+    da->tmp = malloc(da->elemSize*2);
+    da->cmp = compareFunCB;
 
     // Perform a recursive Introsort
     Introsort(da, 0, da->count, depthLimit);
 
-	free(da->tmp);
-	da->tmp = NULL;
+    free(da->tmp);
+    da->tmp = NULL;
 }
 
 void DA_TrimExcess(DynamicArray da) {
-	if (da->count < da->capacity * 0.9) {
-		void* newPtr = realloc(da->data, da->count * da->elemSize);
-		if (newPtr == NULL) {
-			printf("Error: unable to allocate memory. Aborting\n");
-			free(da->data);
-			abort();
-		}
-		else {
-			da->data = newPtr;
-			da->capacity = da->count;
-		}
-	}
+    if (da->count < da->capacity * 0.9) {
+        void* newPtr = realloc(da->data, da->count * da->elemSize);
+        if (newPtr == NULL) {
+            printf("Error: unable to allocate memory. Aborting\n");
+            free(da->data);
+            abort();
+        }
+        else {
+            da->data = newPtr;
+            da->capacity = da->count;
+        }
+    }
 }

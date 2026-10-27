@@ -8,13 +8,13 @@
 // packets. All the clips of the game are WMA v2, mono, at 22050, 44100 or 32000 Hz
 
 typedef struct {
-	uint16_t	formatTag;      // 0x161: WMA v2
-	uint16_t	channels;
-	uint32_t	sampleRate;
-	uint32_t	avgBytesPerSec;
-	uint16_t	blockAlign;     // Size of a packet
-	uint32_t	packetCount;
-	uint32_t	frameCount;     // Decoded frames, from the last dpds value
+    uint16_t    formatTag;      // 0x161: WMA v2
+    uint16_t    channels;
+    uint32_t    sampleRate;
+    uint32_t    avgBytesPerSec;
+    uint16_t    blockAlign;     // Size of a packet
+    uint32_t    packetCount;
+    uint32_t    frameCount;     // Decoded frames, from the last dpds value
 } XWM_Info;
 
 // Decodes an xWMA file (gzipped or not) to interleaved 16-bit PCM. Returns the samples (frameCount * channels, to be
