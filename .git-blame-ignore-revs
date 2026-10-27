@@ -1,0 +1,4 @@
+# Commits that only change whitespace, ignored by git blame (git config blame.ignoreRevsFile .git-blame-ignore-revs) and GitHub
+
+# Indent with 4 spaces
+f1275d0ec151cf76651dc32b89f32bd02ad598c8
