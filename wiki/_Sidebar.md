@@ -21,6 +21,9 @@
 **Cutscenes**
 - [AUTH](AUTH)
 
+**Animations**
+- [MOTN](MOTN)
+
 **Audio**
 - [XWM](XWM)
 - [SND](SND)
