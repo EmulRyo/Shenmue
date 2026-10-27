@@ -2,6 +2,15 @@ set(SRC
     src/CMakeLists.txt
     src/main.c
 
+    src/app/fileOpen.c
+    src/app/fileOpen.h
+    src/app/filenameDB.c
+    src/app/filenameDB.h
+    src/app/style.c
+    src/app/style.h
+    src/app/tadBatch.c
+    src/app/tadBatch.h
+
     src/audio/sndSynth.c
     src/audio/sndSynth.h
 
@@ -50,10 +59,14 @@ set(SRC
     src/formats/texture/spr.c
     src/formats/texture/spr.h
 
+    src/views/imageView.c
+    src/views/imageView.h
     src/views/mt5View.c
     src/views/mt5View.h
     src/views/sndView.c
     src/views/sndView.h
+    src/views/views.c
+    src/views/views.h
     src/views/waveform.c
     src/views/waveform.h
     src/views/xwmView.c
