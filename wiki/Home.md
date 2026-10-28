@@ -12,7 +12,7 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [PKF](PKF)         | `.pkf`        | `PAKF`           | Container         | Textures + IPAC block                        |
 | [PKS](PKS)         | `.pks`        | `PAKS`           | Container         | IPAC block                                   |
 | [IPAC](IPAC)       | —             | `IPAC`           | Container (block) | Named files inside PKF/PKS                   |
-| [CHRT](CHRT)       | `.chrt`       | `CHRS`           | Script            | Character script                             |
+| [CHRT](CHRT)       | `.chrt`       | `CHRS`           | Script            | Characters and objects of a scene: models, position, flags... |
 | [SCNF](SCNF)       | — (`BIN`)     | `SCNF`           | Dialogue          | Voice and subtitle of each dialogue line     |
 | [Lip-sync](Lip-sync) | —           | —                | Dialogue          | Speaker, subtitle and mouth movements of each voice clip |
 | [AUTH](AUTH)       | `.auth`       | `TRCK`           | Cutscene          | Commands, camera and character movement of a cutscene |
