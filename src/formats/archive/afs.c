@@ -39,12 +39,24 @@ static void LoadEntryNames(const char* filepath, char (*names)[IDX_NAME_SIZE], u
         printf("  Filenames loaded from: %s\n", idxPath);
 }
 
-static void GetEntryFilename(char (*filenames)[AFS_FILENAME_SIZE], uint32_t entryID, const char* name, const char* ext) {
+// Without a name, a PKS takes the index of the unnamed PKF just before it (its textures), so both share a folder
+static uint32_t GetEntryIndexName(char (*filenames)[AFS_FILENAME_SIZE], char (*names)[IDX_NAME_SIZE], uint32_t entryID,
+    const char* ext) {
+    if (entryID == 0 || strcmp(ext, "pks") != 0 || names[entryID - 1][0] != '\0')
+        return entryID;
+    char pkfFilename[AFS_FILENAME_SIZE];
+    snprintf(pkfFilename, sizeof(pkfFilename), "%04u.pkf", entryID - 1);
+    return strcmp(filenames[entryID - 1], pkfFilename) == 0 ? entryID - 1 : entryID;
+}
+
+static void GetEntryFilename(char (*filenames)[AFS_FILENAME_SIZE], char (*names)[IDX_NAME_SIZE], uint32_t entryID,
+    const char* ext) {
     char* filename = filenames[entryID];
+    const char* name = names[entryID];
     if (name[0] != '\0')
         snprintf(filename, AFS_FILENAME_SIZE, "%s.%s", name, ext);
     else
-        snprintf(filename, AFS_FILENAME_SIZE, "%04u.%s", entryID, ext);
+        snprintf(filename, AFS_FILENAME_SIZE, "%04u.%s", GetEntryIndexName(filenames, names, entryID, ext), ext);
 
     // Avoid overwriting a previous entry with the same name
     for (uint32_t i = 0; i < entryID; i++) {
@@ -138,7 +150,7 @@ void AFS_ExtractAllFiles(const char* filepath, const char* outputPath) {
             continue;
         }
 
-        GetEntryFilename(filenames, i, names[i], GetEntryExtension(afsFile, entry));
+        GetEntryFilename(filenames, names, i, GetEntryExtension(afsFile, entry));
         printf(" -> %s\n", filenames[i]);
 
         char outputFilename[AFS_PATH_SIZE];
