@@ -13,6 +13,7 @@
 #include "formats/model/mt5.h"
 #include "formats/text/chrt.h"
 #include "formats/text/scnf.h"
+#include "views/authView.h"
 #include "views/imageView.h"
 #include "views/mt5View.h"
 #include "views/sndView.h"
@@ -65,6 +66,7 @@ static const Format g_formats[] = {
     { ".scnf",      "scnf", "SCNF", SCNF_Print,         VIEW_NONE },
     { ".xwm",       "xwm",  "XWM",  XWMView_Open,       VIEW_XWM },
     { ".snd",       "snd",  "SND",  SNDView_Open,       VIEW_SND },
+    { ".auth",      "auth", "AUTH", AUTHView_Open,      VIEW_AUTH },
 };
 
 #define FORMAT_COUNT (sizeof(g_formats) / sizeof(g_formats[0]))
@@ -111,10 +113,10 @@ void FileOpen_Open(const char* filepath) {
 
 void FileOpen_Dialog(void) {
     nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[6] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" } };
+    nfdu8filteritem_t filters[7] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
-    args.filterCount = 6;
+    args.filterCount = 7;
     nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
         FileOpen_Open(outPath);

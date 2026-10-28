@@ -11,6 +11,7 @@ typedef enum {
     VIEW_MT5,
     VIEW_XWM,
     VIEW_SND,
+    VIEW_AUTH,
     VIEW_COUNT,
 } ViewID;
 

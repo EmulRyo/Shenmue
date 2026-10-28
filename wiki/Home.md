@@ -58,6 +58,7 @@ Most formats can be identified by their first bytes. This is useful in container
 | `CHRS`                        | `.chrt`   | [CHRT](CHRT)            |
 | `SCNF`                        | —         | [SCNF](SCNF)            |
 | `DTPK`                        | `.snd`    | [SND](SND)              |
+| `TRCK`                        | `.auth`   | [AUTH](AUTH)            |
 | `HRCM`                        | `.mt5` `.chrm` | [MT5 / CHRM](MT5)  |
 | `PAKF`                        | `.pkf`    | [PKF](PKF)              |
 | `PAKS`                        | `.pks`    | [PKS](PKS)              |

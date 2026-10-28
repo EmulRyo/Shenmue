@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <raylib.h>
+#include "views/authView.h"
 #include "views/imageView.h"
 #include "views/mt5View.h"
 #include "views/sndView.h"
@@ -17,6 +18,7 @@ static const View g_views[VIEW_COUNT] = {
     [VIEW_MT5]   = { MT5View_Close, MT5View_IsOpen, MT5View_Draw },
     [VIEW_XWM]   = { XWMView_Close, XWMView_IsOpen, XWMView_Draw },
     [VIEW_SND]   = { SNDView_Close, SNDView_IsOpen, SNDView_Draw },
+    [VIEW_AUTH]  = { AUTHView_Close, AUTHView_IsOpen, AUTHView_Draw },
 };
 
 void Views_CloseOthers(ViewID view) {

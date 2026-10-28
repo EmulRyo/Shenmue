@@ -45,6 +45,11 @@ set(SRC
     src/formats/archive/tad.c
     src/formats/archive/tad.h
 
+    src/formats/animation/auth.c
+    src/formats/animation/auth.h
+    src/formats/animation/motn.c
+    src/formats/animation/motn.h
+
     src/formats/model/mt5.c
     src/formats/model/mt5.h
 
@@ -63,6 +68,8 @@ set(SRC
     src/formats/texture/spr.c
     src/formats/texture/spr.h
 
+    src/views/authView.c
+    src/views/authView.h
     src/views/imageView.c
     src/views/imageView.h
     src/views/mt5Mesh.c
