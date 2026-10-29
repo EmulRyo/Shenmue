@@ -17,19 +17,11 @@ typedef struct {
     uint32_t    size;  // Size of the CHRS block, the STRG block starts here
 } CHRT_Header;
 
-typedef enum {
-    CHRT_ARG_END     = 0,
-    CHRT_ARG_FLOAT   = 1,
-    CHRT_ARG_LITERAL = 2, // 4 characters stored in place (e.g. character ID)
-    CHRT_ARG_STRING  = 3, // Offset of the string, relative to the argument
-    CHRT_ARG_INT     = 4,
-} CHRT_ArgType;
-
 #define CHRT_MAX_DEPTH 8
 
 static const char* g_blockCommands[] = { "DefImage", "Character", "Image", "Entry" };
 
-static bool EqualsIgnoreCase(const char* a, const char* b) {
+bool CHRT_EqualsIgnoreCase(const char* a, const char* b) {
     for (; *a != '\0' && *b != '\0'; a++, b++) {
         if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
             return false;
@@ -37,10 +29,15 @@ static bool EqualsIgnoreCase(const char* a, const char* b) {
     return *a == *b;
 }
 
-// Command names are case-insensitive (Image, IMAGE, image)
-static bool IsBlockCommand(const char* name) {
+bool CHRT_IsCommand(const CHRT_Command* command, const char* name) {
+    return CHRT_EqualsIgnoreCase(command->name, name);
+}
+
+static bool IsBlockCommand(const CHRT_Command* command) {
+    if (command->argCount == 0 || command->args[command->argCount - 1].type != CHRT_ARG_INT)
+        return false;
     for (size_t i = 0; i < sizeof(g_blockCommands) / sizeof(g_blockCommands[0]); i++) {
-        if (EqualsIgnoreCase(name, g_blockCommands[i]))
+        if (CHRT_IsCommand(command, g_blockCommands[i]))
             return true;
     }
     return false;
@@ -53,87 +50,128 @@ static const char* GetString(const uint8_t* buffer, size_t size, uint64_t offset
     return (const char*)(buffer + offset);
 }
 
-bool CHRT_Print(const char* filepath) {
-    printf("[CHRT_Print]: Reading file: %s\n", filepath);
-    size_t size = 0;
-    uint8_t* buffer = File_LoadToMemoryDecompressed(filepath, &size);
-    if (buffer == NULL)
+// Reads the command at *pos. Returns false if it is out of bounds
+static bool ReadCommand(const CHRT_Script* script, size_t end, size_t* pos, CHRT_Command* command) {
+    const uint8_t* buffer = script->buffer;
+    command->name = GetString(buffer, script->size, *pos + *(const uint32_t*)(buffer + *pos));
+    if (command->name == NULL)
+        return false;
+    uint32_t argTypes = *(const uint32_t*)(buffer + *pos + 4);
+    *pos += 8;
+
+    for (command->argCount = 0; argTypes != CHRT_ARG_END; argTypes >>= 3, *pos += 4) {
+        if (*pos + 4 > end || command->argCount >= CHRT_MAX_ARGS)
+            return false;
+        CHRT_Arg* arg = &command->args[command->argCount++];
+        memset(arg, 0, sizeof(*arg));
+        arg->type = argTypes & 7;
+        arg->i = *(const uint32_t*)(buffer + *pos);
+        memcpy(&arg->f, &arg->i, sizeof(float));
+        if (arg->type == CHRT_ARG_LITERAL)
+            memcpy(arg->literal, buffer + *pos, 4);
+        else if (arg->type == CHRT_ARG_STRING) {
+            arg->string = GetString(buffer, script->size, *pos + arg->i);
+            if (arg->string == NULL)
+                return false;
+        }
+    }
+    return true;
+}
+
+bool CHRT_Load(const char* filepath, CHRT_Script* script) {
+    memset(script, 0, sizeof(*script));
+    script->buffer = File_LoadToMemoryDecompressed(filepath, &script->size);
+    if (script->buffer == NULL)
         return false;
 
-    const CHRT_Header* header = (const CHRT_Header*)buffer;
-    if (size < sizeof(CHRT_Header) || memcmp(header->id, "CHRS", 4) != 0 || header->size > size) {
-        fprintf(stderr, "[CHRT_Print]: Invalid CHRT file %s\n", filepath);
-        free(buffer);
+    const CHRT_Header* header = (const CHRT_Header*)script->buffer;
+    if (script->size < sizeof(CHRT_Header) || memcmp(header->id, "CHRS", 4) != 0 || header->size > script->size) {
+        fprintf(stderr, "[CHRT_Load]: Invalid CHRT file %s\n", filepath);
+        CHRT_Free(script);
         return false;
     }
 
-    size_t pos = sizeof(CHRT_Header);
-    uint32_t count = 0;
-    bool valid = true;
+    // Each command takes 8 bytes at least
+    script->commands = malloc((header->size / 8 + 1) * sizeof(CHRT_Command));
+    if (script->commands == NULL) {
+        fputs("[CHRT_Load]: Memory error\n", stderr);
+        CHRT_Free(script);
+        return false;
+    }
+
     size_t blockEnds[CHRT_MAX_DEPTH]; // Position where each open block ends
-    int depth = 0;
-    while (valid && pos + 8 <= header->size) {
-        const char* name = GetString(buffer, size, pos + *(const uint32_t*)(buffer + pos));
-        uint32_t argTypes = *(const uint32_t*)(buffer + pos + 4);
-        if (name == NULL) {
-            fprintf(stderr, "[CHRT_Print]: Invalid command name at 0x%04zX\n", pos);
-            valid = false;
-            break;
-        }
+    int32_t blocks[CHRT_MAX_DEPTH];   // Command that opens each block
+    uint32_t depth = 0;
+    size_t pos = sizeof(CHRT_Header);
+    while (pos + 8 <= header->size) {
         while (depth > 0 && pos >= blockEnds[depth - 1])
             depth--;
-        pos += 8;
 
-        uint32_t lastArgType = CHRT_ARG_END;
-        uint32_t lastArg = 0;
-        printf("  %*s%s(", depth * 4, "", name);
-        for (int i = 0; valid && argTypes != CHRT_ARG_END; i++, argTypes >>= 3, pos += 4) {
-            if (pos + 4 > header->size) {
-                valid = false;
-                break;
-            }
+        CHRT_Command* command = &script->commands[script->commandCount];
+        if (!ReadCommand(script, header->size, &pos, command)) {
+            fprintf(stderr, "[CHRT_Load]: Invalid command at 0x%04zX in %s\n", pos, filepath);
+            CHRT_Free(script);
+            return false;
+        }
+        command->parent = depth > 0 ? blocks[depth - 1] : -1;
+        command->depth = depth;
 
-            const uint8_t* arg = buffer + pos;
-            lastArgType = argTypes & 7;
-            lastArg = *(const uint32_t*)arg;
+        if (depth < CHRT_MAX_DEPTH && IsBlockCommand(command)) {
+            blockEnds[depth] = pos + (size_t)command->args[command->argCount - 1].i * 4;
+            blocks[depth++] = (int32_t)script->commandCount;
+        }
+        script->commandCount++;
+    }
+
+    if (pos != header->size) {
+        fprintf(stderr, "[CHRT_Load]: Invalid command data at 0x%04zX in %s\n", pos, filepath);
+        CHRT_Free(script);
+        return false;
+    }
+    return true;
+}
+
+void CHRT_Free(CHRT_Script* script) {
+    free(script->buffer);
+    free(script->commands);
+    memset(script, 0, sizeof(*script));
+}
+
+bool CHRT_Print(const char* filepath) {
+    printf("[CHRT_Print]: Reading file: %s\n", filepath);
+    CHRT_Script script;
+    if (!CHRT_Load(filepath, &script))
+        return false;
+
+    for (uint32_t c = 0; c < script.commandCount; c++) {
+        const CHRT_Command* command = &script.commands[c];
+        printf("  %*s%s(", command->depth * 4, "", command->name);
+        for (uint32_t i = 0; i < command->argCount; i++) {
+            const CHRT_Arg* arg = &command->args[i];
             if (i > 0)
                 printf(", ");
-
-            const char* str;
-            switch (argTypes & 7) {
+            switch (arg->type) {
             case CHRT_ARG_FLOAT:
-                printf("%g", *(const float*)arg);
+                printf("%g", arg->f);
                 break;
             case CHRT_ARG_LITERAL:
-                printf("'%.4s'", (const char*)arg);
+                printf("'%s'", arg->literal);
                 break;
             case CHRT_ARG_STRING:
-                str = GetString(buffer, size, pos + *(const uint32_t*)arg);
-                if (str != NULL)
-                    printf("\"%s\"", str);
-                else
-                    valid = false;
+                printf("\"%s\"", arg->string);
                 break;
             case CHRT_ARG_INT:
-                printf("%u", *(const uint32_t*)arg);
+                printf("%u", arg->i);
                 break;
             default:
-                printf("<type %u: 0x%08X>", argTypes & 7, *(const uint32_t*)arg);
+                printf("<type %u: 0x%08X>", arg->type, arg->i);
                 break;
             }
         }
         printf(")\n");
-        count++;
-
-        if (lastArgType == CHRT_ARG_INT && depth < CHRT_MAX_DEPTH && IsBlockCommand(name))
-            blockEnds[depth++] = pos + (size_t)lastArg * 4;
     }
+    printf("[CHRT_Print]: %u commands\n", script.commandCount);
 
-    if (!valid || pos != header->size)
-        fprintf(stderr, "[CHRT_Print]: Invalid command data at 0x%04zX\n", pos);
-    else
-        printf("[CHRT_Print]: %u commands\n", count);
-
-    free(buffer);
-    return valid;
+    CHRT_Free(&script);
+    return true;
 }

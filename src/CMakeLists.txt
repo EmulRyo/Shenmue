@@ -70,12 +70,18 @@ set(SRC
 
     src/views/authView.c
     src/views/authView.h
+    src/views/chrtView.c
+    src/views/chrtView.h
     src/views/imageView.c
     src/views/imageView.h
     src/views/mt5Mesh.c
     src/views/mt5Mesh.h
+    src/views/mt5Render.c
+    src/views/mt5Render.h
     src/views/mt5View.c
     src/views/mt5View.h
+    src/views/orbitCamera.c
+    src/views/orbitCamera.h
     src/views/sndView.c
     src/views/sndView.h
     src/views/views.c

@@ -14,6 +14,7 @@
 #include "formats/text/chrt.h"
 #include "formats/text/scnf.h"
 #include "views/authView.h"
+#include "views/chrtView.h"
 #include "views/imageView.h"
 #include "views/mt5View.h"
 #include "views/sndView.h"
@@ -54,6 +55,11 @@ static bool OpenMT5(const char* filepath) {
     return MT5View_Open(filepath);
 }
 
+static bool OpenCHRT(const char* filepath) {
+    CHRT_Print(filepath);
+    return CHRTView_Open(filepath);
+}
+
 static const Format g_formats[] = {
     { ".pvr",       NULL,   "PVR",  ImageView_OpenPVR,  VIEW_IMAGE },
     { ".spr",       NULL,   "SPR",  ImageView_OpenSPR,  VIEW_IMAGE },
@@ -62,7 +68,7 @@ static const Format g_formats[] = {
     { ".pkf",       NULL,   "PKF",  ExtractPKF,         VIEW_NONE },
     { ".pks",       NULL,   "PKS",  ExtractPKS,         VIEW_NONE },
     { ".mt5;.chrm", NULL,   "MT5",  OpenMT5,            VIEW_MT5 },
-    { ".chrt",      NULL,   "CHRT", CHRT_Print,         VIEW_NONE },
+    { ".chrt",      NULL,   "CHRT", OpenCHRT,           VIEW_CHRT },
     { ".scnf",      "scnf", "SCNF", SCNF_Print,         VIEW_NONE },
     { ".xwm",       "xwm",  "XWM",  XWMView_Open,       VIEW_XWM },
     { ".snd",       "snd",  "SND",  SNDView_Open,       VIEW_SND },
