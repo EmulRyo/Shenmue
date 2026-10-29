@@ -50,6 +50,9 @@ set(SRC
     src/formats/animation/motn.c
     src/formats/animation/motn.h
 
+    src/formats/map/mapinfo.c
+    src/formats/map/mapinfo.h
+
     src/formats/model/mt5.c
     src/formats/model/mt5.h
 
@@ -74,6 +77,8 @@ set(SRC
     src/views/chrtView.h
     src/views/imageView.c
     src/views/imageView.h
+    src/views/mapinfoView.c
+    src/views/mapinfoView.h
     src/views/mt5Mesh.c
     src/views/mt5Mesh.h
     src/views/mt5Render.c

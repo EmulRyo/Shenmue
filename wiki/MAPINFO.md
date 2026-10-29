@@ -184,7 +184,7 @@ The chunk header is followed by 1 to 3 blocks with a 4-digit ID (`0000`, `0001`.
 
 ### Shape
 
-All the coordinates are in the horizontal plane (X, Z).
+All the coordinates are in the horizontal plane (X, Z). Z has the opposite sign to the Z of the map models, the cameras and the lights: a shape point `(x, z)` is at `(x, -z)` in the map (the collisions follow the walls and streets of the models when Z is negated).
 
 | Offset | Size | Type   | Name   | Description |
 |-------:|-----:|--------|--------|-------------|

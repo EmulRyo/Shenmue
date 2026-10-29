@@ -3,6 +3,7 @@
 #include "views/authView.h"
 #include "views/chrtView.h"
 #include "views/imageView.h"
+#include "views/mapinfoView.h"
 #include "views/mt5View.h"
 #include "views/sndView.h"
 #include "views/xwmView.h"
@@ -21,6 +22,7 @@ static const View g_views[VIEW_COUNT] = {
     [VIEW_SND]   = { SNDView_Close, SNDView_IsOpen, SNDView_Draw },
     [VIEW_AUTH]  = { AUTHView_Close, AUTHView_IsOpen, AUTHView_Draw },
     [VIEW_CHRT]  = { CHRTView_Close, CHRTView_IsOpen, CHRTView_Draw },
+    [VIEW_MAPINFO] = { MAPINFOView_Close, MAPINFOView_IsOpen, MAPINFOView_Draw },
 };
 
 void Views_CloseOthers(ViewID view) {

@@ -43,6 +43,9 @@ typedef struct {
 
 // Loads a CHRT file (gzipped or not). Returns false if the file is not a valid CHRT file
 bool CHRT_Load(const char* filepath, CHRT_Script* script);
+// Loads a script stored inside another file (e.g. the CHRD chunk of a mapinfo.bin): data starts with the CHRS block. The
+// data is copied. name is used in the error messages. Returns false if it is not a valid script
+bool CHRT_LoadFromMemory(const uint8_t* data, size_t size, const char* name, CHRT_Script* script);
 void CHRT_Free(CHRT_Script* script);
 
 // Command names are case-insensitive (Image, IMAGE, image), so are some string arguments (DISP, Disp)

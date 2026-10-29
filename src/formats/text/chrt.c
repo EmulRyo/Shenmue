@@ -78,12 +78,8 @@ static bool ReadCommand(const CHRT_Script* script, size_t end, size_t* pos, CHRT
     return true;
 }
 
-bool CHRT_Load(const char* filepath, CHRT_Script* script) {
-    memset(script, 0, sizeof(*script));
-    script->buffer = File_LoadToMemoryDecompressed(filepath, &script->size);
-    if (script->buffer == NULL)
-        return false;
-
+// Decodes the commands of script->buffer. filepath is only used in the error messages. Frees the script on error
+static bool Parse(CHRT_Script* script, const char* filepath) {
     const CHRT_Header* header = (const CHRT_Header*)script->buffer;
     if (script->size < sizeof(CHRT_Header) || memcmp(header->id, "CHRS", 4) != 0 || header->size > script->size) {
         fprintf(stderr, "[CHRT_Load]: Invalid CHRT file %s\n", filepath);
@@ -129,6 +125,24 @@ bool CHRT_Load(const char* filepath, CHRT_Script* script) {
         return false;
     }
     return true;
+}
+
+bool CHRT_Load(const char* filepath, CHRT_Script* script) {
+    memset(script, 0, sizeof(*script));
+    script->buffer = File_LoadToMemoryDecompressed(filepath, &script->size);
+    if (script->buffer == NULL)
+        return false;
+    return Parse(script, filepath);
+}
+
+bool CHRT_LoadFromMemory(const uint8_t* data, size_t size, const char* name, CHRT_Script* script) {
+    memset(script, 0, sizeof(*script));
+    script->buffer = malloc(size + 1);
+    if (script->buffer == NULL)
+        return false;
+    memcpy(script->buffer, data, size);
+    script->size = size;
+    return Parse(script, name);
 }
 
 void CHRT_Free(CHRT_Script* script) {

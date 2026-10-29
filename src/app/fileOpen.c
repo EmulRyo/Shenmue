@@ -16,6 +16,7 @@
 #include "views/authView.h"
 #include "views/chrtView.h"
 #include "views/imageView.h"
+#include "views/mapinfoView.h"
 #include "views/mt5View.h"
 #include "views/sndView.h"
 #include "views/xwmView.h"
@@ -28,6 +29,7 @@ typedef struct {
     const char* name;
     bool        (*open)(const char* filepath); // Returns false if the file can't be loaded
     ViewID      view;       // View that shows the file, VIEW_NONE if it is printed or extracted
+    const char* filename;   // Lowercase name of the files of a format with a generic extension and no magic, NULL if none
 } Format;
 
 static bool ExtractAFS(const char* filepath) {
@@ -73,6 +75,7 @@ static const Format g_formats[] = {
     { ".xwm",       "xwm",  "XWM",  XWMView_Open,       VIEW_XWM },
     { ".snd",       "snd",  "SND",  SNDView_Open,       VIEW_SND },
     { ".auth",      "auth", "AUTH", AUTHView_Open,      VIEW_AUTH },
+    { NULL,         NULL,   "MAPINFO", MAPINFOView_Open, VIEW_MAPINFO, "mapinfo.bin" },
 };
 
 #define FORMAT_COUNT (sizeof(g_formats) / sizeof(g_formats[0]))
@@ -90,7 +93,9 @@ static const char* GetExtensionFromMagic(const char* filepath) {
 
 static const Format* FindFormat(const char* filepath) {
     for (size_t i = 0; i < FORMAT_COUNT; i++) {
-        if (IsFileExtension(filepath, g_formats[i].extensions))
+        if (g_formats[i].extensions != NULL && IsFileExtension(filepath, g_formats[i].extensions))
+            return &g_formats[i];
+        if (g_formats[i].filename != NULL && strcmp(TextToLower(GetFileName(filepath)), g_formats[i].filename) == 0)
             return &g_formats[i];
     }
     // Files with a generic extension (e.g. ".bin") are opened by their magic
@@ -119,10 +124,10 @@ void FileOpen_Open(const char* filepath) {
 
 void FileOpen_Dialog(void) {
     nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[7] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" } };
+    nfdu8filteritem_t filters[8] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Maps", "bin" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
-    args.filterCount = 7;
+    args.filterCount = 8;
     nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
         FileOpen_Open(outPath);
