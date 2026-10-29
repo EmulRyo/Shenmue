@@ -2,7 +2,7 @@
 
 A SCNF file holds the dialogue lines of one or more characters: for each line, the name of its voice clip, its duration and its subtitle. It also holds a script (bytecode) that chooses the lines to say.
 
-Every character of `scene/01/stream/humans` has one, inside the [IPAC](IPAC) block of its [PKS](PKS) (e.g. `AKMI.pks` → `AKMI.BIN`, next to the model `HOS_L.CHRM`). Its IPAC extension is `BIN`. SCNF data is also found inside other files: `misc/cold.bin` (a [PKS](PKS) whose SCNF entry has 6 blocks with the lines Ryo says when it is late) and the end of `scene/0x/jhd0/mapinfo.bin`.
+Every character of `scene/01/stream/humans` has one, inside the [IPAC](IPAC) block of its [PKS](PKS) (e.g. `AKMI.pks` → `AKMI.BIN`, next to the model `HOS_L.CHRM`). Its IPAC extension is `BIN`. SCNF data is also found inside other files: `misc/cold.bin` (a [PKS](PKS) whose SCNF entry has 6 blocks with the lines Ryo says when it is late) and the `SCNF` chunk of `scene/0x/jhd0/mapinfo.bin` ([MAPINFO](MAPINFO)).
 
 - **Extension:** none of its own (`BIN` in the [IPAC](IPAC) dictionary)
 - **Magic:** `SCNF` (`53 43 4E 46`)

@@ -2,7 +2,7 @@
 
 An AUTH file describes a scripted cutscene: a timeline of commands (which characters take part, which motions they play, their voice clips and sound effects), the animation of the camera, the movement of each character in the scene and the names of the sounds used.
 
-They are stored in the [IPAC](IPAC) block of the [PKS](PKS) files of the scenes, with the `AUTH` extension and names such as `SEQDATA0`…`SEQDATAD` (also `SEQDATK0` and `SEQDATS1`). The same PKS holds the motions ([MOTN](MOTN)), the models ([CHRM](MT5)) and the character script ([CHRT](CHRT)) used by the cutscene. The game files contain 306 AUTH files, in 119 PKS files of `scene/01`, `scene/02` and `scene/03`, from 796 to 108052 bytes.
+They are stored in the [IPAC](IPAC) block of the [PKS](PKS) files of the scenes, with the `AUTH` extension and names such as `SEQDATA0`…`SEQDATAD` (also `SEQDATK0` and `SEQDATS1`). The same PKS holds the motions ([MOTN](MOTN)), the models ([CHRM](MT5)) and the character script ([CHRT](CHRT)) used by the cutscene. The game files contain 306 AUTH files, in 119 PKS files of `scene/01`, `scene/02` and `scene/03`, from 796 to 108052 bytes. The `SCEX` chunk of [MAPINFO](MAPINFO) files holds 259 more `TRCK` chunks, and its `ECAM` cameras use the same [curves](#animation-curves).
 
 - **Extension:** `.auth` (`AUTH` in the [IPAC](IPAC) dictionary)
 - **Magic:** `TRCK` (`54 52 43 4B`)

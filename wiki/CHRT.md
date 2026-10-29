@@ -2,7 +2,7 @@
 
 A CHRT file is a script made of commands that places the characters and objects of a scene: the models to load, and for each character its model, position, angle, flags, collision, shadow, etc. The commands are self-describing: each one stores the type of its arguments, so they can be decoded without knowing them in advance. Some commands open a block that contains other commands.
 
-CHRT files are found inside [IPAC](IPAC) blocks, always with the name `CHARA`, next to the models they reference. The game has 646 different CHRT files, with 0 to 148 characters each (one character in 456 of them).
+CHRT files are found inside [IPAC](IPAC) blocks, always with the name `CHARA`, next to the models they reference. The same script is also stored in the `CHRD` chunk of every [MAPINFO](MAPINFO) file. The game has 646 different CHRT files, with 0 to 148 characters each (one character in 456 of them).
 
 - **Extension:** `.chrt`
 - **Magic:** `CHRS` (`43 48 52 53`)

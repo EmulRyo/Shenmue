@@ -11,6 +11,9 @@
 **Models**
 - [MT5 / CHRM](MT5)
 
+**Maps**
+- [MAPINFO](MAPINFO)
+
 **Scripts**
 - [CHRT](CHRT)
 

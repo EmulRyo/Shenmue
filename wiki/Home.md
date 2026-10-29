@@ -13,6 +13,7 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [PKS](PKS)         | `.pks`        | `PAKS`           | Container         | IPAC block                                   |
 | [IPAC](IPAC)       | —             | `IPAC`           | Container (block) | Named files inside PKF/PKS                   |
 | [CHRT](CHRT)       | `.chrt`       | `CHRS`           | Script            | Characters and objects of a scene: models, position, flags... |
+| [MAPINFO](MAPINFO) | `.bin`        | —                | Map               | Program, characters, cameras, lights, fog, collisions and sounds of a map |
 | [SCNF](SCNF)       | — (`BIN`)     | `SCNF`           | Dialogue          | Voice and subtitle of each dialogue line     |
 | [Lip-sync](Lip-sync) | —           | —                | Dialogue          | Speaker, subtitle and mouth movements of each voice clip |
 | [AUTH](AUTH)       | `.auth`       | `TRCK`           | Cutscene          | Commands, camera and character movement of a cutscene |
@@ -32,6 +33,7 @@ TAD/TAC
  │   ├─ PKF ─┬─ TEXN → PVR / DDS
  │   │       └─ IPAC → CHRT, PVR, ...
  │   └─ PKS ─── IPAC → CHRT, CHRM (textures in the PKF), SCNF, AUTH, MOTN, PVR, ...
+ ├─ MAPINFO → CHRT, AUTH, SCNF
  ├─ MT5 → TEXN → PVR / DDS
  ├─ PVR
  ├─ SPR → PVR
