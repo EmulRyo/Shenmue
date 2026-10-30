@@ -4,3 +4,7 @@
 [submodule "vendor/cJSON"]
 	path = vendor/cJSON
 	url = https://github.com/DaveGamble/cJSON
+[submodule "vendor/raylib"]
+	path = vendor/raylib
+	url = https://github.com/raysan5/raylib.git
+	shallow = true

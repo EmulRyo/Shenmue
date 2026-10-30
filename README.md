@@ -20,7 +20,7 @@ The file formats are described in the [wiki](https://github.com/EmulRyo/Shenmue/
 
 ## How to build
 
-The repository uses git submodules ([cJSON](https://github.com/DaveGamble/cJSON) and [nativefiledialog-extended](https://github.com/btzy/nativefiledialog-extended)), so clone it with `--recursive`. raylib 5.5 is downloaded by CMake if it is not installed.
+The repository uses git submodules ([raylib](https://github.com/raysan5/raylib), [cJSON](https://github.com/DaveGamble/cJSON) and [nativefiledialog-extended](https://github.com/btzy/nativefiledialog-extended)), so clone it with `--recursive`.
 
 ```
 git clone --recursive https://github.com/EmulRyo/Shenmue.git

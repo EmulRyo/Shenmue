@@ -18,6 +18,8 @@ Vector3     OrbitCamera_Position(const OrbitCamera* camera);
 Camera3D    OrbitCamera_Camera3D(const OrbitCamera* camera);
 // Handles the mouse inside area. The zoom doesn't get nearer than minDistance
 void        OrbitCamera_Update(OrbitCamera* camera, Rectangle area, float minDistance);
+// Draws only inside area, given in pixels of the screen
+void        OrbitCamera_Viewport(Rectangle area);
 // Begins drawing in 3D only inside area, with its aspect ratio. Returns the camera
 Camera3D    OrbitCamera_Begin3D(const OrbitCamera* camera, Rectangle area, double nearPlane, double farPlane);
 void        OrbitCamera_End3D(void);

@@ -42,7 +42,7 @@ typedef struct {
     uint32_t*       sequenceIndices;
     uint32_t        listedSequences;
     char            (*labels[2])[SNDVIEW_LABEL_SIZE];
-    const char**    labelPointers[2];
+    char**          labelPointers[2];
     int             listScroll[2];
     int             listFocus;
     int             selected[2];

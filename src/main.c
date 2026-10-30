@@ -47,6 +47,7 @@ static void ProcessDroppedFiles() {
 }
 
 static void Update() {
+    Style_Update();
     ProcessDroppedFiles();
     TADBatch_Update();
 }
@@ -86,12 +87,12 @@ static void Draw() {
     if (GuiButton((Rectangle) { 430, 10, 200, 30 }, "Save file")) {
         SaveFileDialog();
     }
-    Views_Draw((Rectangle) { 0, 50.0f, (float)GetScreenWidth(), (float)GetScreenHeight() - 50.0f - 40.0f });
+    Views_Draw((Rectangle) { 0, 50.0f, (float)GetScreenWidth(), (float)GetScreenHeight() - 50.0f - 30.0f });
     DrawStatusBar((Rectangle) { 0, (float)GetScreenHeight() - 30.0f, (float)GetScreenWidth(), 30.0f });
 }
 
 int main(int argc, char** argv) {
-    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
+    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI);
     InitWindow(1280, 720, "Shenmue");
 
     Init();

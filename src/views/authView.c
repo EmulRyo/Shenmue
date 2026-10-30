@@ -10,6 +10,7 @@
 #include "raygui.h"
 #include "formats/animation/auth.h"
 #include "formats/animation/motn.h"
+#include "views/orbitCamera.h"
 #include "views/authView.h"
 
 #define AUTHVIEW_LABEL_SIZE     128
@@ -28,7 +29,7 @@ typedef struct {
     uint32_t        bankCount;
     MOTN_Bank*      banks;      // MOTN files of the folder, for the names of the motions
     char            (*labels)[AUTHVIEW_LABEL_SIZE];
-    const char**    labelPointers;
+    char**          labelPointers;
     int             listScroll;
     int             listFocus;
     float           time;       // Seconds
@@ -472,7 +473,7 @@ static void DrawCharacters(void) {
 static void Begin3D(Camera3D camera, Rectangle area, double nearPlane, double farPlane) {
     BeginMode3D(camera);
     // Draw only inside the area, with its aspect ratio
-    rlViewport((int)area.x, GetRenderHeight() - (int)(area.y + area.height), (int)area.width, (int)area.height);
+    OrbitCamera_Viewport(area);
     rlMatrixMode(RL_PROJECTION);
     rlLoadIdentity();
     double top = nearPlane * tan(camera.fovy * 0.5 * DEG2RAD);

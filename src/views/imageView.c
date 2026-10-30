@@ -22,7 +22,7 @@ static void Show(uint32_t* pixels, uint16_t width, uint16_t height) {
     float ar = (float)width / (float)height;
     // Draw the image on top of the checkered pattern
     Image img2 = GenImageChecked(width, height, width / 8, (int)(ar * height / 8), (Color) { 100, 100, 100, 255 }, (Color) { 150, 150, 150, 255 });
-    ImageDraw(&img2, g_image, (Rectangle) { 0, 0, width, height }, (Rectangle) { 0, 0, width, height }, WHITE);
+    ImageDrawImage(&img2, g_image, 0, 0, WHITE);
 
     if (g_texture.id > 0)
         UnloadTexture(g_texture);

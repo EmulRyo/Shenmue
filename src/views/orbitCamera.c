@@ -62,10 +62,20 @@ void OrbitCamera_Update(OrbitCamera* camera, Rectangle area, float minDistance) 
     }
 }
 
+void OrbitCamera_Viewport(Rectangle area) {
+    // The area is in pixels of the screen, the viewport in pixels of the render (scaled by the DPI)
+    Vector2 scale = GetWindowScaleDPI();
+    int x = (int)roundf(area.x * scale.x);
+    int y = (int)roundf(area.y * scale.y);
+    int width = (int)roundf((area.x + area.width) * scale.x) - x;
+    int height = (int)roundf((area.y + area.height) * scale.y) - y;
+    rlViewport(x, GetRenderHeight() - (y + height), width, height);
+}
+
 Camera3D OrbitCamera_Begin3D(const OrbitCamera* camera, Rectangle area, double nearPlane, double farPlane) {
     Camera3D camera3D = OrbitCamera_Camera3D(camera);
     BeginMode3D(camera3D);
-    rlViewport((int)area.x, GetRenderHeight() - (int)(area.y + area.height), (int)area.width, (int)area.height);
+    OrbitCamera_Viewport(area);
     rlMatrixMode(RL_PROJECTION);
     rlLoadIdentity();
     double top = nearPlane * tan(camera->fovy * 0.5 * DEG2RAD);

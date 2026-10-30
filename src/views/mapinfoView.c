@@ -81,7 +81,7 @@ typedef struct {
     uint32_t            itemCount;
     Item*               items;
     char                (*labels)[MAPINFOVIEW_LABEL_SIZE];
-    const char**        labelPointers;
+    char**              labelPointers;
     int                 listScroll;
     int                 listFocus;
     int                 selected;       // Item, -1 if none
@@ -637,7 +637,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
         DrawRectangleRec(area, BLACK);
         DrawRectangleRec(view, (Color) { 45, 45, 48, 255 });
         BeginMode3D(camera);
-        rlViewport((int)view.x, GetRenderHeight() - (int)(view.y + view.height), (int)view.width, (int)view.height);
+        OrbitCamera_Viewport(view);
         rlMatrixMode(RL_PROJECTION);
         rlLoadIdentity();
         double nearPlane = 0.05;

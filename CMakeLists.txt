@@ -1,27 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
 project(Shenmue VERSION 1.0)
 
-# Dependencies
-set(RAYLIB_VERSION 5.5)
-find_package(raylib ${RAYLIB_VERSION} QUIET) # QUIET or REQUIRED
-if (NOT raylib_FOUND) # If there's none, fetch and build raylib
-  include(FetchContent)
-  FetchContent_Declare(
-    raylib
-    DOWNLOAD_EXTRACT_TIMESTAMP OFF
-    URL https://github.com/raysan5/raylib/archive/refs/tags/${RAYLIB_VERSION}.tar.gz
-  )
-  FetchContent_GetProperties(raylib)
-  if (NOT raylib_POPULATED) # Have we downloaded raylib yet?
-    set(FETCHCONTENT_QUIET NO)
-    FetchContent_MakeAvailable(raylib)
-  endif()
-endif()
-
 set_property(GLOBAL PROPERTY C_STANDARD 11)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 add_subdirectory(src)
+add_subdirectory(vendor/raylib)
 add_subdirectory(vendor/nativefiledialog-extended)
 set(RAYGUI
     vendor/raygui/raygui.h)
