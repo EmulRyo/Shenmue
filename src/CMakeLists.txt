@@ -79,6 +79,8 @@ set(SRC
     src/views/freeCamera.h
     src/views/imageView.c
     src/views/imageView.h
+    src/views/listView.c
+    src/views/listView.h
     src/views/mapinfoView.c
     src/views/mapinfoView.h
     src/views/mt5Mesh.c

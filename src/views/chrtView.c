@@ -11,12 +11,15 @@
 #include "formats/text/chrt.h"
 #include "views/mt5Render.h"
 #include "views/freeCamera.h"
+#include "views/listView.h"
 #include "views/chrtView.h"
 
 #define CHRTVIEW_FOVY 45.0f
 #define CHRTVIEW_FRAME_RATE 15.0f
 #define CHRTVIEW_PATH_SIZE 1024
 #define CHRTVIEW_OFF_SCENE 999.0f // Coordinate of the positions off the scene
+#define CHRTVIEW_LABEL_SIZE 128
+#define CHRTVIEW_LIST_WIDTH 360.0f
 
 typedef struct {
     char            path[CHRTVIEW_PATH_SIZE];
@@ -28,6 +31,7 @@ typedef struct {
     char            id[5];
     const char*     image;  // Name given by the Image command, NULL if none
     int32_t         model;  // Index in the model list, -1 if the model can't be loaded
+    const char*     error;  // Why the model can't be loaded, NULL if it is
     bool            sleep;  // SLEEP flag
     bool            positioned; // Has a Position in the scene, the others are arranged in rows (see ArrangeUnpositioned)
     Vector3         position;   // From the script, (0, 0, 0) if none
@@ -48,12 +52,17 @@ typedef struct {
     CHRTView_Character* characters;
     uint32_t            modelledCount;     // Characters with a model
     uint32_t            unpositionedCount; // Characters with a model and without a Position command
+    char                (*labels)[CHRTVIEW_LABEL_SIZE];
+    char**              labelPointers;
+    bool*               failed;      // Characters without a model, marked in the list
+    int                 listScroll;
+    int                 listFocus;
     Vector3             center;      // Bounding sphere of the scene
     float               radius;
     FreeCamera         camera;
     bool                fit;         // The camera is fitted to the models in the next draw, when the size of the view is known
     int32_t             selected;    // Character the camera looks at, -1 for the whole scene
-    bool                labels;
+    bool                showLabels;
     bool                hideSleeping;
     bool                wireframe;
     bool                noCulling;   // Draw the back faces too
@@ -171,10 +180,15 @@ static void LoadCharacter(uint32_t index, const char* folder) {
 
     PlaceCharacter(index, character);
     char path[CHRTVIEW_PATH_SIZE];
-    if (character->image != NULL && ModelPath(folder, ImageFile(character->image), path, sizeof(path)))
-        character->model = LoadCharacterModel(path);
+    if (character->image == NULL)
+        character->error = "no image";
+    else if (!ModelPath(folder, ImageFile(character->image), path, sizeof(path)))
+        character->error = "no model file";
+    else if ((character->model = LoadCharacterModel(path)) < 0)
+        character->error = "invalid model file";
     if (character->model < 0) {
-        printf("[CHRTView_Open]: No model for %s (%s)\n", character->id, character->image != NULL ? character->image : "no image");
+        printf("[CHRTView_Open]: No model for %s (%s, %s)\n", character->id, character->image != NULL ? character->image : "no image",
+            character->error);
         return;
     }
 
@@ -247,16 +261,39 @@ static void ComputeBounds(void) {
     g_view.radius = fmaxf(Vector3Distance(min, max) * 0.5f, 0.1f);
 }
 
+// ID, model file, position and flags of each character; the reason when it has no model
+static bool CreateLabels(void) {
+    g_view.labels = malloc((g_view.characterCount + 1) * sizeof(*g_view.labels));
+    g_view.labelPointers = malloc((g_view.characterCount + 1) * sizeof(*g_view.labelPointers));
+    g_view.failed = malloc((g_view.characterCount + 1) * sizeof(bool));
+    if (g_view.labels == NULL || g_view.labelPointers == NULL || g_view.failed == NULL)
+        return false;
+    for (uint32_t i = 0; i < g_view.characterCount; i++) {
+        const CHRTView_Character* character = &g_view.characters[i];
+        g_view.failed[i] = character->model < 0;
+        if (character->model < 0)
+            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, LISTVIEW_FAILED "%s  %s%s%s", character->id,
+                character->image != NULL ? character->image : "", character->image != NULL ? "  " : "", character->error);
+        else
+            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s  %s%s%s", character->id, GetFileName(g_view.models[character->model].path),
+                character->positioned ? "" : "  no position", character->sleep ? "  sleep" : "");
+        g_view.labelPointers[i] = g_view.labels[i];
+    }
+    return true;
+}
+
 static void ResetCamera(void) {
     FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, 1.0f }, g_view.radius, CHRTVIEW_FOVY);
     g_view.selected = -1;
     g_view.fit = true;
 }
 
-// Looks at a character from the current direction
+// Looks at a character from the current direction. The characters without a model are only selected
 static void Select(int32_t index) {
     const CHRTView_Character* character = &g_view.characters[index];
     g_view.selected = index;
+    if (character->model < 0)
+        return;
     g_view.camera.target = character->center;
     g_view.camera.distance = 1.5f * character->radius / sinf(CHRTVIEW_FOVY * 0.5f * DEG2RAD);
 }
@@ -268,6 +305,9 @@ void CHRTView_Close(void) {
     }
     free(g_view.models);
     free(g_view.characters);
+    free(g_view.labels);
+    free(g_view.labelPointers);
+    free(g_view.failed);
     CHRT_Free(&g_view.script);
     MT5Render_Free(&g_view.render);
     memset(&g_view, 0, sizeof(g_view));
@@ -301,11 +341,17 @@ bool CHRTView_Open(const char* filepath) {
     }
     printf("[CHRTView_Open]: %u of %u characters with a model (%u without a position), %u models\n", g_view.modelledCount,
         g_view.characterCount, g_view.unpositionedCount, g_view.modelCount);
+    if (!CreateLabels()) {
+        fputs("[CHRTView_Open]: Memory error\n", stderr);
+        CHRTView_Close();
+        return false;
+    }
 
     ArrangeUnpositioned();
     ComputeBounds();
     ResetCamera();
-    g_view.labels = true;
+    g_view.listFocus = -1;
+    g_view.showLabels = true;
     g_view.open = true;
     return true;
 }
@@ -361,7 +407,7 @@ static void UpdateInput(Rectangle area) {
     if (IsKeyPressed(KEY_TAB) || IsKeyPressedRepeat(KEY_TAB))
         SelectNext(IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ? -1 : 1);
     if (IsKeyPressed(KEY_L))
-        g_view.labels = !g_view.labels;
+        g_view.showLabels = !g_view.showLabels;
     // The keys of the flight move the camera
     if (IsKeyPressed(KEY_S) && !g_view.camera.fly)
         g_view.hideSleeping = !g_view.hideSleeping;
@@ -443,27 +489,52 @@ static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSiz
         Select(clicked);
 }
 
-// Image, model file, position and angle of the selected character
+// Image, model file (or why it has none), position and angle of the selected character
 static const char* SelectedText(void) {
     const CHRTView_Character* character = &g_view.characters[g_view.selected];
     const char* position = character->positioned ?
         TextFormat("position (%g, %g, %g)", character->position.x, character->position.y, character->position.z) :
         Vector3Equals(character->position, Vector3Zero()) ? "no position" :
         TextFormat("off the scene (%g, %g, %g)", character->position.x, character->position.y, character->position.z);
-    return TextFormat("%s: image \"%s\" (%s), %s, angle (%g, %g, %g)%s", character->id, character->image,
-        GetFileName(g_view.models[character->model].path), position, character->angle.x, character->angle.y,
+    char image[CHRTVIEW_LABEL_SIZE] = "no image";
+    if (character->image != NULL)
+        snprintf(image, sizeof(image), "image \"%s\" (%s)", character->image,
+            character->model >= 0 ? GetFileName(g_view.models[character->model].path) : character->error);
+    return TextFormat("%s: %s, %s, angle (%g, %g, %g)%s", character->id, image, position, character->angle.x, character->angle.y,
         character->angle.z, character->sleep ? ", sleep" : "");
 }
 
 void CHRTView_Draw(Rectangle area) {
     if (!g_view.open || area.width <= 0.0f || area.height <= 0.0f)
         return;
-    UpdateInput(area);
+
+    Font font = GuiGetFont();
+    float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
+    float lineHeight = fontSize * 1.2f;
+    float margin = 10.0f;
+    float top = area.y + margin * 2.0f + 4 * lineHeight;
+    Rectangle list = { area.x + margin, top, CHRTVIEW_LIST_WIDTH, area.y + area.height - margin - top };
+    Rectangle scene = { list.x + list.width + margin, top, area.width - list.width - margin * 3.0f, list.height };
+    if (list.height <= 0.0f || scene.width <= 0.0f)
+        return;
+    UpdateInput(scene);
     if (g_view.fit)
-        FitCamera(area);
+        FitCamera(scene);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
-    Camera3D camera = FreeCamera_Begin3D(&g_view.camera, area);
+    int active = g_view.selected;
+    int alignment = GuiGetStyle(LISTVIEW, TEXT_ALIGNMENT);
+    GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, TEXT_ALIGN_LEFT);
+    ListView_Draw(list, g_view.labelPointers, g_view.failed, (int)g_view.characterCount, &g_view.listScroll, &active, &g_view.listFocus);
+    GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, alignment);
+    if (active != g_view.selected) {
+        if (active >= 0)
+            Select(active);
+        else
+            g_view.selected = -1;
+    }
+
+    Camera3D camera = FreeCamera_Begin3D(&g_view.camera, scene);
     MT5Render_SetCamera(&g_view.render, camera);
     // The models have explicit back faces where both sides are seen (see MT5View_Draw)
     if (g_view.noCulling)
@@ -474,22 +545,21 @@ void CHRTView_Draw(Rectangle area) {
     rlDisableWireMode();
     rlEnableBackfaceCulling();
     FreeCamera_End3D();
-
-    Font font = GuiGetFont();
-    float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
-    if (g_view.labels)
-        DrawLabels(camera, area, font, fontSize);
+    if (g_view.showLabels)
+        DrawLabels(camera, scene, font, fontSize);
+    DrawRectangleLinesEx(scene, 1.0f, (Color) { 112, 112, 112, 255 });
 
     // TextFormat has 4 buffers: 1 for the counts, 1 for the controls, 2 for the selected character
     const char* lines[4] = {
         g_view.filename,
-        TextFormat("%u characters, %u with a model (%u without a position in the scene, arranged in rows), %u models%s", g_view.characterCount,
-            g_view.modelledCount, g_view.unpositionedCount, g_view.modelCount, g_view.hideSleeping ? ", sleeping characters hidden" : ""),
-        TextFormat("%s   R: reset   Tab or click on a label: select   L: labels   %sC: back faces", FreeCamera_Help(&g_view.camera),
-            g_view.camera.fly ? "" : "S: sleeping   W: wireframe   "),
+        TextFormat("%u characters, %u with a model (%u without a position in the scene, arranged in rows), %u without a model, %u models%s",
+            g_view.characterCount, g_view.modelledCount, g_view.unpositionedCount, g_view.characterCount - g_view.modelledCount,
+            g_view.modelCount, g_view.hideSleeping ? ", sleeping characters hidden" : ""),
+        TextFormat("%s   R: reset   Tab or click on the list or a label: select   L: labels   %sC: back faces",
+            FreeCamera_Help(&g_view.camera), g_view.camera.fly ? "" : "S: sleeping   W: wireframe   "),
         g_view.selected >= 0 ? SelectedText() : NULL,
     };
     int lineCount = g_view.selected >= 0 ? 4 : 3;
     for (int i = 0; i < lineCount; i++)
-        DrawTextEx(font, lines[i], (Vector2) { area.x + 10.0f, area.y + 10.0f + i * fontSize * 1.2f }, fontSize, 1.0f, LIGHTGRAY);
+        DrawTextEx(font, lines[i], (Vector2) { area.x + margin, area.y + margin + i * lineHeight }, fontSize, 1.0f, LIGHTGRAY);
 }

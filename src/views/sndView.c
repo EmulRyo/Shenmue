@@ -7,6 +7,7 @@
 #include "raygui.h"
 #include "formats/sound/snd.h"
 #include "audio/sndSynth.h"
+#include "views/listView.h"
 #include "views/sndView.h"
 #include "views/waveform.h"
 
@@ -43,6 +44,8 @@ typedef struct {
     uint32_t        listedSequences;
     char            (*labels[2])[SNDVIEW_LABEL_SIZE];
     char**          labelPointers[2];
+    bool*           invalidSamples; // Samples that couldn't be decoded
+    uint32_t        invalidCount;
     int             listScroll[2];
     int             listFocus;
     int             selected[2];
@@ -163,6 +166,7 @@ void SNDView_Close(void) {
         free(g_player.labelPointers[i]);
     }
     free(g_player.sequenceIndices);
+    free(g_player.invalidSamples);
     memset(&g_player, 0, sizeof(g_player));
 }
 
@@ -178,6 +182,9 @@ static bool CreateLabels(void) {
         if (bank->sequences[i].type != SND_SEQUENCE_EMPTY)
             g_player.sequenceIndices[g_player.listedSequences++] = i;
     }
+    g_player.invalidSamples = malloc((bank->sampleCount + 1) * sizeof(bool));
+    if (g_player.invalidSamples == NULL)
+        return false;
     uint32_t counts[2] = { g_player.listedSequences, bank->sampleCount };
     for (int m = 0; m < 2; m++) {
         g_player.labels[m] = malloc((counts[m] + 1) * sizeof(*g_player.labels[m]));
@@ -197,8 +204,13 @@ static bool CreateLabels(void) {
     }
     for (uint32_t i = 0; i < bank->sampleCount; i++) {
         const SND_Sample* sample = &bank->samples[i];
-        snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, "%u: %s, %u frames%s", i,
-            sample->encoding == SND_ENCODING_ADPCM ? "ADPCM" : "PCM", sample->frameCount, sample->loop ? ", loop" : "");
+        g_player.invalidSamples[i] = sample->pcm == NULL;
+        g_player.invalidCount += sample->pcm == NULL;
+        if (sample->pcm == NULL)
+            snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, LISTVIEW_FAILED "%u: invalid", i);
+        else
+            snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, "%u: %s, %u frames%s", i,
+                sample->encoding == SND_ENCODING_ADPCM ? "ADPCM" : "PCM", sample->frameCount, sample->loop ? ", loop" : "");
     }
     return true;
 }
@@ -341,8 +353,9 @@ void SNDView_Draw(Rectangle area) {
         music += bank->sequences[i].type == SND_SEQUENCE_MUSIC;
     const char* lines[3] = {
         g_player.filename,
-        TextFormat("DTPK sound bank, %u music and %u effect sequences, %u programs, %u samples%s", music,
-            g_player.listedSequences - music, bank->programCount, bank->sampleCount, bank->dsp.present ? ", reverb" : ""),
+        TextFormat("DTPK sound bank, %u music and %u effect sequences, %u programs, %u samples%s%s", music,
+            g_player.listedSequences - music, bank->programCount, bank->sampleCount,
+            g_player.invalidCount > 0 ? TextFormat(" (%u invalid)", g_player.invalidCount) : "", bank->dsp.present ? ", reverb" : ""),
         g_player.mode == MODE_SEQUENCES ?
             "Space: play/pause   Up/Down: previous/next sequence   Home: start   Tab: samples" :
             "Space: play/pause   Up/Down: previous/next sample   Left/Right: back/forward 1 s   Home: start   L: loop   Tab: sequences   Click on the waveform: seek",
@@ -378,8 +391,8 @@ void SNDView_Draw(Rectangle area) {
     SetMode((Mode)mode);
 
     int active = g_player.selected[g_player.mode];
-    GuiListViewEx(list, g_player.labelPointers[g_player.mode], ItemCount(g_player.mode), &g_player.listScroll[g_player.mode],
-        &active, &g_player.listFocus);
+    ListView_Draw(list, g_player.labelPointers[g_player.mode], g_player.mode == MODE_SAMPLES ? g_player.invalidSamples : NULL,
+        ItemCount(g_player.mode), &g_player.listScroll[g_player.mode], &active, &g_player.listFocus);
     if (active >= 0 && active != g_player.selected[g_player.mode])
         Select(active);
 
@@ -409,9 +422,11 @@ void SNDView_Draw(Rectangle area) {
 
     const SND_Sample* sample = SelectedSample();
     uint32_t rate = SampleRate(g_player.selected[MODE_SAMPLES]);
-    const char* info = TextFormat("Sample %d: %s, %u bytes at 0x%X, %u frames, %u Hz%s", g_player.selected[MODE_SAMPLES],
-        sample->encoding == SND_ENCODING_ADPCM ? "4-bit ADPCM" : "16-bit PCM", sample->size, sample->offset, sample->frameCount,
-        rate, sample->loop ? TextFormat(", loop %u-%u", sample->loopStart, sample->loopEnd) : ", no loop");
+    const char* info = sample->pcm == NULL ?
+        TextFormat("Sample %d: invalid, its data is out of the file", g_player.selected[MODE_SAMPLES]) :
+        TextFormat("Sample %d: %s, %u bytes at 0x%X, %u frames, %u Hz%s", g_player.selected[MODE_SAMPLES],
+            sample->encoding == SND_ENCODING_ADPCM ? "4-bit ADPCM" : "16-bit PCM", sample->size, sample->offset, sample->frameCount,
+            rate, sample->loop ? TextFormat(", loop %u-%u", sample->loopStart, sample->loopEnd) : ", no loop");
     DrawTextEx(font, info, (Vector2) { panel.x, top }, fontSize, 1.0f, LIGHTGRAY);
     DrawWaveform(panel);
 

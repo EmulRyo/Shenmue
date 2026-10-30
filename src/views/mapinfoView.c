@@ -13,6 +13,7 @@
 #include "formats/text/chrt.h"
 #include "views/mt5Render.h"
 #include "views/freeCamera.h"
+#include "views/listView.h"
 #include "views/mapinfoView.h"
 
 #define MAPINFOVIEW_LABEL_SIZE   160
@@ -92,10 +93,12 @@ typedef struct {
     uint32_t            instanceCount;
     Instance*           instances;      // Each model of the map, and each door with its model
     uint32_t            loadedDoors;    // Doors with their model
+    const char**        doorErrors;     // Why the model of each door couldn't be loaded, NULL if it was
     uint32_t            itemCount;
     Item*               items;
     char                (*labels)[MAPINFOVIEW_LABEL_SIZE];
     char**              labelPointers;
+    bool*               failedItems;    // Doors without their model
     int                 listScroll;
     int                 listFocus;
     int                 selected;       // Item, -1 if none
@@ -266,7 +269,9 @@ static void LoadModels(const char* folder) {
     uint32_t scriptCount = 0;
     g_view.models = calloc(files.count + 1, sizeof(MT5Render_Model));
     g_view.instances = calloc(files.count + file->doorCount + 1, sizeof(Instance));
-    if (usable != NULL && fileModels != NULL && scripts != NULL && g_view.models != NULL && g_view.instances != NULL) {
+    g_view.doorErrors = calloc(file->doorCount + 1, sizeof(const char*));
+    if (usable != NULL && fileModels != NULL && scripts != NULL && g_view.models != NULL && g_view.instances != NULL &&
+        g_view.doorErrors != NULL) {
         if (g_view.script.commandCount > 0)
             scripts[scriptCount++] = g_view.script;
         for (unsigned int i = 0; i < files.count; i++) {
@@ -289,12 +294,16 @@ static void LoadModels(const char* folder) {
         for (uint32_t i = 0; i < file->doorCount; i++) {
             const MAPINFO_Door* door = &file->doors[i];
             int f = DoorModelFile(&files, usable, scripts, scriptCount, door->model);
-            if (f < 0)
+            if (f < 0) {
+                g_view.doorErrors[i] = "no model file";
                 continue;
+            }
             if (fileModels[f] < 0 && MT5Render_LoadModel(files.paths[f], &g_view.models[g_view.modelCount]))
                 fileModels[f] = (int)g_view.modelCount++;
-            if (fileModels[f] < 0)
+            if (fileModels[f] < 0) {
+                g_view.doorErrors[i] = "invalid model file";
                 continue;
+            }
             // As the nodes of the models: scale, rotation and translation
             Matrix transform = MatrixMultiply(MatrixScale(door->scale[0], door->scale[1], door->scale[2]), MatrixRotateY(door->angle * DEG2RAD));
             transform = MatrixMultiply(transform, MatrixTranslate(door->position[0], door->position[1], door->position[2]));
@@ -385,10 +394,12 @@ static void FitCamera(Rectangle area) {
     free(points);
 }
 
-static void AddItem(ItemKind kind, uint32_t index, const char* text) {
+// The failed items are marked in the list
+static void AddItem(ItemKind kind, uint32_t index, const char* text, bool failed) {
     g_view.items[g_view.itemCount] = (Item) { kind, index };
-    snprintf(g_view.labels[g_view.itemCount], MAPINFOVIEW_LABEL_SIZE, "%s", text);
+    snprintf(g_view.labels[g_view.itemCount], MAPINFOVIEW_LABEL_SIZE, "%s%s", failed ? LISTVIEW_FAILED : "", text);
     g_view.labelPointers[g_view.itemCount] = g_view.labels[g_view.itemCount];
+    g_view.failedItems[g_view.itemCount] = failed;
     g_view.itemCount++;
 }
 
@@ -403,32 +414,33 @@ static bool CreateItems(void) {
     g_view.items = malloc(count * sizeof(Item));
     g_view.labels = malloc(count * sizeof(*g_view.labels));
     g_view.labelPointers = malloc(count * sizeof(*g_view.labelPointers));
-    if (g_view.items == NULL || g_view.labels == NULL || g_view.labelPointers == NULL)
+    g_view.failedItems = malloc(count * sizeof(bool));
+    if (g_view.items == NULL || g_view.labels == NULL || g_view.labelPointers == NULL || g_view.failedItems == NULL)
         return false;
 
     const MAPINFO_Chunk* scn = MAPINFO_FindChunk(file, "SCN3");
     if (scn != NULL)
-        AddItem(ITEM_INFO, 0, TextFormat("SCN3: %s (0x%X), 0x%X bytes", ScnText(file->scnVersion), file->scnVersion, scn->size));
+        AddItem(ITEM_INFO, 0, TextFormat("SCN3: %s (0x%X), 0x%X bytes", ScnText(file->scnVersion), file->scnVersion, scn->size), false);
     uint32_t groupCounts[MAPINFO_GROUP_COUNT] = { 0 };
     for (uint32_t i = 0; i < file->shapeCount; i++)
         groupCounts[file->shapes[i].group]++;
     if (file->shapeCount > 0)
         AddItem(ITEM_INFO, 0, TextFormat("COLS: %u COLI, %u HGHT, %u EVNT, %u UNDU, %u SOND, %u PROP", groupCounts[0],
-            groupCounts[1], groupCounts[2], groupCounts[3], groupCounts[4], groupCounts[5]));
+            groupCounts[1], groupCounts[2], groupCounts[3], groupCounts[4], groupCounts[5]), false);
     if (file->fog.present)
         AddItem(ITEM_INFO, 0, TextFormat("Fog: %g to %g, density %g, color #%06X", file->fog.nearDistance, file->fog.farDistance,
-            file->fog.density, file->fog.color & 0xFFFFFF));
+            file->fog.density, file->fog.color & 0xFFFFFF), false);
     if (file->cutsceneCount > 0)
-        AddItem(ITEM_INFO, 0, TextFormat("SCEX: %u cutscenes", file->cutsceneCount));
+        AddItem(ITEM_INFO, 0, TextFormat("SCEX: %u cutscenes", file->cutsceneCount), false);
     for (uint32_t i = 0; i < file->bankCount; i++) {
         if (strcmp(file->banks[i].name, "FREE") != 0)
-            AddItem(ITEM_INFO, 0, TextFormat("Sound bank %u: %s", file->banks[i].slot, file->banks[i].name));
+            AddItem(ITEM_INFO, 0, TextFormat("Sound bank %u: %s", file->banks[i].slot, file->banks[i].name), false);
     }
     const char* values[] = { "MAPR", "MAPT", "DIRT", "SCRL" };
     for (int i = 0; i < 4; i++) {
         uint32_t value;
         if (MAPINFO_ChunkValue(file, values[i], &value))
-            AddItem(ITEM_INFO, 0, TextFormat("%s: %d", values[i], (int32_t)value));
+            AddItem(ITEM_INFO, 0, TextFormat("%s: %d", values[i], (int32_t)value), false);
     }
     const char* floats[] = { "SCOF", "BLKS" };
     for (int i = 0; i < 2; i++) {
@@ -436,7 +448,7 @@ static bool CreateItems(void) {
         float f;
         if (MAPINFO_ChunkValue(file, floats[i], &value)) {
             memcpy(&f, &value, sizeof(f));
-            AddItem(ITEM_INFO, 0, TextFormat("%s: %g", floats[i], f));
+            AddItem(ITEM_INFO, 0, TextFormat("%s: %g", floats[i], f), false);
         }
     }
 
@@ -446,24 +458,26 @@ static bool CreateItems(void) {
         Camera3D view = MapCamera(camera);
         AddItem(ITEM_CAMERA, i, keys > 1 ?
             TextFormat("Camera %s  %u keys, %.2f s  flags 0x%X", camera->id, keys, CameraDuration(camera), camera->flags) :
-            TextFormat("Camera %s  (%.2f, %.2f, %.2f)  flags 0x%X", camera->id, view.position.x, view.position.y, view.position.z, camera->flags));
+            TextFormat("Camera %s  (%.2f, %.2f, %.2f)  flags 0x%X", camera->id, view.position.x, view.position.y, view.position.z, camera->flags), false);
     }
     for (uint32_t i = 0; i < file->lightCount; i++) {
         const MAPINFO_Light* light = &file->lights[i];
         AddItem(ITEM_LIGHT, i, TextFormat("Light %u.%u  (%.2f, %.2f, %.2f)  color (%.2f, %.2f, %.2f)", light->group, light->id,
-            light->position[0], light->position[1], light->position[2], light->color[0], light->color[1], light->color[2]));
+            light->position[0], light->position[1], light->position[2], light->color[0], light->color[1], light->color[2]), false);
     }
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
         const Character* character = &g_view.characters[i];
         AddItem(ITEM_CHARACTER, i, character->positioned ?
             TextFormat("Character %s  (%.2f, %.2f, %.2f)%s", character->id, character->position.x, character->position.y,
                 character->position.z, character->sleep ? "  sleep" : "") :
-            TextFormat("Character %s  no position%s", character->id, character->sleep ? "  sleep" : ""));
+            TextFormat("Character %s  no position%s", character->id, character->sleep ? "  sleep" : ""), false);
     }
     for (uint32_t i = 0; i < file->doorCount; i++) {
         const MAPINFO_Door* door = &file->doors[i];
-        AddItem(ITEM_DOOR, i, TextFormat("%s %s  (%.2f, %.2f, %.2f)  %.1f deg", door->type == MAPINFO_DOOR_DOOR ? "Door" : "Model",
-            door->model, door->position[0], door->position[1], door->position[2], door->angle));
+        const char* error = g_view.doorErrors != NULL ? g_view.doorErrors[i] : NULL;
+        AddItem(ITEM_DOOR, i, TextFormat("%s %s  (%.2f, %.2f, %.2f)  %.1f deg%s%s", door->type == MAPINFO_DOOR_DOOR ? "Door" : "Model",
+            door->model, door->position[0], door->position[1], door->position[2], door->angle, error != NULL ? "  " : "",
+            error != NULL ? error : ""), error != NULL);
     }
     return true;
 }
@@ -473,12 +487,13 @@ void MAPINFOView_Close(void) {
         MT5Render_FreeModel(&g_view.models[i]);
     free(g_view.models);
     free(g_view.instances);
-    if (g_view.open)
-        MT5Render_Free(&g_view.render);
+    free((void*)g_view.doorErrors);
+    MT5Render_Free(&g_view.render);
     free(g_view.characters);
     free(g_view.items);
     free(g_view.labels);
     free(g_view.labelPointers);
+    free(g_view.failedItems);
     CHRT_Free(&g_view.script);
     MAPINFO_Free(&g_view.file);
     memset(&g_view, 0, sizeof(g_view));
@@ -493,15 +508,16 @@ bool MAPINFOView_Open(const char* filepath) {
     g_view.file = file;
     snprintf(g_view.filename, sizeof(g_view.filename), "%s", filepath);
     LoadCharacters();
+    MT5Render_Init(&g_view.render);
+    char folder[1024];
+    snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(filepath));
+    LoadModels(folder);
+    // After the models, for the doors whose model couldn't be loaded
     if (!CreateItems()) {
         fputs("[MAPINFOView_Open]: Memory error\n", stderr);
         MAPINFOView_Close();
         return false;
     }
-    MT5Render_Init(&g_view.render);
-    char folder[1024];
-    snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(filepath));
-    LoadModels(folder);
     ComputeBounds();
     ResetCamera();
     g_view.selected = -1;
@@ -828,9 +844,10 @@ void MAPINFOView_Draw(Rectangle area) {
     const MAPINFO_Camera* camera = SelectedCamera();
     const char* lines[3] = {
         g_view.filename,
-        TextFormat("Map info, %u chunks: %u cameras, %u lights, %u collision and area shapes, %u characters, %u map models, %u of %u doors",
+        TextFormat("Map info, %u chunks: %u cameras, %u lights, %u collision and area shapes, %u characters, %u map models, %u doors%s",
             file->chunkCount, file->cameraCount, file->lightCount, file->shapeCount, g_view.characterCount, g_view.mapModelCount,
-            g_view.loadedDoors, file->doorCount),
+            file->doorCount, g_view.loadedDoors < file->doorCount ?
+                TextFormat(" (%u without their model)", file->doorCount - g_view.loadedDoors) : ""),
         g_view.mapCamera && camera != NULL ?
             TextFormat("Camera %s   V: free camera   F: fly   R: reset the free camera   Click on the list: select a camera, light, character or door", camera->id) :
             TextFormat("%s   R: reset   V: camera of the map   Click on the list: select a camera, light, character or door",
@@ -856,7 +873,7 @@ void MAPINFOView_Draw(Rectangle area) {
     int active = g_view.selected;
     int alignment = GuiGetStyle(LISTVIEW, TEXT_ALIGNMENT);
     GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, TEXT_ALIGN_LEFT);
-    GuiListViewEx(list, g_view.labelPointers, (int)g_view.itemCount, &g_view.listScroll, &active, &g_view.listFocus);
+    ListView_Draw(list, g_view.labelPointers, g_view.failedItems, (int)g_view.itemCount, &g_view.listScroll, &active, &g_view.listFocus);
     GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, alignment);
     if (active != g_view.selected)
         Select(active);
