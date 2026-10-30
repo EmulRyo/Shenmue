@@ -9,7 +9,7 @@
 #include <rlgl.h>
 #include "raygui.h"
 #include "views/mt5Render.h"
-#include "views/orbitCamera.h"
+#include "views/freeCamera.h"
 #include "views/mt5View.h"
 
 #define MT5VIEW_FOVY 45.0f
@@ -20,7 +20,7 @@ typedef struct {
     char            filename[256];
     MT5Render       render;
     MT5Render_Model model;
-    OrbitCamera     camera;
+    FreeCamera     camera;
     bool            fit;        // The camera is fitted to the model in the next draw, when the size of the view is known
     bool            wireframe;
     bool            noCulling; // Draw the back faces too
@@ -32,7 +32,7 @@ typedef struct {
 static MT5View_State g_view;
 
 static void ResetCamera(void) {
-    OrbitCamera_Reset(&g_view.camera, g_view.model.mesh.center, g_view.model.mesh.front, g_view.model.mesh.radius, MT5VIEW_FOVY);
+    FreeCamera_Reset(&g_view.camera, g_view.model.mesh.center, g_view.model.mesh.front, g_view.model.mesh.radius, MT5VIEW_FOVY);
     g_view.fit = true;
 }
 
@@ -42,7 +42,7 @@ static void FitCamera(Rectangle area) {
     if (points == NULL)
         return;
     uint32_t count = MT5Render_Vertices(&g_view.model, MatrixIdentity(), points);
-    OrbitCamera_Fit(&g_view.camera, points, count, area.width / area.height);
+    FreeCamera_Fit(&g_view.camera, points, count, area.width / area.height);
     free(points);
 }
 
@@ -76,10 +76,14 @@ bool MT5View_IsOpen(void) {
 }
 
 static void UpdateInput(Rectangle area) {
-    OrbitCamera_Update(&g_view.camera, area, g_view.model.mesh.radius * 0.01f);
+    FreeCamera_Update(&g_view.camera, area, g_view.model.mesh.radius * 0.01f);
     if (IsKeyPressed(KEY_R))
         ResetCamera();
-    if (IsKeyPressed(KEY_W))
+    if (IsKeyPressed(KEY_F))
+        FreeCamera_SetFly(&g_view.camera, !g_view.camera.fly);
+    // The keys of the flight move the camera
+    bool fly = g_view.camera.fly;
+    if (IsKeyPressed(KEY_W) && !fly)
         g_view.wireframe = !g_view.wireframe;
     if (IsKeyPressed(KEY_C))
         g_view.noCulling = !g_view.noCulling;
@@ -88,11 +92,11 @@ static void UpdateInput(Rectangle area) {
     if (frameCount > 0) {
         if (IsKeyPressed(KEY_SPACE))
             g_view.paused = !g_view.paused;
-        if (IsKeyPressed(KEY_RIGHT)) {
+        if (IsKeyPressed(KEY_RIGHT) && !fly) {
             g_view.paused = true;
             g_view.frame = (g_view.frame + 1) % frameCount;
         }
-        if (IsKeyPressed(KEY_LEFT)) {
+        if (IsKeyPressed(KEY_LEFT) && !fly) {
             g_view.paused = true;
             g_view.frame = (g_view.frame + frameCount - 1) % frameCount;
         }
@@ -112,8 +116,7 @@ void MT5View_Draw(Rectangle area) {
         FitCamera(area);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
-    double distance = g_view.camera.distance;
-    Camera3D camera = OrbitCamera_Begin3D(&g_view.camera, area, distance * 0.01, distance + g_view.model.mesh.radius * 4.0);
+    Camera3D camera = FreeCamera_Begin3D(&g_view.camera, area);
 
     MT5Render_SetCamera(&g_view.render, camera);
     // The faces are counter-clockwise, and the models have explicit back faces where both sides are seen (e.g. the
@@ -127,7 +130,7 @@ void MT5View_Draw(Rectangle area) {
     rlDisableWireMode();
     rlEnableBackfaceCulling();
 
-    OrbitCamera_End3D();
+    FreeCamera_End3D();
 
     Font font = GuiGetFont();
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
@@ -135,8 +138,9 @@ void MT5View_Draw(Rectangle area) {
     const char* lines[4] = {
         g_view.filename,
         TextFormat("%u nodes, %u triangles, %u/%u textures", model->nodeCount, model->mesh.triangleCount, model->loadedTextures, model->textureCount),
-        "Left drag: rotate   Right drag: pan   Wheel: zoom   R: reset   W: wireframe   C: back faces",
-        TextFormat("Frame %u/%u   Space: play/pause   Left/Right: previous/next frame", g_view.frame + 1, model->mesh.frameCount),
+        TextFormat("%s   R: reset   %sC: back faces", FreeCamera_Help(&g_view.camera), g_view.camera.fly ? "" : "W: wireframe   "),
+        TextFormat("Frame %u/%u   Space: play/pause%s", g_view.frame + 1, model->mesh.frameCount,
+            g_view.camera.fly ? "" : "   Left/Right: previous/next frame"),
     };
     int lineCount = model->mesh.frameCount > 0 ? 4 : 3;
     for (int i = 0; i < lineCount; i++)

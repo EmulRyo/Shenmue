@@ -12,7 +12,7 @@
 #include "formats/map/mapinfo.h"
 #include "formats/text/chrt.h"
 #include "views/mt5Render.h"
-#include "views/orbitCamera.h"
+#include "views/freeCamera.h"
 #include "views/mapinfoView.h"
 
 #define MAPINFOVIEW_LABEL_SIZE   160
@@ -101,7 +101,7 @@ typedef struct {
     int                 selected;       // Item, -1 if none
     bool                mapCamera;      // Show the map from the selected camera
     float               time;           // Seconds, for the animated cameras
-    OrbitCamera         camera;
+    FreeCamera         camera;
     bool                fit;            // The camera is fitted to the map in the next draw, when the size of the view is known
     Vector3             min, max;       // Box around the map
     Vector3             center;
@@ -357,7 +357,7 @@ static void ComputeBounds(void) {
 }
 
 static void ResetCamera(void) {
-    OrbitCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, 1.0f }, g_view.radius, MAPINFOVIEW_FOVY);
+    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, 1.0f }, g_view.radius, MAPINFOVIEW_FOVY);
     g_view.camera.pitch = 0.8f;
     g_view.fit = true;
 }
@@ -381,7 +381,7 @@ static void FitCamera(Rectangle area) {
             points[count++] = (Vector3) { (i & 1) ? g_view.max.x : g_view.min.x, (i & 2) ? g_view.max.y : g_view.min.y,
                 (i & 4) ? g_view.max.z : g_view.min.z };
     }
-    OrbitCamera_Fit(&g_view.camera, points, count, area.width / area.height);
+    FreeCamera_Fit(&g_view.camera, points, count, area.width / area.height);
     free(points);
 }
 
@@ -552,6 +552,20 @@ static void Select(int item) {
 static void UpdateInput(Rectangle scene) {
     if (IsKeyPressed(KEY_V) && SelectedCamera() != NULL)
         g_view.mapCamera = !g_view.mapCamera;
+    if (IsKeyPressed(KEY_F)) {
+        // Flies from the position of the camera of the map, or of the free camera, looking around it
+        const MAPINFO_Camera* source = g_view.mapCamera ? SelectedCamera() : NULL;
+        if (source != NULL) {
+            Camera3D view = MapCamera(source);
+            Vector3 direction = Vector3Normalize(Vector3Subtract(view.position, view.target));
+            g_view.camera.yaw = atan2f(direction.x, direction.z);
+            g_view.camera.pitch = Clamp(asinf(direction.y), -1.55f, 1.55f);
+            g_view.camera.target = view.target;
+            g_view.camera.distance = Vector3Distance(view.position, view.target);
+        }
+        FreeCamera_SetFly(&g_view.camera, g_view.mapCamera || !g_view.camera.fly);
+        g_view.mapCamera = false;
+    }
     if (IsKeyPressed(KEY_R)) {
         ResetCamera();
         g_view.mapCamera = false;
@@ -559,7 +573,7 @@ static void UpdateInput(Rectangle scene) {
     if (g_view.fit)
         FitCamera(scene);
     if (!g_view.mapCamera)
-        OrbitCamera_Update(&g_view.camera, scene, 0.1f);
+        FreeCamera_Update(&g_view.camera, scene, 0.1f);
     g_view.time += fminf(GetFrameTime(), 0.25f);
 }
 
@@ -760,7 +774,6 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     const MAPINFO_Camera* source = g_view.mapCamera ? SelectedCamera() : NULL;
     Camera3D camera;
     Rectangle view = area;
-    double farPlane = g_view.camera.distance + g_view.radius * 4.0;
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     if (source != NULL) {
         // The screen of the game, letterboxed
@@ -772,7 +785,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
         DrawRectangleRec(area, BLACK);
         DrawRectangleRec(view, (Color) { 45, 45, 48, 255 });
         BeginMode3D(camera);
-        OrbitCamera_Viewport(view);
+        FreeCamera_Viewport(view);
         rlMatrixMode(RL_PROJECTION);
         rlLoadIdentity();
         double nearPlane = 0.05;
@@ -782,11 +795,11 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
         rlMatrixMode(RL_MODELVIEW);
     }
     else
-        camera = OrbitCamera_Begin3D(&g_view.camera, area, g_view.camera.distance * 0.01, farPlane);
+        camera = FreeCamera_Begin3D(&g_view.camera, area);
 
     DrawModels(camera);
     DrawOverlays();
-    OrbitCamera_End3D();
+    FreeCamera_End3D();
     if (g_view.layers[LAYER_LABELS])
         DrawLabels(camera, view, font, fontSize);
     DrawRectangleLinesEx(view, 1.0f, (Color) { 112, 112, 112, 255 });
@@ -817,8 +830,9 @@ void MAPINFOView_Draw(Rectangle area) {
             file->chunkCount, file->cameraCount, file->lightCount, file->shapeCount, g_view.characterCount, g_view.mapModelCount,
             g_view.loadedDoors, file->doorCount),
         g_view.mapCamera && camera != NULL ?
-            TextFormat("Camera %s   V: free camera   R: reset the free camera   Click on the list: select a camera, light, character or door", camera->id) :
-            "Left drag: rotate   Right drag: pan   Wheel: zoom   R: reset   V: camera of the map   Click on the list: select a camera, light, character or door",
+            TextFormat("Camera %s   V: free camera   F: fly   R: reset the free camera   Click on the list: select a camera, light, character or door", camera->id) :
+            TextFormat("%s   R: reset   V: camera of the map   Click on the list: select a camera, light, character or door",
+                FreeCamera_Help(&g_view.camera)),
     };
 
     float margin = 10.0f;

@@ -10,7 +10,7 @@
 #include "raygui.h"
 #include "formats/animation/auth.h"
 #include "formats/animation/motn.h"
-#include "views/orbitCamera.h"
+#include "views/freeCamera.h"
 #include "views/authView.h"
 
 #define AUTHVIEW_LABEL_SIZE     128
@@ -38,12 +38,10 @@ typedef struct {
     bool            seeking;    // Dragging on the timeline
     Vector3         center;     // Of the scene
     float           radius;
-    Vector3         target;     // Free orbit camera
-    float           yaw, pitch, distance;
-    int             dragButton; // -1 if the mouse isn't dragging
+    FreeCamera     camera;     // Free camera
 } AUTHView_State;
 
-static AUTHView_State g_view = { .dragButton = -1 };
+static AUTHView_State g_view;
 
 static const Color g_characterColors[] = {
     { 230, 120, 80, 255 }, { 90, 170, 255, 255 }, { 120, 210, 110, 255 }, { 230, 200, 80, 255 },
@@ -197,10 +195,8 @@ static void ComputeBounds(void) {
 }
 
 static void ResetCamera(void) {
-    g_view.target = g_view.center;
-    g_view.yaw = 0.6f;
-    g_view.pitch = 0.6f;
-    g_view.distance = g_view.radius / sinf(AUTHVIEW_FOVY * 0.5f * DEG2RAD);
+    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { sinf(0.6f), 0.0f, cosf(0.6f) }, g_view.radius, AUTHVIEW_FOVY);
+    g_view.camera.pitch = 0.6f;
 }
 
 void AUTHView_Close(void) {
@@ -211,7 +207,6 @@ void AUTHView_Close(void) {
     free(g_view.labels);
     free(g_view.labelPointers);
     memset(&g_view, 0, sizeof(g_view));
-    g_view.dragButton = -1;
 }
 
 bool AUTHView_Open(const char* filepath) {
@@ -291,74 +286,6 @@ static void TogglePlay(void) {
     g_view.playing = !g_view.playing;
 }
 
-static Vector3 FreeCameraPosition(void) {
-    Vector3 direction = {
-        cosf(g_view.pitch) * sinf(g_view.yaw),
-        sinf(g_view.pitch),
-        cosf(g_view.pitch) * cosf(g_view.yaw),
-    };
-    return Vector3Add(g_view.target, Vector3Scale(direction, g_view.distance));
-}
-
-static void UpdateFreeCamera(Rectangle area) {
-    bool inside = CheckCollisionPointRec(GetMousePosition(), area);
-    if (g_view.dragButton < 0 && inside) {
-        const int buttons[3] = { MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE };
-        for (int i = 0; i < 3; i++) {
-            if (IsMouseButtonPressed(buttons[i]))
-                g_view.dragButton = buttons[i];
-        }
-    }
-    if (g_view.dragButton >= 0) {
-        Vector2 delta = GetMouseDelta();
-        if (!IsMouseButtonDown(g_view.dragButton))
-            g_view.dragButton = -1;
-        else if (g_view.dragButton == MOUSE_BUTTON_LEFT) {
-            g_view.yaw -= delta.x * 0.01f;
-            g_view.pitch = Clamp(g_view.pitch + delta.y * 0.01f, -1.55f, 1.55f);
-        }
-        else {
-            // Move the target with the mouse, in the plane of the screen
-            Vector3 forward = Vector3Normalize(Vector3Subtract(g_view.target, FreeCameraPosition()));
-            Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, (Vector3) { 0.0f, 1.0f, 0.0f }));
-            Vector3 up = Vector3CrossProduct(right, forward);
-            float scale = 2.0f * g_view.distance * tanf(AUTHVIEW_FOVY * 0.5f * DEG2RAD) / area.height;
-            g_view.target = Vector3Add(g_view.target, Vector3Scale(right, -delta.x * scale));
-            g_view.target = Vector3Add(g_view.target, Vector3Scale(up, delta.y * scale));
-        }
-    }
-    if (inside) {
-        float wheel = GetMouseWheelMove();
-        if (wheel != 0.0f)
-            g_view.distance = fmaxf(g_view.distance * powf(0.85f, wheel), 0.1f);
-    }
-}
-
-static void UpdateInput(Rectangle scene) {
-    if (IsKeyPressed(KEY_SPACE))
-        TogglePlay();
-    if (IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT))
-        SeekCommand(-1);
-    if (IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT))
-        SeekCommand(1);
-    if (IsKeyPressed(KEY_HOME))
-        Seek(0.0f);
-    if (IsKeyPressed(KEY_V))
-        g_view.cutsceneCamera = !g_view.cutsceneCamera;
-    if (IsKeyPressed(KEY_R))
-        ResetCamera();
-    if (!g_view.cutsceneCamera)
-        UpdateFreeCamera(scene);
-
-    if (g_view.playing && !g_view.seeking) {
-        g_view.time += fminf(GetFrameTime(), 0.25f); // Without skipping frames after a long one (loading)
-        if (g_view.time >= Duration()) {
-            g_view.time = Duration();
-            g_view.playing = false;
-        }
-    }
-}
-
 static Vector3 CurvePoint(const AUTH_Curve* curves, float time) {
     return (Vector3) { AUTH_CurveValue(&curves[0], time, 0.0f), AUTH_CurveValue(&curves[1], time, 0.0f),
         AUTH_CurveValue(&curves[2], time, 0.0f) };
@@ -374,6 +301,49 @@ static Camera3D CutsceneCamera(void) {
     Vector3 up = Vector3RotateByAxisAngle((Vector3) { 0.0f, 1.0f, 0.0f }, forward, roll * DEG2RAD);
     float fovy = AUTH_CurveValue(&curves[AUTH_CAMERA_FOV], g_view.time, AUTHVIEW_FOVY);
     return (Camera3D) { position, target, up, fovy > 1.0f && fovy < 179.0f ? fovy : AUTHVIEW_FOVY, CAMERA_PERSPECTIVE };
+}
+
+// The arrows move the flying free camera
+static bool Flying(void) {
+    return !g_view.cutsceneCamera && g_view.camera.fly;
+}
+
+static void UpdateInput(Rectangle scene) {
+    if (IsKeyPressed(KEY_SPACE))
+        TogglePlay();
+    if ((IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT)) && !Flying())
+        SeekCommand(-1);
+    if ((IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT)) && !Flying())
+        SeekCommand(1);
+    if (IsKeyPressed(KEY_HOME))
+        Seek(0.0f);
+    if (IsKeyPressed(KEY_V))
+        g_view.cutsceneCamera = !g_view.cutsceneCamera;
+    if (IsKeyPressed(KEY_F)) {
+        // Flies from the position of the camera of the cutscene, or of the free camera, looking around it
+        if (g_view.cutsceneCamera) {
+            Camera3D view = CutsceneCamera();
+            Vector3 direction = Vector3Normalize(Vector3Subtract(view.position, view.target));
+            g_view.camera.yaw = atan2f(direction.x, direction.z);
+            g_view.camera.pitch = Clamp(asinf(direction.y), -1.55f, 1.55f);
+            g_view.camera.target = view.target;
+            g_view.camera.distance = Vector3Distance(view.position, view.target);
+        }
+        FreeCamera_SetFly(&g_view.camera, g_view.cutsceneCamera || !g_view.camera.fly);
+        g_view.cutsceneCamera = false;
+    }
+    if (IsKeyPressed(KEY_R))
+        ResetCamera();
+    if (!g_view.cutsceneCamera)
+        FreeCamera_Update(&g_view.camera, scene, 0.1f);
+
+    if (g_view.playing && !g_view.seeking) {
+        g_view.time += fminf(GetFrameTime(), 0.25f); // Without skipping frames after a long one (loading)
+        if (g_view.time >= Duration()) {
+            g_view.time = Duration();
+            g_view.playing = false;
+        }
+    }
 }
 
 // Time of the first jump (a key with the same time as the next one) of the three curves after a time, INFINITY if none
@@ -473,18 +443,13 @@ static void DrawCharacters(void) {
 static void Begin3D(Camera3D camera, Rectangle area, double nearPlane, double farPlane) {
     BeginMode3D(camera);
     // Draw only inside the area, with its aspect ratio
-    OrbitCamera_Viewport(area);
+    FreeCamera_Viewport(area);
     rlMatrixMode(RL_PROJECTION);
     rlLoadIdentity();
     double top = nearPlane * tan(camera.fovy * 0.5 * DEG2RAD);
     double right = top * area.width / area.height;
     rlFrustum(-right, right, -top, top, nearPlane, farPlane);
     rlMatrixMode(RL_MODELVIEW);
-}
-
-static void End3D(void) {
-    EndMode3D();
-    rlViewport(0, 0, GetRenderWidth(), GetRenderHeight());
 }
 
 // Is the character speaking, or making a sound, at the current frame: text of the last voice or sound
@@ -571,10 +536,8 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
         DrawRectangleRec(view, (Color) { 45, 45, 48, 255 });
         Begin3D(camera, view, 0.05, 1000.0);
     }
-    else {
-        camera = (Camera3D) { FreeCameraPosition(), g_view.target, { 0.0f, 1.0f, 0.0f }, AUTHVIEW_FOVY, CAMERA_PERSPECTIVE };
-        Begin3D(camera, view, g_view.distance * 0.01, g_view.distance + g_view.radius * 4.0);
-    }
+    else
+        camera = FreeCamera_Begin3D(&g_view.camera, view);
 
     DrawGround();
     if (!g_view.cutsceneCamera) {
@@ -584,7 +547,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
         DrawCameraGizmo();
     }
     DrawCharacters();
-    End3D();
+    FreeCamera_End3D();
     DrawCharacterLabels(camera, view, font, fontSize);
     DrawRectangleLinesEx(view, 1.0f, (Color) { 112, 112, 112, 255 });
 }
@@ -684,8 +647,9 @@ void AUTHView_Draw(Rectangle area) {
         TextFormat("Cutscene, %u frames (%s), %u characters (%s), %u commands, %u sounds", sequence->duration,
             FormatTime(Duration()), sequence->characterCount, characters, sequence->commandCount, sequence->soundCount),
         g_view.cutsceneCamera ?
-            "Space: play/pause   Left/Right: previous/next command   Home: start   V: free camera   Click on the timeline: seek" :
-            "Space: play/pause   Left/Right: previous/next command   Home: start   V: cutscene camera   Left drag: rotate   Right drag: pan   Wheel: zoom   R: reset",
+            "Space: play/pause   Left/Right: previous/next command   Home: start   V: free camera   F: fly   Click on the timeline: seek" :
+            TextFormat("Space: play/pause   %sHome: start   V: cutscene camera   %s   R: reset", Flying() ? "" : "Left/Right: previous/next command   ",
+                FreeCamera_Help(&g_view.camera)),
     };
 
     float margin = 10.0f;

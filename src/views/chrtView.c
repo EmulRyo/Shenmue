@@ -10,7 +10,7 @@
 #include "raygui.h"
 #include "formats/text/chrt.h"
 #include "views/mt5Render.h"
-#include "views/orbitCamera.h"
+#include "views/freeCamera.h"
 #include "views/chrtView.h"
 
 #define CHRTVIEW_FOVY 45.0f
@@ -50,7 +50,7 @@ typedef struct {
     uint32_t            unpositionedCount; // Characters with a model and without a Position command
     Vector3             center;      // Bounding sphere of the scene
     float               radius;
-    OrbitCamera         camera;
+    FreeCamera         camera;
     bool                fit;         // The camera is fitted to the models in the next draw, when the size of the view is known
     int32_t             selected;    // Character the camera looks at, -1 for the whole scene
     bool                labels;
@@ -248,7 +248,7 @@ static void ComputeBounds(void) {
 }
 
 static void ResetCamera(void) {
-    OrbitCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, 1.0f }, g_view.radius, CHRTVIEW_FOVY);
+    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, 1.0f }, g_view.radius, CHRTVIEW_FOVY);
     g_view.selected = -1;
     g_view.fit = true;
 }
@@ -348,21 +348,24 @@ static void FitCamera(Rectangle area) {
         if (IsVisible(character))
             count += MT5Render_Vertices(&g_view.models[character->model].model, character->transform, points + count);
     }
-    OrbitCamera_Fit(&g_view.camera, points, count, area.width / area.height);
+    FreeCamera_Fit(&g_view.camera, points, count, area.width / area.height);
     free(points);
 }
 
 static void UpdateInput(Rectangle area) {
-    OrbitCamera_Update(&g_view.camera, area, g_view.radius * 0.001f);
+    FreeCamera_Update(&g_view.camera, area, g_view.radius * 0.001f);
     if (IsKeyPressed(KEY_R))
         ResetCamera();
+    if (IsKeyPressed(KEY_F))
+        FreeCamera_SetFly(&g_view.camera, !g_view.camera.fly);
     if (IsKeyPressed(KEY_TAB) || IsKeyPressedRepeat(KEY_TAB))
         SelectNext(IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ? -1 : 1);
     if (IsKeyPressed(KEY_L))
         g_view.labels = !g_view.labels;
-    if (IsKeyPressed(KEY_S))
+    // The keys of the flight move the camera
+    if (IsKeyPressed(KEY_S) && !g_view.camera.fly)
         g_view.hideSleeping = !g_view.hideSleeping;
-    if (IsKeyPressed(KEY_W))
+    if (IsKeyPressed(KEY_W) && !g_view.camera.fly)
         g_view.wireframe = !g_view.wireframe;
     if (IsKeyPressed(KEY_C))
         g_view.noCulling = !g_view.noCulling;
@@ -460,8 +463,7 @@ void CHRTView_Draw(Rectangle area) {
         FitCamera(area);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
-    double distance = g_view.camera.distance;
-    Camera3D camera = OrbitCamera_Begin3D(&g_view.camera, area, distance * 0.01, distance + g_view.radius * 4.0);
+    Camera3D camera = FreeCamera_Begin3D(&g_view.camera, area);
     MT5Render_SetCamera(&g_view.render, camera);
     // The models have explicit back faces where both sides are seen (see MT5View_Draw)
     if (g_view.noCulling)
@@ -471,19 +473,20 @@ void CHRTView_Draw(Rectangle area) {
     DrawCharacters(camera);
     rlDisableWireMode();
     rlEnableBackfaceCulling();
-    OrbitCamera_End3D();
+    FreeCamera_End3D();
 
     Font font = GuiGetFont();
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
     if (g_view.labels)
         DrawLabels(camera, area, font, fontSize);
 
-    // TextFormat has 4 buffers: 1 for the counts, 2 for the selected character
+    // TextFormat has 4 buffers: 1 for the counts, 1 for the controls, 2 for the selected character
     const char* lines[4] = {
         g_view.filename,
         TextFormat("%u characters, %u with a model (%u without a position in the scene, arranged in rows), %u models%s", g_view.characterCount,
             g_view.modelledCount, g_view.unpositionedCount, g_view.modelCount, g_view.hideSleeping ? ", sleeping characters hidden" : ""),
-        "Left drag: rotate   Right drag: pan   Wheel: zoom   R: reset   Tab or click on a label: select   L: labels   S: sleeping   W: wireframe   C: back faces",
+        TextFormat("%s   R: reset   Tab or click on a label: select   L: labels   %sC: back faces", FreeCamera_Help(&g_view.camera),
+            g_view.camera.fly ? "" : "S: sleeping   W: wireframe   "),
         g_view.selected >= 0 ? SelectedText() : NULL,
     };
     int lineCount = g_view.selected >= 0 ? 4 : 3;

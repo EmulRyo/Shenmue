@@ -75,6 +75,8 @@ set(SRC
     src/views/authView.h
     src/views/chrtView.c
     src/views/chrtView.h
+    src/views/freeCamera.c
+    src/views/freeCamera.h
     src/views/imageView.c
     src/views/imageView.h
     src/views/mapinfoView.c
@@ -85,8 +87,6 @@ set(SRC
     src/views/mt5Render.h
     src/views/mt5View.c
     src/views/mt5View.h
-    src/views/orbitCamera.c
-    src/views/orbitCamera.h
     src/views/sndView.c
     src/views/sndView.h
     src/views/views.c
