@@ -508,8 +508,10 @@ bool MAPINFOView_Open(const char* filepath) {
     g_view.listFocus = -1;
     for (int i = 0; i < LAYER_COUNT; i++)
         g_view.layers[i] = true;
-    for (int g = MAPINFO_GROUP_HGHT; g < MAPINFO_GROUP_COUNT; g++)
+    for (int g = 0; g < MAPINFO_GROUP_COUNT; g++)
         g_view.layers[LAYER_GROUPS + g] = false;
+    g_view.layers[LAYER_LIGHTS] = false;
+    g_view.layers[LAYER_CAMERAS] = false;
 
     printf("[MAPINFOView_Open]: %u chunks, %u cameras, %u lights, %u shapes, %u characters, %u map models, %u of %u doors\n",
         file.chunkCount, file.cameraCount, file.lightCount, file.shapeCount, g_view.characterCount, g_view.mapModelCount,
