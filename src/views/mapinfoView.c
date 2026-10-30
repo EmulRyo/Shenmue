@@ -30,11 +30,12 @@ typedef enum {
     ITEM_CAMERA,
     ITEM_LIGHT,
     ITEM_CHARACTER,
+    ITEM_DOOR,
 } ItemKind;
 
 typedef struct {
     ItemKind    kind;
-    uint32_t    index;  // In the cameras, lights or characters
+    uint32_t    index;  // In the cameras, lights, characters or doors
 } Item;
 
 typedef struct {
@@ -45,8 +46,17 @@ typedef struct {
     float       angle;      // Around the vertical axis, degrees
 } Character;
 
+// A model drawn in the scene
+typedef struct {
+    uint32_t    model;      // Index in the models
+    bool        door;
+    Matrix      transform;
+    Vector3     center;     // Of the bounding sphere, in the scene
+} Instance;
+
 typedef enum {
     LAYER_MAP,
+    LAYER_DOORS,
     LAYER_GROUPS,           // One per COLS group, MAPINFO_GROUP_COUNT
     LAYER_LIGHTS = LAYER_GROUPS + MAPINFO_GROUP_COUNT,
     LAYER_CAMERAS,
@@ -56,7 +66,7 @@ typedef enum {
 } Layer;
 
 static const char* g_layerNames[LAYER_COUNT] = {
-    "Map", "COLI", "HGHT", "EVNT", "UNDU", "SOND", "PROP", "Lights", "Cameras", "Characters", "Labels",
+    "Map", "Doors", "COLI", "HGHT", "EVNT", "UNDU", "SOND", "PROP", "Lights", "Cameras", "Characters", "Labels",
 };
 
 static const Color g_groupColors[MAPINFO_GROUP_COUNT] = {
@@ -77,7 +87,11 @@ typedef struct {
     Character*          characters;
     MT5Render           render;
     uint32_t            modelCount;
-    MT5Render_Model*    models;
+    MT5Render_Model*    models;         // The models of the map, then the models of the doors
+    uint32_t            mapModelCount;
+    uint32_t            instanceCount;
+    Instance*           instances;      // Each model of the map, and each door with its model
+    uint32_t            loadedDoors;    // Doors with their model
     uint32_t            itemCount;
     Item*               items;
     char                (*labels)[MAPINFOVIEW_LABEL_SIZE];
@@ -201,20 +215,97 @@ static bool IsMapModel(const char* path) {
     return *name == '.';
 }
 
-static void LoadMapModels(const char* folder) {
-    FilePathList files = LoadDirectoryFilesEx(folder, ".mt5", true);
+// Model file (MT5 or CHRM) of a model name, without the $ and @ prefixes and the extension of the names of the CHRT
+// scripts (e.g. "$DR01_009.MT5"). Returns -1 if there is none
+static int ModelFile(const FilePathList* files, const bool* usable, const char* name) {
+    char base[64];
+    while (*name == '$' || *name == '@')
+        name++;
+    snprintf(base, sizeof(base), "%s", name);
+    char* dot = strchr(base, '.');
+    if (dot != NULL)
+        *dot = '\0';
+    for (unsigned int i = 0; i < files->count; i++) {
+        if (usable[i] && !IsFileExtension(files->paths[i], ".chrt") &&
+            CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files->paths[i]), base))
+            return (int)i;
+    }
+    return -1;
+}
+
+// Model file of the model of a door: the file with its name, or the file of the DefImage with its name in the CHRT
+// scripts of the map (the CHRD chunk and the CHRT files, e.g. mpk00/CHARA.chrt). Returns -1 if there is none
+static int DoorModelFile(const FilePathList* files, const bool* usable, const CHRT_Script* scripts, uint32_t scriptCount, const char* name) {
+    int file = ModelFile(files, usable, name);
+    for (uint32_t i = 0; file < 0 && i < scriptCount; i++) {
+        const char* image = CHRT_ImageFile(&scripts[i], name);
+        if (image != NULL)
+            file = ModelFile(files, usable, image);
+    }
+    return file;
+}
+
+static void AddInstance(uint32_t model, bool door, Matrix transform) {
+    Instance* instance = &g_view.instances[g_view.instanceCount++];
+    instance->model = model;
+    instance->door = door;
+    instance->transform = transform;
+    instance->center = Vector3Transform(g_view.models[model].mesh.center, transform);
+}
+
+// The models of the map, and the models of the doors at their placements, from the MT5 and CHRM files of the folder and
+// of one level of subfolders (the extracted PKF files of the map). Each file is loaded once
+static void LoadModels(const char* folder) {
+    const MAPINFO_File* file = &g_view.file;
+    FilePathList files = LoadDirectoryFilesEx(folder, ".mt5;.chrm;.chrt", true);
+    bool* usable = calloc(files.count + 1, sizeof(bool));
+    int* fileModels = malloc((files.count + 1) * sizeof(int)); // Model of each file, -1 if not loaded
+    CHRT_Script* scripts = calloc(files.count + 2, sizeof(CHRT_Script)); // The CHRD chunk and the CHRT files
+    uint32_t scriptCount = 0;
     g_view.models = calloc(files.count + 1, sizeof(MT5Render_Model));
-    if (g_view.models != NULL) {
+    g_view.instances = calloc(files.count + file->doorCount + 1, sizeof(Instance));
+    if (usable != NULL && fileModels != NULL && scripts != NULL && g_view.models != NULL && g_view.instances != NULL) {
+        if (g_view.script.commandCount > 0)
+            scripts[scriptCount++] = g_view.script;
         for (unsigned int i = 0; i < files.count; i++) {
-            // Only one level of subfolders: the extracted PKF files of the map
             const char* relative = files.paths[i] + strlen(folder);
             int separators = 0;
             for (const char* p = relative + 1; *p != '\0'; p++)
                 separators += *p == '/' || *p == '\\';
-            if (separators <= 1 && IsMapModel(files.paths[i]) && MT5Render_LoadModel(files.paths[i], &g_view.models[g_view.modelCount]))
-                g_view.modelCount++;
+            usable[i] = separators <= 1;
+            fileModels[i] = -1;
+            if (usable[i] && file->doorCount > 0 && IsFileExtension(files.paths[i], ".chrt") && CHRT_Load(files.paths[i], &scripts[scriptCount]))
+                scriptCount++;
+            else if (usable[i] && IsFileExtension(files.paths[i], ".mt5") && IsMapModel(files.paths[i]) &&
+                MT5Render_LoadModel(files.paths[i], &g_view.models[g_view.modelCount])) {
+                fileModels[i] = (int)g_view.modelCount;
+                AddInstance(g_view.modelCount++, false, MatrixIdentity());
+            }
+        }
+        g_view.mapModelCount = g_view.modelCount;
+
+        for (uint32_t i = 0; i < file->doorCount; i++) {
+            const MAPINFO_Door* door = &file->doors[i];
+            int f = DoorModelFile(&files, usable, scripts, scriptCount, door->model);
+            if (f < 0)
+                continue;
+            if (fileModels[f] < 0 && MT5Render_LoadModel(files.paths[f], &g_view.models[g_view.modelCount]))
+                fileModels[f] = (int)g_view.modelCount++;
+            if (fileModels[f] < 0)
+                continue;
+            // As the nodes of the models: scale, rotation and translation
+            Matrix transform = MatrixMultiply(MatrixScale(door->scale[0], door->scale[1], door->scale[2]), MatrixRotateY(door->angle * DEG2RAD));
+            transform = MatrixMultiply(transform, MatrixTranslate(door->position[0], door->position[1], door->position[2]));
+            AddInstance((uint32_t)fileModels[f], true, transform);
+            g_view.loadedDoors++;
         }
     }
+    // The script of the CHRD chunk is kept
+    for (uint32_t i = g_view.script.commandCount > 0 ? 1 : 0; scripts != NULL && i < scriptCount; i++)
+        CHRT_Free(&scripts[i]);
+    free(scripts);
+    free(usable);
+    free(fileModels);
     UnloadDirectoryFiles(files);
 }
 
@@ -232,13 +323,13 @@ static void AddPoint(Vector3 point, Vector3* min, Vector3* max) {
 static void ComputeBounds(void) {
     const MAPINFO_File* file = &g_view.file;
     Vector3 min = { INFINITY, INFINITY, INFINITY }, max = { -INFINITY, -INFINITY, -INFINITY };
-    for (uint32_t i = 0; i < g_view.modelCount; i++) {
+    for (uint32_t i = 0; i < g_view.mapModelCount; i++) {
         const MT5Mesh* mesh = &g_view.models[i].mesh;
         Vector3 extent = { mesh->radius, mesh->radius, mesh->radius };
         AddPoint(Vector3Subtract(mesh->center, extent), &min, &max);
         AddPoint(Vector3Add(mesh->center, extent), &min, &max);
     }
-    if (g_view.modelCount == 0) {
+    if (g_view.mapModelCount == 0) {
         for (uint32_t i = 0; i < file->cameraCount; i++)
             AddPoint(MapCamera(&file->cameras[i]).position, &min, &max);
         for (uint32_t i = 0; i < file->lightCount; i++)
@@ -280,10 +371,10 @@ static const char* ScnText(uint32_t version) {
     return version == 0x20000 ? "SH-4 code" : version == 0x100 ? "bytecode" : "unknown version";
 }
 
-// Information lines, then the cameras, the lights and the characters
+// Information lines, then the cameras, the lights, the characters and the doors
 static bool CreateItems(void) {
     const MAPINFO_File* file = &g_view.file;
-    uint32_t count = 16 + file->bankCount + file->cameraCount + file->lightCount + g_view.characterCount;
+    uint32_t count = 16 + file->bankCount + file->cameraCount + file->lightCount + g_view.characterCount + file->doorCount;
     g_view.items = malloc(count * sizeof(Item));
     g_view.labels = malloc(count * sizeof(*g_view.labels));
     g_view.labelPointers = malloc(count * sizeof(*g_view.labelPointers));
@@ -344,6 +435,11 @@ static bool CreateItems(void) {
                 character->position.z, character->sleep ? "  sleep" : "") :
             TextFormat("Character %s  no position%s", character->id, character->sleep ? "  sleep" : ""));
     }
+    for (uint32_t i = 0; i < file->doorCount; i++) {
+        const MAPINFO_Door* door = &file->doors[i];
+        AddItem(ITEM_DOOR, i, TextFormat("%s %s  (%.2f, %.2f, %.2f)  %.1f deg", door->type == MAPINFO_DOOR_DOOR ? "Door" : "Model",
+            door->model, door->position[0], door->position[1], door->position[2], door->angle));
+    }
     return true;
 }
 
@@ -351,6 +447,7 @@ void MAPINFOView_Close(void) {
     for (uint32_t i = 0; i < g_view.modelCount; i++)
         MT5Render_FreeModel(&g_view.models[i]);
     free(g_view.models);
+    free(g_view.instances);
     if (g_view.open)
         MT5Render_Free(&g_view.render);
     free(g_view.characters);
@@ -379,7 +476,7 @@ bool MAPINFOView_Open(const char* filepath) {
     MT5Render_Init(&g_view.render);
     char folder[1024];
     snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(filepath));
-    LoadMapModels(folder);
+    LoadModels(folder);
     ComputeBounds();
     ResetCamera();
     g_view.selected = -1;
@@ -389,8 +486,9 @@ bool MAPINFOView_Open(const char* filepath) {
     for (int g = MAPINFO_GROUP_HGHT; g < MAPINFO_GROUP_COUNT; g++)
         g_view.layers[LAYER_GROUPS + g] = false;
 
-    printf("[MAPINFOView_Open]: %u chunks, %u cameras, %u lights, %u shapes, %u characters, %u map models\n", file.chunkCount,
-        file.cameraCount, file.lightCount, file.shapeCount, g_view.characterCount, g_view.modelCount);
+    printf("[MAPINFOView_Open]: %u chunks, %u cameras, %u lights, %u shapes, %u characters, %u map models, %u of %u doors\n",
+        file.chunkCount, file.cameraCount, file.lightCount, file.shapeCount, g_view.characterCount, g_view.mapModelCount,
+        g_view.loadedDoors, file.doorCount);
     g_view.open = true;
     return true;
 }
@@ -415,6 +513,10 @@ static void Select(int item) {
         target = LightPosition(&g_view.file.lights[selected->index]);
     else if (selected->kind == ITEM_CHARACTER && g_view.characters[selected->index].positioned)
         target = Vector3Add(g_view.characters[selected->index].position, (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT * 0.5f, 0.0f });
+    else if (selected->kind == ITEM_DOOR) {
+        const float* position = g_view.file.doors[selected->index].position;
+        target = (Vector3) { position[0], position[1] + 1.0f, position[2] };
+    }
     else
         return;
     g_view.mapCamera = false;
@@ -437,25 +539,31 @@ static void UpdateInput(Rectangle scene) {
 static Camera3D g_sortCamera;
 
 static int CompareDistance(const void* a, const void* b) {
-    float distanceA = Vector3DistanceSqr(g_view.models[*(const uint32_t*)a].mesh.center, g_sortCamera.position);
-    float distanceB = Vector3DistanceSqr(g_view.models[*(const uint32_t*)b].mesh.center, g_sortCamera.position);
+    float distanceA = Vector3DistanceSqr(g_view.instances[*(const uint32_t*)a].center, g_sortCamera.position);
+    float distanceB = Vector3DistanceSqr(g_view.instances[*(const uint32_t*)b].center, g_sortCamera.position);
     return distanceA < distanceB ? 1 : distanceA > distanceB ? -1 : 0; // Farthest first
 }
 
-// The opaque part of all the models, then the translucent part from the farthest model to the nearest one
-static void DrawMap(Camera3D camera) {
-    uint32_t* order = malloc((g_view.modelCount + 1) * sizeof(uint32_t));
+// The opaque part of the visible models, then the translucent part from the farthest model to the nearest one
+static void DrawModels(Camera3D camera) {
+    uint32_t* order = malloc((g_view.instanceCount + 1) * sizeof(uint32_t));
     if (order == NULL)
         return;
     MT5Render_SetCamera(&g_view.render, camera);
-    for (uint32_t i = 0; i < g_view.modelCount; i++) {
-        MT5Render_DrawOpaque(&g_view.render, &g_view.models[i], MatrixIdentity(), 0);
-        order[i] = i;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < g_view.instanceCount; i++) {
+        const Instance* instance = &g_view.instances[i];
+        if (!g_view.layers[instance->door ? LAYER_DOORS : LAYER_MAP])
+            continue;
+        MT5Render_DrawOpaque(&g_view.render, &g_view.models[instance->model], instance->transform, 0);
+        order[count++] = i;
     }
     g_sortCamera = camera;
-    qsort(order, g_view.modelCount, sizeof(uint32_t), CompareDistance);
-    for (uint32_t i = 0; i < g_view.modelCount; i++)
-        MT5Render_DrawTranslucent(&g_view.render, &g_view.models[order[i]], MatrixIdentity(), 0, camera);
+    qsort(order, count, sizeof(uint32_t), CompareDistance);
+    for (uint32_t i = 0; i < count; i++) {
+        const Instance* instance = &g_view.instances[order[i]];
+        MT5Render_DrawTranslucent(&g_view.render, &g_view.models[instance->model], instance->transform, 0, camera);
+    }
     free(order);
 }
 
@@ -649,8 +757,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     else
         camera = OrbitCamera_Begin3D(&g_view.camera, area, g_view.camera.distance * 0.01, farPlane);
 
-    if (g_view.layers[LAYER_MAP])
-        DrawMap(camera);
+    DrawModels(camera);
     DrawOverlays();
     OrbitCamera_End3D();
     if (g_view.layers[LAYER_LABELS])
@@ -679,11 +786,12 @@ void MAPINFOView_Draw(Rectangle area) {
     const MAPINFO_Camera* camera = SelectedCamera();
     const char* lines[3] = {
         g_view.filename,
-        TextFormat("Map info, %u chunks: %u cameras, %u lights, %u collision and area shapes, %u characters, %u map models",
-            file->chunkCount, file->cameraCount, file->lightCount, file->shapeCount, g_view.characterCount, g_view.modelCount),
+        TextFormat("Map info, %u chunks: %u cameras, %u lights, %u collision and area shapes, %u characters, %u map models, %u of %u doors",
+            file->chunkCount, file->cameraCount, file->lightCount, file->shapeCount, g_view.characterCount, g_view.mapModelCount,
+            g_view.loadedDoors, file->doorCount),
         g_view.mapCamera && camera != NULL ?
-            TextFormat("Camera %s   V: free camera   R: reset the free camera   Click on the list: select a camera, light or character", camera->id) :
-            "Left drag: rotate   Right drag: pan   Wheel: zoom   R: reset   V: camera of the map   Click on the list: select a camera, light or character",
+            TextFormat("Camera %s   V: free camera   R: reset the free camera   Click on the list: select a camera, light, character or door", camera->id) :
+            "Left drag: rotate   Right drag: pan   Wheel: zoom   R: reset   V: camera of the map   Click on the list: select a camera, light, character or door",
     };
 
     float margin = 10.0f;

@@ -33,6 +33,30 @@ bool CHRT_IsCommand(const CHRT_Command* command, const char* name) {
     return CHRT_EqualsIgnoreCase(command->name, name);
 }
 
+// Last string argument, NULL if none
+static const char* StringArg(const CHRT_Command* command) {
+    for (uint32_t i = command->argCount; i > 0; i--) {
+        if (command->args[i - 1].type == CHRT_ARG_STRING)
+            return command->args[i - 1].string;
+    }
+    return NULL;
+}
+
+const char* CHRT_ImageFile(const CHRT_Script* script, const char* name) {
+    for (uint32_t c = 0; c < script->commandCount; c++) {
+        const CHRT_Command* command = &script->commands[c];
+        if (command->parent != -1 || !CHRT_IsCommand(command, "DefImage") || command->argCount == 0 ||
+            command->args[0].type != CHRT_ARG_STRING || !CHRT_EqualsIgnoreCase(command->args[0].string, name))
+            continue;
+        for (uint32_t i = c + 1; i < script->commandCount && script->commands[i].parent == (int32_t)c; i++) {
+            const char* file = StringArg(&script->commands[i]);
+            if (CHRT_IsCommand(&script->commands[i], "Image") && file != NULL)
+                return file;
+        }
+    }
+    return NULL;
+}
+
 static bool IsBlockCommand(const CHRT_Command* command) {
     if (command->argCount == 0 || command->args[command->argCount - 1].type != CHRT_ARG_INT)
         return false;

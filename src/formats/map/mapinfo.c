@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <ctype.h>
 #include <math.h>
 #include "core/bytes.h"
 #include "core/file.h"
@@ -12,6 +13,10 @@
 #define MAPINFO_HEADER_SIZE     8
 #define MAPINFO_END_OF_SHAPE    0xFFFFFFFF
 #define MAPINFO_LIGHT_SIZE      32
+#define MAPINFO_SCN_CODE_START  0x30
+#define MAPINFO_DOOR_MAX_TYPE   64  // Of the model list of the door table, the types seen are 0 to 37
+#define MAPINFO_DOOR_MODEL_SIZE 16  // Entry of the model list of the door table
+#define MAPINFO_DOOR_SIZE       36  // Placement of the door table
 
 static const char* g_groupNames[MAPINFO_GROUP_COUNT] = { "COLI", "HGHT", "EVNT", "UNDU", "SOND", "PROP" };
 // Size of the prefix of the records of each group
@@ -266,9 +271,72 @@ static uint32_t CountCutscenes(const MAPINFO_File* file, const MAPINFO_Chunk* ch
     return count;
 }
 
+// Offset of a null terminated name of 1 to 15 letters, digits and underscores inside the chunk
+static bool IsName(const uint8_t* chunk, uint32_t size, uint32_t offset) {
+    if (offset < MAPINFO_HEADER_SIZE || offset >= size)
+        return false;
+    uint32_t length = 0;
+    for (; offset + length < size && length < 16; length++) {
+        uint8_t c = chunk[offset + length];
+        if (c == '\0')
+            return length > 0;
+        if (!isalnum(c) && c != '_')
+            return false;
+    }
+    return false;
+}
+
+// Placement of the door table: type, index of the model, scale, position and angle (1/65536 of a turn)
+static bool IsDoorPlacement(const uint8_t* scn, uint32_t size, uint32_t pos, uint32_t models) {
+    if (pos + MAPINFO_DOOR_SIZE > size || Bytes_ReadU32(scn + pos + 4) >= models)
+        return false;
+    for (int i = 0; i < 3; i++) {
+        float scale = ReadFloat(scn + pos + 8 + i * 4), position = ReadFloat(scn + pos + 20 + i * 4);
+        if (!(scale > 0.0f && scale < 10.0f) || !(fabsf(position) < 10000.0f))
+            return false;
+    }
+    return true;
+}
+
+// Entry of the model list of the door table: offset of the name (relative to the chunk), type and 2 unknown words
+static bool IsDoorModel(const uint8_t* scn, uint32_t size, uint32_t pos) {
+    return pos + MAPINFO_DOOR_MODEL_SIZE <= size && IsName(scn, size, Bytes_ReadU32(scn + pos)) &&
+        Bytes_ReadU32(scn + pos + 4) < MAPINFO_DOOR_MAX_TYPE;
+}
+
+// The door table of the data of the scene program: a list of models followed by their placements. It isn't referenced by
+// the header, so it is found by its content: the first list of models followed by a valid placement. Reads the doors, or
+// only counts them if the array is NULL
+static void ReadDoors(MAPINFO_File* file, const MAPINFO_Chunk* chunk) {
+    const uint8_t* scn = file->data + chunk->offset;
+    uint32_t size = chunk->size;
+    for (uint32_t table = MAPINFO_SCN_CODE_START; table + MAPINFO_DOOR_MODEL_SIZE <= size; table += 4) {
+        uint32_t models = 0;
+        while (IsDoorModel(scn, size, table + models * MAPINFO_DOOR_MODEL_SIZE))
+            models++;
+        uint32_t pos = table + models * MAPINFO_DOOR_MODEL_SIZE;
+        if (models == 0 || !IsDoorPlacement(scn, size, pos, models))
+            continue;
+        for (; IsDoorPlacement(scn, size, pos, models); pos += MAPINFO_DOOR_SIZE) {
+            if (file->doors != NULL) {
+                MAPINFO_Door* door = &file->doors[file->doorCount];
+                door->model = (const char*)scn + Bytes_ReadU32(scn + table + Bytes_ReadU32(scn + pos + 4) * MAPINFO_DOOR_MODEL_SIZE);
+                door->type = Bytes_ReadU32(scn + pos);
+                for (int i = 0; i < 3; i++) {
+                    door->scale[i] = ReadFloat(scn + pos + 8 + i * 4);
+                    door->position[i] = ReadFloat(scn + pos + 20 + i * 4);
+                }
+                door->angle = (int32_t)Bytes_ReadU32(scn + pos + 32) * 360.0f / 65536.0f;
+            }
+            file->doorCount++;
+        }
+        return;
+    }
+}
+
 // Reads the chunks that have arrays, or only counts their items if the arrays are NULL
 static void ReadArrays(MAPINFO_File* file, const char* filepath) {
-    file->cameraCount = file->lightCount = file->shapeCount = file->bankCount = 0;
+    file->cameraCount = file->lightCount = file->shapeCount = file->bankCount = file->doorCount = 0;
     for (uint32_t i = 0; i < file->chunkCount; i++) {
         const MAPINFO_Chunk* chunk = &file->chunks[i];
         uint32_t cameras = file->cameraCount, lights = file->lightCount, shapes = file->shapeCount;
@@ -281,6 +349,8 @@ static void ReadArrays(MAPINFO_File* file, const char* filepath) {
             valid = ReadCollisions(file, chunk);
         else if (strcmp(chunk->id, "SNDD") == 0)
             ReadSoundBanks(file, chunk);
+        else if (strcmp(chunk->id, "SCN3") == 0)
+            ReadDoors(file, chunk);
         if (!valid) {
             // Skips the whole chunk
             file->cameraCount = cameras;
@@ -298,6 +368,7 @@ void MAPINFO_Free(MAPINFO_File* file) {
     free(file->lights);
     free(file->shapes);
     free(file->banks);
+    free(file->doors);
     free(file->data);
     memset(file, 0, sizeof(*file));
 }
@@ -346,7 +417,8 @@ bool MAPINFO_Load(const char* filepath, MAPINFO_File* file) {
     file->lights = calloc(file->lightCount + 1, sizeof(MAPINFO_Light));
     file->shapes = calloc(file->shapeCount + 1, sizeof(MAPINFO_Shape));
     file->banks = calloc(file->bankCount + 1, sizeof(MAPINFO_SoundBank));
-    if (file->cameras == NULL || file->lights == NULL || file->shapes == NULL || file->banks == NULL) {
+    file->doors = calloc(file->doorCount + 1, sizeof(MAPINFO_Door));
+    if (file->cameras == NULL || file->lights == NULL || file->shapes == NULL || file->banks == NULL || file->doors == NULL) {
         fputs("[MAPINFO_Load]: Memory error\n", stderr);
         MAPINFO_Free(file);
         return false;

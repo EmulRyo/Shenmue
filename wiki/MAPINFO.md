@@ -88,6 +88,43 @@ The program of the map. In 119 files it is **native SH-4 machine code** (the CPU
 
 The data of 129 files contains the values `20.0, 800.0, 1.0, 0xFFFFFFFF`, the same as the default [fog](#fog--fog).
 
+### Door table
+
+The data of 97 files (96 of version `0x20000` and the bytecode of `scene/03/door`) contains a table with the doors of the map and other models placed with them: a list of models followed by the list of placements. No field of the header points to it; it is preceded by the names of its models. It has 1 to 36 models and 1 to 120 placements (`scene/0x/d000`); there are 861 placements in all.
+
+| Offset    | Size   | Type             | Name       | Description |
+|----------:|-------:|------------------|------------|-------------|
+| 0x00      | 16×M   | DoorModel[M]     | models     | Models |
+| 16×M      | 36×N   | DoorPlacement[N] | placements | Placements. The list ends where the data is not a valid placement |
+
+#### Door model (16 bytes)
+
+| Offset | Size | Type   | Name      | Description |
+|-------:|-----:|--------|-----------|-------------|
+| 0x00   | 4    | uint32 | `name`    | Offset of the null terminated name of the model, relative to the start of the chunk |
+| 0x04   | 4    | uint32 | `type`    | 0 to 37. 0 for the models that are not doors (44 models); for the doors it is often the number of the `DRnn_` model (2 for `DR02_017`, 15 for `DR15_012`...) |
+| 0x08   | 4    | uint32 | `unknown` | `0xFFFFFFFF` for the type 0. For the doors, `0xnn02AB` (*probably* a sound: e.g. `0x1402AB`, `0x1602AB`) in all the models but one (`0x514AB` in `scene/03/door`) |
+| 0x0C   | 4    | uint32 | `unknown` | Same as the previous one. For the doors, usually the next number (278 of 283 models: `0x1502AB` after `0x1402AB`, `0x1702AB` after `0x1602AB`); the same number in 4 and the previous one in 1. *Probably* the sounds of opening and closing |
+
+The name is either:
+
+- The name of a model file of the map (MT5 or CHRM, in the [PKF](PKF) of the map, e.g. `mpk00.pkf`): the doors `DR01_011`, `DR15_012`..., the dark boxes behind the doors `DR00_002`..., and other models (`GNKS2STG`, `B010425G`, `B49I2B1G`...).
+- The name of a `DefImage` of the [CHRT](CHRT) scripts of the map, which gives the model file: `DOOR` (46 files), `TOKOYA_DOOR`, `AUTO_DOOR`, `SOBA_DOOR`, `DOR1`, `DOR2`, `MS8S_DOOR`. E.g. in `scene/01/daza` the `CHARA.chrt` of `mpk00.pkf` has `DefImage("DOOR") { Image(1, "DR13_010.MT5") }`, and in `scene/01/dpiz` the [CHRD](#chrd--characters) chunk has `DefImage("DOOR") { Image(1, "$DR01_009.MT5") }`.
+
+#### Door placement (36 bytes)
+
+The model is scaled, rotated around the vertical axis and moved to its position, as the nodes of the [MT5](MT5) models. The coordinates are those of the map models and the cameras (Z is not negated as in the [shapes](#shape)). The door models are made around the origin (e.g. the leaves of a sliding door side by side along X, from the floor), and the placed doors fill the doorways of the map models, on the lines of the [COLI](#group) walls.
+
+| Offset | Size | Type     | Name       | Description |
+|-------:|-----:|----------|------------|-------------|
+| 0x00   | 4    | uint32   | `type`     | 2: door (531 placements). 1: a model that is not a door (330): the dark boxes `DR00` (312) and the objects of `scene/0x/mksg` (18) |
+| 0x04   | 4    | uint32   | `model`    | Index of the model in the list of models |
+| 0x08   | 12   | float[3] | `scale`    | Scale. Not 1 in 126 placements (e.g. `(0.45, 1, 1)` for a box behind a narrow door) |
+| 0x14   | 12   | float[3] | `position` | Position X, Y, Z |
+| 0x20   | 4    | int32    | `angle`    | Rotation around the vertical axis in units of 1/65536 of a turn (`0x4000` = 90°). It can be negative (`0xFFFFC001`): 354 placements |
+
+A door and a dark box are often placed together, at the same or almost the same position, with the same angle or with angles 180° apart.
+
 ## CHRD — Characters
 
 Holds a [CHRT](CHRT) script: the characters and objects of the map, with their models, positions and flags.

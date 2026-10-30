@@ -8,8 +8,8 @@
 
 // mapinfo.bin: the information of a map, a list of chunks (ID and size, header included) that ends with an END chunk.
 // The chunks read here are the cameras (ECAM), the lights (LGHT), the collisions and areas (COLS), the sound banks
-// (SNDD), the fog (FOG), the characters (CHRD, a CHRT script), the program of the scene (SCN3), the cutscenes (SCEX) and
-// the chunks of a single value. See the MAPINFO page of the wiki
+// (SNDD), the fog (FOG), the characters (CHRD, a CHRT script), the program of the scene (SCN3) and the door table of its
+// data, the cutscenes (SCEX) and the chunks of a single value. See the MAPINFO page of the wiki
 
 #define MAPINFO_ID_SIZE 5
 
@@ -86,8 +86,23 @@ typedef struct {
     uint32_t    color;      // ARGB
 } MAPINFO_Fog;
 
+typedef enum {
+    MAPINFO_DOOR_MODEL = 1, // A model that isn't a door: the dark boxes behind the doors (DR00 models), other objects
+    MAPINFO_DOOR_DOOR  = 2,
+} MAPINFO_DoorType;
+
+// A model placed in the map by the door table of the data of the scene program (SCN3)
 typedef struct {
-    uint8_t*            data;   // The whole file: the curves and the shapes point into it
+    const char* model;      // Points into the file: name of the model file without extension (e.g. "DR01_011"), or name
+                            // of a DefImage of the CHRT scripts of the map (e.g. "DOOR")
+    uint32_t    type;       // MAPINFO_DoorType
+    float       scale[3];
+    float       position[3];
+    float       angle;      // Around the vertical axis, degrees
+} MAPINFO_Door;
+
+typedef struct {
+    uint8_t*            data;   // The whole file: the curves, the shapes and the doors point into it
     size_t              size;
     uint32_t            chunkCount;
     MAPINFO_Chunk*      chunks;
@@ -99,6 +114,8 @@ typedef struct {
     MAPINFO_Shape*      shapes;
     uint32_t            bankCount;
     MAPINFO_SoundBank*  banks;
+    uint32_t            doorCount;
+    MAPINFO_Door*       doors;
     MAPINFO_Fog         fog;    // The first set of the FOG chunk
     uint32_t            scnVersion;     // 0x20000: SH-4 code, 0x100: bytecode, 0 if there is no SCN3 chunk
     uint32_t            cutsceneCount;  // TRCK chunks of the SCEX chunk

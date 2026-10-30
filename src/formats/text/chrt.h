@@ -51,6 +51,9 @@ void CHRT_Free(CHRT_Script* script);
 // Command names are case-insensitive (Image, IMAGE, image), so are some string arguments (DISP, Disp)
 bool CHRT_EqualsIgnoreCase(const char* a, const char* b);
 bool CHRT_IsCommand(const CHRT_Command* command, const char* name);
+// Model file of an image name: the file of the first Image of the DefImage with that name (case-insensitive), e.g.
+// "HOS_L.MT5" for DefImage("HOS_L") { Image(1, "HOS_L.MT5") }. Returns NULL if the script has no DefImage with that name
+const char* CHRT_ImageFile(const CHRT_Script* script, const char* name);
 
 // Decodes the commands of a CHRT file (gzipped or not) and prints them as a script,
 // with the commands of each block indented, e.g.:

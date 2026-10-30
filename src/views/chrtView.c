@@ -62,31 +62,11 @@ typedef struct {
 
 static CHRTView_State g_view;
 
-// Last string argument, NULL if none
-static const char* StringArg(const CHRT_Command* command) {
-    for (uint32_t i = command->argCount; i > 0; i--) {
-        if (command->args[i - 1].type == CHRT_ARG_STRING)
-            return command->args[i - 1].string;
-    }
-    return NULL;
-}
-
-// Model file of an Image name: the file of the DefImage with that name, e.g. DefImage("HOS_L") { Image(1, "HOS_L.MT5") },
-// or the name itself (some names are defined in other scripts, and they are usually the name of the model file)
+// Model file of an Image name: the file of the DefImage with that name, or the name itself (some names are defined in
+// other scripts, and they are usually the name of the model file)
 static const char* ImageFile(const char* name) {
-    const CHRT_Script* script = &g_view.script;
-    for (uint32_t c = 0; c < script->commandCount; c++) {
-        const CHRT_Command* command = &script->commands[c];
-        if (command->parent != -1 || !CHRT_IsCommand(command, "DefImage") || command->argCount == 0 ||
-            command->args[0].type != CHRT_ARG_STRING || !CHRT_EqualsIgnoreCase(command->args[0].string, name))
-            continue;
-        for (uint32_t i = c + 1; i < script->commandCount && script->commands[i].parent == (int32_t)c; i++) {
-            const char* file = StringArg(&script->commands[i]);
-            if (CHRT_IsCommand(&script->commands[i], "Image") && file != NULL)
-                return file;
-        }
-    }
-    return name;
+    const char* file = CHRT_ImageFile(&g_view.script, name);
+    return file != NULL ? file : name;
 }
 
 // Path of the model file in the folder of the script: <name>.chrm or <name>.mt5, without the extension of the script

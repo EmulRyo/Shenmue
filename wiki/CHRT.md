@@ -86,7 +86,7 @@ Arguments are written as `name:type`. Counts are over all the commands of the 64
 
 | Command | Arguments | Count | Description |
 |---------|-----------|------:|-------------|
-| `DefImage` | `name:string, size:int` | 2120 | Defines a model named `name`, to be used by the `Image` commands of the characters. Its block always contains one `Image(1, "<file>.MT5")`, so `size` is always 4. `name` is usually the file name without extension, but not always (`GEOS5HG` → `GEOS5SHG.MT5`) |
+| `DefImage` | `name:string, size:int` | 2120 | Defines a model named `name`, to be used by the `Image` commands of the characters. Its block always contains one `Image(1, "<file>.MT5")`, so `size` is always 4. `name` is usually the file name without extension, but not always (`GEOS5HG` → `GEOS5SHG.MT5`). Some names (`DOOR`, `TOKOYA_DOOR`...) are not used by any character of the file but by the [door table](MAPINFO#door-table) of the map |
 | `Character` | `id:literal, size:int` | 2774 | A character or object of the scene, with a 4-character ID (`AKMI`, `DOOR`, `CAN1`, `BIKE`...). The block holds its properties. The same ID can appear in several files |
 
 ### Inside `DefImage`
