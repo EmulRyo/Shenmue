@@ -102,7 +102,9 @@ typedef struct {
     bool                mapCamera;      // Show the map from the selected camera
     float               time;           // Seconds, for the animated cameras
     OrbitCamera         camera;
-    Vector3             center;         // Of the map
+    bool                fit;            // The camera is fitted to the map in the next draw, when the size of the view is known
+    Vector3             min, max;       // Box around the map
+    Vector3             center;
     float               radius;
     bool                layers[LAYER_COUNT];
 } MAPINFOView_State;
@@ -319,7 +321,8 @@ static void AddPoint(Vector3 point, Vector3* min, Vector3* max) {
     *max = Vector3Max(*max, point);
 }
 
-// Box around the models of the map, or around the cameras, lights, characters and shapes if there is no model
+// Box around the models of the map, or around the cameras, lights and shapes if there is no model. The characters are
+// not included: they can be far from the map
 static void ComputeBounds(void) {
     const MAPINFO_File* file = &g_view.file;
     Vector3 min = { INFINITY, INFINITY, INFINITY }, max = { -INFINITY, -INFINITY, -INFINITY };
@@ -334,10 +337,6 @@ static void ComputeBounds(void) {
             AddPoint(MapCamera(&file->cameras[i]).position, &min, &max);
         for (uint32_t i = 0; i < file->lightCount; i++)
             AddPoint(LightPosition(&file->lights[i]), &min, &max);
-        for (uint32_t i = 0; i < g_view.characterCount; i++) {
-            if (g_view.characters[i].positioned)
-                AddPoint(g_view.characters[i].position, &min, &max);
-        }
         for (uint32_t i = 0; i < file->shapeCount; i++) {
             // The points of the shape, or its center (circles: radius, x, z; rectangles: x, z, half axes)
             const MAPINFO_Shape* shape = &file->shapes[i];
@@ -351,6 +350,8 @@ static void ComputeBounds(void) {
         min = (Vector3) { -1.0f, 0.0f, -1.0f };
         max = (Vector3) { 1.0f, 2.0f, 1.0f };
     }
+    g_view.min = min;
+    g_view.max = max;
     g_view.center = Vector3Scale(Vector3Add(min, max), 0.5f);
     g_view.radius = fmaxf(Vector3Distance(min, max) * 0.5f, 2.0f);
 }
@@ -358,6 +359,30 @@ static void ComputeBounds(void) {
 static void ResetCamera(void) {
     OrbitCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, 1.0f }, g_view.radius, MAPINFOVIEW_FOVY);
     g_view.camera.pitch = 0.8f;
+    g_view.fit = true;
+}
+
+// Fits the camera to the models of the map and of the doors, or to the corners of the bounds if there is no model
+static void FitCamera(Rectangle area) {
+    g_view.fit = false;
+    uint32_t total = 8;
+    for (uint32_t i = 0; i < g_view.instanceCount; i++)
+        total += g_view.models[g_view.instances[i].model].mesh.triangleCount * 3;
+    Vector3* points = malloc(total * sizeof(Vector3));
+    if (points == NULL)
+        return;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < g_view.instanceCount; i++) {
+        const Instance* instance = &g_view.instances[i];
+        count += MT5Render_Vertices(&g_view.models[instance->model], instance->transform, points + count);
+    }
+    if (count == 0) {
+        for (int i = 0; i < 8; i++)
+            points[count++] = (Vector3) { (i & 1) ? g_view.max.x : g_view.min.x, (i & 2) ? g_view.max.y : g_view.min.y,
+                (i & 4) ? g_view.max.z : g_view.min.z };
+    }
+    OrbitCamera_Fit(&g_view.camera, points, count, area.width / area.height);
+    free(points);
 }
 
 static void AddItem(ItemKind kind, uint32_t index, const char* text) {
@@ -531,6 +556,8 @@ static void UpdateInput(Rectangle scene) {
         ResetCamera();
         g_view.mapCamera = false;
     }
+    if (g_view.fit)
+        FitCamera(scene);
     if (!g_view.mapCamera)
         OrbitCamera_Update(&g_view.camera, scene, 0.1f);
     g_view.time += fminf(GetFrameTime(), 0.25f);

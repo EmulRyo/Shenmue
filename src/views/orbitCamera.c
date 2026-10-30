@@ -13,13 +13,56 @@ void OrbitCamera_Reset(OrbitCamera* camera, Vector3 center, Vector3 front, float
     camera->dragButton = -1;
 }
 
-Vector3 OrbitCamera_Position(const OrbitCamera* camera) {
-    Vector3 direction = {
+// From the target to the camera
+static Vector3 Direction(const OrbitCamera* camera) {
+    return (Vector3) {
         cosf(camera->pitch) * sinf(camera->yaw),
         sinf(camera->pitch),
         cosf(camera->pitch) * cosf(camera->yaw),
     };
-    return Vector3Add(camera->target, Vector3Scale(direction, camera->distance));
+}
+
+Vector3 OrbitCamera_Position(const OrbitCamera* camera) {
+    return Vector3Add(camera->target, Vector3Scale(Direction(camera), camera->distance));
+}
+
+// Nearest distance at which the points are inside the view: a point at x, y from the target in the plane of the screen
+// and f behind it is inside if |x| <= (distance + f) * tanX and |y| <= (distance + f) * tanY
+static float FitDistance(const OrbitCamera* camera, const Vector3* points, uint32_t count, Vector3 right, Vector3 up,
+    Vector3 forward, float tanX, float tanY) {
+    float distance = 0.01f;
+    for (uint32_t i = 0; i < count; i++) {
+        Vector3 offset = Vector3Subtract(points[i], camera->target);
+        float x = fabsf(Vector3DotProduct(offset, right)) / tanX;
+        float y = fabsf(Vector3DotProduct(offset, up)) / tanY;
+        distance = fmaxf(distance, fmaxf(x, y) - Vector3DotProduct(offset, forward));
+    }
+    return distance;
+}
+
+void OrbitCamera_Fit(OrbitCamera* camera, const Vector3* points, uint32_t count, float aspect) {
+    if (count == 0)
+        return;
+    Vector3 forward = Vector3Negate(Direction(camera));
+    Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, (Vector3) { 0.0f, 1.0f, 0.0f }));
+    Vector3 up = Vector3CrossProduct(right, forward);
+    float tanY = tanf(camera->fovy * 0.5f * DEG2RAD);
+    float tanX = tanY * aspect;
+    // The points are centered on the screen by moving the target, which changes the distance: a few iterations converge
+    for (int iteration = 0; iteration < 4; iteration++) {
+        float distance = FitDistance(camera, points, count, right, up, forward, tanX, tanY);
+        Vector2 min = { INFINITY, INFINITY }, max = { -INFINITY, -INFINITY };
+        for (uint32_t i = 0; i < count; i++) {
+            Vector3 offset = Vector3Subtract(points[i], camera->target);
+            float depth = fmaxf(distance + Vector3DotProduct(offset, forward), 1e-6f);
+            Vector2 screen = { Vector3DotProduct(offset, right) / depth, Vector3DotProduct(offset, up) / depth };
+            min = Vector2Min(min, screen);
+            max = Vector2Max(max, screen);
+        }
+        Vector2 center = Vector2Scale(Vector2Add(min, max), 0.5f * distance);
+        camera->target = Vector3Add(camera->target, Vector3Add(Vector3Scale(right, center.x), Vector3Scale(up, center.y)));
+    }
+    camera->distance = FitDistance(camera, points, count, right, up, forward, tanX, tanY);
 }
 
 Camera3D OrbitCamera_Camera3D(const OrbitCamera* camera) {

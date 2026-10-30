@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <raylib.h>
@@ -20,6 +21,7 @@ typedef struct {
     MT5Render       render;
     MT5Render_Model model;
     OrbitCamera     camera;
+    bool            fit;        // The camera is fitted to the model in the next draw, when the size of the view is known
     bool            wireframe;
     bool            noCulling; // Draw the back faces too
     uint32_t        frame;
@@ -31,6 +33,17 @@ static MT5View_State g_view;
 
 static void ResetCamera(void) {
     OrbitCamera_Reset(&g_view.camera, g_view.model.mesh.center, g_view.model.mesh.front, g_view.model.mesh.radius, MT5VIEW_FOVY);
+    g_view.fit = true;
+}
+
+static void FitCamera(Rectangle area) {
+    g_view.fit = false;
+    Vector3* points = malloc((g_view.model.mesh.triangleCount * 3 + 1) * sizeof(Vector3));
+    if (points == NULL)
+        return;
+    uint32_t count = MT5Render_Vertices(&g_view.model, MatrixIdentity(), points);
+    OrbitCamera_Fit(&g_view.camera, points, count, area.width / area.height);
+    free(points);
 }
 
 void MT5View_Close(void) {
@@ -95,6 +108,8 @@ void MT5View_Draw(Rectangle area) {
     if (!g_view.open || area.width <= 0.0f || area.height <= 0.0f)
         return;
     UpdateInput(area);
+    if (g_view.fit)
+        FitCamera(area);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     double distance = g_view.camera.distance;

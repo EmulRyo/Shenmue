@@ -34,6 +34,9 @@ void MT5Render_Free(MT5Render* render);
 // Loads a model file with its textures and uploads its meshes. Returns false if the file is not a valid model
 bool MT5Render_LoadModel(const char* filepath, MT5Render_Model* model);
 void MT5Render_FreeModel(MT5Render_Model* model);
+// Copies the vertices of the triangles of the model, placed with transform, to points (mesh.triangleCount * 3 of them).
+// Returns the number of vertices
+uint32_t MT5Render_Vertices(const MT5Render_Model* model, Matrix transform, Vector3* points);
 
 // Lights the next models from the camera
 void MT5Render_SetCamera(MT5Render* render, Camera3D camera);

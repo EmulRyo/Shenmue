@@ -183,6 +183,18 @@ void MT5Render_FreeModel(MT5Render_Model* model) {
     memset(model, 0, sizeof(*model));
 }
 
+uint32_t MT5Render_Vertices(const MT5Render_Model* model, Matrix transform, Vector3* points) {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < model->mesh.groupCount; i++) {
+        const Mesh* mesh = &model->mesh.groups[i].mesh;
+        for (int v = 0; v < mesh->vertexCount; v++) {
+            const float* vertex = &mesh->vertices[v * 3];
+            points[count++] = Vector3Transform((Vector3) { vertex[0], vertex[1], vertex[2] }, transform);
+        }
+    }
+    return count;
+}
+
 void MT5Render_SetCamera(MT5Render* render, Camera3D camera) {
     Vector3 lightDir = Vector3Normalize(Vector3Subtract(camera.position, camera.target));
     SetShaderValue(render->shader, render->lightDirLoc, &lightDir, SHADER_UNIFORM_VEC3);

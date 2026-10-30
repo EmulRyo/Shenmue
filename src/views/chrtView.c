@@ -51,6 +51,7 @@ typedef struct {
     Vector3             center;      // Bounding sphere of the scene
     float               radius;
     OrbitCamera         camera;
+    bool                fit;         // The camera is fitted to the models in the next draw, when the size of the view is known
     int32_t             selected;    // Character the camera looks at, -1 for the whole scene
     bool                labels;
     bool                hideSleeping;
@@ -249,6 +250,7 @@ static void ComputeBounds(void) {
 static void ResetCamera(void) {
     OrbitCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, 1.0f }, g_view.radius, CHRTVIEW_FOVY);
     g_view.selected = -1;
+    g_view.fit = true;
 }
 
 // Looks at a character from the current direction
@@ -327,6 +329,27 @@ static void SelectNext(int direction) {
             return;
         }
     }
+}
+
+// Fits the camera to the visible models
+static void FitCamera(Rectangle area) {
+    g_view.fit = false;
+    uint32_t total = 0;
+    for (uint32_t i = 0; i < g_view.characterCount; i++) {
+        if (IsVisible(&g_view.characters[i]))
+            total += g_view.models[g_view.characters[i].model].model.mesh.triangleCount * 3;
+    }
+    Vector3* points = malloc((total + 1) * sizeof(Vector3));
+    if (points == NULL)
+        return;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < g_view.characterCount; i++) {
+        const CHRTView_Character* character = &g_view.characters[i];
+        if (IsVisible(character))
+            count += MT5Render_Vertices(&g_view.models[character->model].model, character->transform, points + count);
+    }
+    OrbitCamera_Fit(&g_view.camera, points, count, area.width / area.height);
+    free(points);
 }
 
 static void UpdateInput(Rectangle area) {
@@ -433,6 +456,8 @@ void CHRTView_Draw(Rectangle area) {
     if (!g_view.open || area.width <= 0.0f || area.height <= 0.0f)
         return;
     UpdateInput(area);
+    if (g_view.fit)
+        FitCamera(area);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     double distance = g_view.camera.distance;
