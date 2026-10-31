@@ -93,20 +93,23 @@ static bool IsAlternativeRoot(const MT5_Model* model, uint32_t node) {
     return false;
 }
 
-// Many doors of the shops have a sign that shows OPEN or CLOSE: two sibling nodes with the same transform and the same
-// bounding sphere, 0xD with the OPEN side and 8 with the CLOSE side. Other models (the wheels of the cars, the bones of
-// the bodies) also have the nodes 8 and 0xD, but in different places
+// Many doors of the shops have a sign that shows OPEN or CLOSE: two sibling nodes with the same transform and almost
+// the same bounding sphere (slightly different in some doors, e.g. DR02_019), 0xD with the OPEN side and 8 with the
+// CLOSE side. Other models (the wheels of the cars, the bones of the bodies) also have the nodes 8 and 0xD, but in
+// different places
 static bool IsCloseSign(const MT5_Model* model, uint32_t node) {
     const MT5_Node* close = &model->nodes[node];
     if ((close->id & 0xFFFF) != 0x08 || !close->hasMesh)
         return false;
+    Vector3 closeCenter = { close->center[0], close->center[1], close->center[2] };
     for (uint32_t i = 0; i < model->nodeCount; i++) {
         const MT5_Node* open = &model->nodes[i];
+        Vector3 openCenter = { open->center[0], open->center[1], open->center[2] };
         if ((open->id & 0xFFFF) == 0x0D && open->hasMesh && open->parent == close->parent &&
             memcmp(open->position, close->position, sizeof(open->position)) == 0 &&
             memcmp(open->rotation, close->rotation, sizeof(open->rotation)) == 0 &&
             memcmp(open->scale, close->scale, sizeof(open->scale)) == 0 &&
-            memcmp(open->center, close->center, sizeof(open->center)) == 0 && open->radius == close->radius)
+            Vector3Distance(openCenter, closeCenter) < 0.01f && fabsf(open->radius - close->radius) < 0.01f)
             return true;
     }
     return false;

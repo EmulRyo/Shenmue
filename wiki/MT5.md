@@ -175,14 +175,14 @@ Some character models have a second branch under the root with copies of a node 
 
 ## Door signs
 
-Many doors of the shops (`DRnn_nnn` models, e.g. `scene/01/dski/dr13_012.mt5`, `scene/01/dpiz/dr01_009.mt5`) have a small sign that says whether the shop is open or closed. The sign is made of two sibling nodes, children of the node of a door leaf (`0x0C` or `0x07`), with the same transform (usually none) and the same bounding sphere: both meshes are in the same place, and only one of them is meant to be shown.
+Many doors of the shops (`DRnn_nnn` models, e.g. `scene/01/dski/dr13_012.mt5`, `scene/01/dpiz/dr01_009.mt5`) have a small sign that says whether the shop is open or closed. The sign is made of two sibling nodes, children of the node of a door leaf (`0x0C` or `0x07`), with the same transform (usually none) and the same bounding sphere (in some doors, e.g. `DR02_019` of `scene/01/drht`, the centers differ by a few hundredths of a millimeter because the meshes are slightly different): both meshes are in the same place, and only one of them is meant to be shown.
 
 | Node ID | Content |
 |---------|---------|
 | `0x0D`  | Sign with the **OPEN** text |
 | `0x08`  | Sign with the **CLOSE** (or **CLOSED**) text |
 
-The frame of the sign is the same in both meshes; only the polygons of the text change (different UVs on the same texture, which has both words, sometimes with the opening hours). 93 models of the `scene` folders have this sign (counting the copies of the same model in several maps). The IDs `0x08` and `0x0D` are also used by other models (the wheels of the cars, the bones of the characters), but there the two nodes are in different places.
+The frame of the sign is the same in both meshes; only the polygons of the text change (different UVs on the same texture, which has both words, sometimes with the opening hours). 139 models of the `scene` folders have this sign (counting the copies of the same model in several maps). The IDs `0x08` and `0x0D` are also used by other models (the wheels of the cars, the bones of the characters), but there the two nodes are in different places.
 
 ## Invisible meshes
 
