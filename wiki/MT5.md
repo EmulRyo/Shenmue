@@ -47,7 +47,7 @@ The transform of a node is relative to its parent and is applied in this order: 
 
 | Offset | Size | Type      | Name            | Description                                                                 |
 |-------:|-----:|-----------|-----------------|-----------------------------------------------------------------------------|
-| 0x00   | 4    | uint32    | `id`            | Node (bone) ID. The lowest byte looks like the bone number; the next byte is `0x00` or `0xFF` and the upper 16 bits `0` or `1` (unknown meaning) |
+| 0x00   | 4    | uint32    | `id`            | Node (bone) ID. The lowest byte looks like the bone number; the next byte is `0x00` or `0xFF`. The upper 16 bits go from 0 to 0xB; their meaning is unknown, except 2, which marks an [invisible mesh](#invisible-meshes) |
 | 0x04   | 4    | uint32    | `meshOffset`    | Position of the [mesh header](#mesh-header-0x20-bytes), 0 if the node has no mesh |
 | 0x08   | 12   | int32[3]  | `rotation`      | Rotation around X, Y, Z. `0x10000` = 360°. Only the lowest 16 bits are used (e.g. `0xFFFF` = −1, `0xC000` = −90°). See [rotation of the feet](#rotation-of-the-feet) |
 | 0x14   | 12   | float[3]  | `scale`         | Scale                                                                       |
@@ -183,6 +183,25 @@ Many doors of the shops (`DRnn_nnn` models, e.g. `scene/01/dski/dr13_012.mt5`, `
 | `0x08`  | Sign with the **CLOSE** (or **CLOSED**) text |
 
 The frame of the sign is the same in both meshes; only the polygons of the text change (different UVs on the same texture, which has both words, sometimes with the opening hours). 93 models of the `scene` folders have this sign (counting the copies of the same model in several maps). The IDs `0x08` and `0x0D` are also used by other models (the wheels of the cars, the bones of the characters), but there the two nodes are in different places.
+
+## Invisible meshes
+
+The nodes with 2 in the upper 16 bits of the `id` (e.g. `0x0002FFFF`) have meshes that are not shown in the game. They are found in 42 maps (e.g. `scene/01/dpiz/map01.mt5`, `scene/01/d000/mpk00/MAP05.mt5`, `scene/03/nbik/map20.mt5`) and in `scene/01/op00/op99/0026/JIMENHAL.mt5` and `0030/JYUU.mt5`: 5760 meshes. Their purpose is unknown.
+
+- The whole mesh is untextured: a single [polygon parameters](#polygon-parameters-16-bytes) chunk with the texture bit (bit 3) of `pcw` clear (`0x808C0002` or `0x808C0026`), `tsp` = `0x20000440` and `tcw` = 0, with no texture (`0x0009`) or UV divisor (`0x000B`) chunk. It is followed by strips of type `0x001A` (vertex index, color), 3323 meshes, or by a colors chunk (`0x000E`), a `0x0008` chunk and strips of type `0x0010` (vertex index), 2437 meshes.
+- In the maps it works both ways: every mesh of these nodes is untextured, and every mesh of a map without any texture belongs to one of these nodes. Untextured polygons are also found in visible meshes, mixed with textured ones.
+- The shapes are simple, and are sized and placed with the `scale` and `position` of the node:
+
+  | Vertices | Meshes | Shape |
+  |---------:|-------:|-------|
+  | 18       | 3530   | Vertical prism with 8 sides around the Y axis, radius 0.5 and height 1 (from −0.5 to 0.5), plus the centers of the two caps |
+  | 16       | 970    | Vertical prism with 8 sides, without the centers of the caps (e.g. the 22 nodes `0x0002FFFF` of `scene/01/dpiz/map01.mt5`, radius 0.25 and height 0.5, with scales from 0.5 to 5) |
+  | 12       | 106    | Vertical prism with 6 sides                                                                   |
+  | 10       | 24     | Vertical prism with 5 sides                                                                   |
+  | 3        | 1130   | Single triangle, all of them in `scene/01/d000/mpk00/MAP05.mt5`, children of a root `0x0002FFFF` without mesh |
+
+  The `polyType` of their mesh header varies (0, 1, 2, 4, 5).
+- The value only affects the mesh of the node, not its children: the root of `scene/01/djaz/mpk00/BOLK5DAG.chrm` is `0x0002FFFF`, without mesh, and its children (`0x98`, `0x99`) are textured and visible.
 
 ## Animation frames
 

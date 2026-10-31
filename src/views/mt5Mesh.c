@@ -112,6 +112,12 @@ static bool IsCloseSign(const MT5_Model* model, uint32_t node) {
     return false;
 }
 
+// The nodes with 2 in the upper 16 bits of the ID (e.g. the cylinders of scene/01/dpiz/map01.mt5) have an untextured
+// mesh that isn't shown in the game. Their children are shown (e.g. the root of BOLK5DAG.chrm has no mesh)
+static bool IsInvisible(const MT5_Node* node) {
+    return (node->id >> 16) == 2;
+}
+
 static bool IsTriangleValid(const MT5_Model* model, uint32_t node, const MT5_Triangle* triangle) {
     uint32_t owner, vertex;
     for (int c = 0; c < 3; c++) {
@@ -296,6 +302,10 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
         world[i] = parent >= 0 ? MatrixMultiply(local, world[parent]) : MatrixMultiply(local, part);
         normalMatrix[i] = MatrixTranspose(MatrixInvert(world[i]));
         hidden[i] = IsAlternativeRoot(model, i) || IsCloseSign(model, i) || (parent >= 0 && hidden[parent]);
+    }
+    // The invisible nodes don't hide their children, they are marked after the children inherit hidden
+    for (uint32_t i = 0; i < model->nodeCount; i++) {
+        hidden[i] = hidden[i] || IsInvisible(&model->nodes[i]);
         if (hidden[i] && model->nodes[i].hasMesh)
             result->hiddenNodes++;
     }
