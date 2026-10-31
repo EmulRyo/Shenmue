@@ -62,15 +62,21 @@ typedef struct {
     FreeCamera         camera;
     bool                fit;         // The camera is fitted to the models in the next draw, when the size of the view is known
     int32_t             selected;    // Character the camera looks at, -1 for the whole scene
-    bool                showLabels;
-    bool                hideSleeping;
-    bool                wireframe;
-    bool                noCulling;   // Draw the back faces too
     uint32_t            frame;       // Animation frame of the animated models
     float               frameTime;
 } CHRTView_State;
 
+// Kept when another scene is opened
+typedef struct {
+    bool                showLabels;
+    bool                hideSleeping;
+    bool                wireframe;
+    bool                noCulling;   // Draw the back faces too
+    bool                fly;
+} CHRTView_Options;
+
 static CHRTView_State g_view;
+static CHRTView_Options g_options = { .showLabels = true };
 
 // Model file of an Image name: the file of the DefImage with that name, or the name itself (some names are defined in
 // other scripts, and they are usually the name of the model file)
@@ -299,6 +305,8 @@ static void Select(int32_t index) {
 }
 
 void CHRTView_Close(void) {
+    if (g_view.open)
+        g_options.fly = g_view.camera.fly;
     for (uint32_t i = 0; i < g_view.modelCount; i++) {
         if (g_view.models[i].loaded)
             MT5Render_FreeModel(&g_view.models[i].model);
@@ -350,8 +358,8 @@ bool CHRTView_Open(const char* filepath) {
     ArrangeUnpositioned();
     ComputeBounds();
     ResetCamera();
+    FreeCamera_SetFly(&g_view.camera, g_options.fly);
     g_view.listFocus = -1;
-    g_view.showLabels = true;
     g_view.open = true;
     return true;
 }
@@ -361,7 +369,7 @@ bool CHRTView_IsOpen(void) {
 }
 
 static bool IsVisible(const CHRTView_Character* character) {
-    return character->model >= 0 && !(g_view.hideSleeping && character->sleep);
+    return character->model >= 0 && !(g_options.hideSleeping && character->sleep);
 }
 
 // Selects the next or previous visible character
@@ -407,14 +415,14 @@ static void UpdateInput(Rectangle area) {
     if (IsKeyPressed(KEY_TAB) || IsKeyPressedRepeat(KEY_TAB))
         SelectNext(IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ? -1 : 1);
     if (IsKeyPressed(KEY_L))
-        g_view.showLabels = !g_view.showLabels;
+        g_options.showLabels = !g_options.showLabels;
     // The keys of the flight move the camera
     if (IsKeyPressed(KEY_S) && !g_view.camera.fly)
-        g_view.hideSleeping = !g_view.hideSleeping;
+        g_options.hideSleeping = !g_options.hideSleeping;
     if (IsKeyPressed(KEY_W) && !g_view.camera.fly)
-        g_view.wireframe = !g_view.wireframe;
+        g_options.wireframe = !g_options.wireframe;
     if (IsKeyPressed(KEY_C))
-        g_view.noCulling = !g_view.noCulling;
+        g_options.noCulling = !g_options.noCulling;
 
     g_view.frameTime += fminf(GetFrameTime(), 0.25f); // Without skipping frames after a long one (loading)
     for (; g_view.frameTime >= 1.0f / CHRTVIEW_FRAME_RATE; g_view.frameTime -= 1.0f / CHRTVIEW_FRAME_RATE)
@@ -537,15 +545,15 @@ void CHRTView_Draw(Rectangle area) {
     Camera3D camera = FreeCamera_Begin3D(&g_view.camera, scene);
     MT5Render_SetCamera(&g_view.render, camera);
     // The models have explicit back faces where both sides are seen (see MT5View_Draw)
-    if (g_view.noCulling)
+    if (g_options.noCulling)
         rlDisableBackfaceCulling();
-    if (g_view.wireframe)
+    if (g_options.wireframe)
         rlEnableWireMode();
     DrawCharacters(camera);
     rlDisableWireMode();
     rlEnableBackfaceCulling();
     FreeCamera_End3D();
-    if (g_view.showLabels)
+    if (g_options.showLabels)
         DrawLabels(camera, scene, font, fontSize);
     DrawRectangleLinesEx(scene, 1.0f, (Color) { 112, 112, 112, 255 });
 
@@ -554,7 +562,7 @@ void CHRTView_Draw(Rectangle area) {
         g_view.filename,
         TextFormat("%u characters, %u with a model (%u without a position in the scene, arranged in rows), %u without a model, %u models%s",
             g_view.characterCount, g_view.modelledCount, g_view.unpositionedCount, g_view.characterCount - g_view.modelledCount,
-            g_view.modelCount, g_view.hideSleeping ? ", sleeping characters hidden" : ""),
+            g_view.modelCount, g_options.hideSleeping ? ", sleeping characters hidden" : ""),
         TextFormat("%s   R: reset   Tab or click on the list or a label: select   L: labels   %sC: back faces",
             FreeCamera_Help(&g_view.camera), g_view.camera.fly ? "" : "S: sleeping   W: wireframe   "),
         g_view.selected >= 0 ? SelectedText() : NULL,

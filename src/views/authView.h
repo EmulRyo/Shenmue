@@ -8,7 +8,8 @@
 // the camera of the cutscene), and a timeline with the motions, voices and sounds. The names of the motions are taken
 // from the MOTN files in the folder of the cutscene
 
-// Loads a cutscene, replacing the current one. Returns false if the file can't be loaded
+// Loads a cutscene, replacing the current one, with the same camera (free or of the cutscene) and fly mode. Returns
+// false if the file can't be loaded
 bool AUTHView_Open(const char* filepath);
 void AUTHView_Close(void);
 bool AUTHView_IsOpen(void);

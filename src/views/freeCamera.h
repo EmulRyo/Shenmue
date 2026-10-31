@@ -24,7 +24,8 @@ typedef struct {
 // Looks at the scene, a sphere at center, from the direction front at the distance that shows it. Ends the flight
 void        FreeCamera_Reset(FreeCamera* camera, Vector3 center, Vector3 front, float radius, float fovy);
 // Moves the target in the plane of the screen and sets the distance so that the points fill the width or the height of
-// a view with the given aspect ratio (width / height), seen from the current direction
+// a view with the given aspect ratio (width / height), seen from the current direction. While flying, it then keeps
+// flying from the fitted position
 void        FreeCamera_Fit(FreeCamera* camera, const Vector3* points, uint32_t count, float aspect);
 Vector3     FreeCamera_Position(const FreeCamera* camera);
 Camera3D    FreeCamera_Camera3D(const FreeCamera* camera);

@@ -22,14 +22,20 @@ typedef struct {
     MT5Render_Model model;
     FreeCamera     camera;
     bool            fit;        // The camera is fitted to the model in the next draw, when the size of the view is known
-    bool            wireframe;
-    bool            noCulling; // Draw the back faces too
     uint32_t        frame;
     float           frameTime;  // Time since the current frame was shown
     bool            paused;
 } MT5View_State;
 
+// Kept when another model is opened
+typedef struct {
+    bool            wireframe;
+    bool            noCulling;  // Draw the back faces too
+    bool            fly;
+} MT5View_Options;
+
 static MT5View_State g_view;
+static MT5View_Options g_options;
 
 static void ResetCamera(void) {
     FreeCamera_Reset(&g_view.camera, g_view.model.mesh.center, g_view.model.mesh.front, g_view.model.mesh.radius, MT5VIEW_FOVY);
@@ -47,6 +53,8 @@ static void FitCamera(Rectangle area) {
 }
 
 void MT5View_Close(void) {
+    if (g_view.open)
+        g_options.fly = g_view.camera.fly;
     MT5Render_FreeModel(&g_view.model);
     MT5Render_Free(&g_view.render);
     memset(&g_view, 0, sizeof(g_view));
@@ -67,6 +75,7 @@ bool MT5View_Open(const char* filepath) {
         printf("[MT5View_Open]: %u triangles with unresolved vertex indices are not shown\n", model.mesh.skippedTriangles);
 
     ResetCamera();
+    FreeCamera_SetFly(&g_view.camera, g_options.fly);
     g_view.open = true;
     return true;
 }
@@ -84,9 +93,9 @@ static void UpdateInput(Rectangle area) {
     // The keys of the flight move the camera
     bool fly = g_view.camera.fly;
     if (IsKeyPressed(KEY_W) && !fly)
-        g_view.wireframe = !g_view.wireframe;
+        g_options.wireframe = !g_options.wireframe;
     if (IsKeyPressed(KEY_C))
-        g_view.noCulling = !g_view.noCulling;
+        g_options.noCulling = !g_options.noCulling;
 
     uint32_t frameCount = g_view.model.mesh.frameCount;
     if (frameCount > 0) {
@@ -121,9 +130,9 @@ void MT5View_Draw(Rectangle area) {
     MT5Render_SetCamera(&g_view.render, camera);
     // The faces are counter-clockwise, and the models have explicit back faces where both sides are seen (e.g. the
     // posters): the culling mode of the polygon parameters is always "small polygons", so the game culls them itself
-    if (g_view.noCulling)
+    if (g_options.noCulling)
         rlDisableBackfaceCulling();
-    if (g_view.wireframe)
+    if (g_options.wireframe)
         rlEnableWireMode();
     MT5Render_DrawOpaque(&g_view.render, &g_view.model, MatrixIdentity(), g_view.frame);
     MT5Render_DrawTranslucent(&g_view.render, &g_view.model, MatrixIdentity(), g_view.frame, camera);

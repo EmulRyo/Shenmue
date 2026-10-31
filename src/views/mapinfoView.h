@@ -9,7 +9,8 @@
 // collisions and areas, the lights, the cameras and the characters of the file over them, and a list with the cameras,
 // lights, characters, doors and other information. A camera of the list shows the map from it
 
-// Loads a mapinfo.bin and the models of its map, replacing the current one. Returns false if the file can't be loaded
+// Loads a mapinfo.bin and the models of its map, replacing the current one, with the same layers and fly mode. Returns
+// false if the file can't be loaded
 bool MAPINFOView_Open(const char* filepath);
 void MAPINFOView_Close(void);
 bool MAPINFOView_IsOpen(void);

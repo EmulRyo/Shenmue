@@ -109,10 +109,18 @@ typedef struct {
     Vector3             min, max;       // Box around the map
     Vector3             center;
     float               radius;
-    bool                layers[LAYER_COUNT];
 } MAPINFOView_State;
 
+// Kept when another map is opened. The collisions, the lights and the cameras are hidden at first
+typedef struct {
+    bool                layers[LAYER_COUNT];
+    bool                fly;
+} MAPINFOView_Options;
+
 static MAPINFOView_State g_view;
+static MAPINFOView_Options g_options = {
+    .layers = { [LAYER_MAP] = true, [LAYER_DOORS] = true, [LAYER_CHARACTERS] = true, [LAYER_LABELS] = true },
+};
 
 static Vector3 LightPosition(const MAPINFO_Light* light) {
     return (Vector3) { light->position[0], light->position[1], light->position[2] };
@@ -483,6 +491,8 @@ static bool CreateItems(void) {
 }
 
 void MAPINFOView_Close(void) {
+    if (g_view.open)
+        g_options.fly = g_view.camera.fly;
     for (uint32_t i = 0; i < g_view.modelCount; i++)
         MT5Render_FreeModel(&g_view.models[i]);
     free(g_view.models);
@@ -520,14 +530,9 @@ bool MAPINFOView_Open(const char* filepath) {
     }
     ComputeBounds();
     ResetCamera();
+    FreeCamera_SetFly(&g_view.camera, g_options.fly);
     g_view.selected = -1;
     g_view.listFocus = -1;
-    for (int i = 0; i < LAYER_COUNT; i++)
-        g_view.layers[i] = true;
-    for (int g = 0; g < MAPINFO_GROUP_COUNT; g++)
-        g_view.layers[LAYER_GROUPS + g] = false;
-    g_view.layers[LAYER_LIGHTS] = false;
-    g_view.layers[LAYER_CAMERAS] = false;
 
     printf("[MAPINFOView_Open]: %u chunks, %u cameras, %u lights, %u shapes, %u characters, %u map models, %u of %u doors\n",
         file.chunkCount, file.cameraCount, file.lightCount, file.shapeCount, g_view.characterCount, g_view.mapModelCount,
@@ -612,7 +617,7 @@ static void DrawModels(Camera3D camera) {
     uint32_t count = 0;
     for (uint32_t i = 0; i < g_view.instanceCount; i++) {
         const Instance* instance = &g_view.instances[i];
-        if (!g_view.layers[instance->door ? LAYER_DOORS : LAYER_MAP])
+        if (!g_options.layers[instance->door ? LAYER_DOORS : LAYER_MAP])
             continue;
         MT5Render_DrawOpaque(&g_view.render, &g_view.models[instance->model], instance->transform, 0);
         order[count++] = i;
@@ -711,12 +716,12 @@ static void DrawOverlays(void) {
     rlDisableDepthTest();
     for (uint32_t i = 0; i < file->shapeCount; i++) {
         const MAPINFO_Shape* shape = &file->shapes[i];
-        if (g_view.layers[LAYER_GROUPS + shape->group])
+        if (g_options.layers[LAYER_GROUPS + shape->group])
             DrawShape(shape, g_groupColors[shape->group]);
     }
     // Not seen from the camera of the map: they would cover the view
     const MAPINFO_Camera* selectedCamera = SelectedCamera();
-    if (!g_view.mapCamera && (g_view.layers[LAYER_CAMERAS] || selectedCamera != NULL)) {
+    if (!g_view.mapCamera && (g_options.layers[LAYER_CAMERAS] || selectedCamera != NULL)) {
         for (uint32_t i = 0; i < file->cameraCount; i++) {
             const MAPINFO_Camera* camera = &file->cameras[i];
             if (camera == selectedCamera) {
@@ -724,11 +729,11 @@ static void DrawOverlays(void) {
                 DrawCameraGizmo(view, g_selectedColor);
                 DrawLine3D(view.position, view.target, Fade(g_selectedColor, 0.5f));
             }
-            else if (g_view.layers[LAYER_CAMERAS])
+            else if (g_options.layers[LAYER_CAMERAS])
                 DrawCameraGizmo(MapCamera(camera), Fade(g_cameraColor, 0.6f));
         }
     }
-    if (g_view.layers[LAYER_LIGHTS]) {
+    if (g_options.layers[LAYER_LIGHTS]) {
         for (uint32_t i = 0; i < file->lightCount; i++) {
             const MAPINFO_Light* light = &file->lights[i];
             Vector3 position = LightPosition(light);
@@ -739,7 +744,7 @@ static void DrawOverlays(void) {
             DrawLine3D(position, Vector3Add(position, Vector3Scale(direction, 0.5f)), selected ? g_selectedColor : color);
         }
     }
-    if (g_view.layers[LAYER_CHARACTERS]) {
+    if (g_options.layers[LAYER_CHARACTERS]) {
         for (uint32_t i = 0; i < g_view.characterCount; i++) {
             const Character* character = &g_view.characters[i];
             if (!character->positioned)
@@ -773,7 +778,7 @@ static void DrawLabel(Camera3D camera, Rectangle area, Font font, float fontSize
 
 static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSize) {
     const MAPINFO_File* file = &g_view.file;
-    if (g_view.layers[LAYER_CHARACTERS]) {
+    if (g_options.layers[LAYER_CHARACTERS]) {
         for (uint32_t i = 0; i < g_view.characterCount; i++) {
             const Character* character = &g_view.characters[i];
             if (character->positioned)
@@ -781,7 +786,7 @@ static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSiz
                     character->id, character->sleep ? GRAY : g_characterColor);
         }
     }
-    if (g_view.layers[LAYER_CAMERAS] && !g_view.mapCamera) {
+    if (g_options.layers[LAYER_CAMERAS] && !g_view.mapCamera) {
         for (uint32_t i = 0; i < file->cameraCount; i++)
             DrawLabel(camera, area, font, fontSize, MapCamera(&file->cameras[i]).position, file->cameras[i].id,
                 &file->cameras[i] == SelectedCamera() ? g_selectedColor : g_cameraColor);
@@ -818,7 +823,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     DrawModels(camera);
     DrawOverlays();
     FreeCamera_End3D();
-    if (g_view.layers[LAYER_LABELS])
+    if (g_options.layers[LAYER_LABELS])
         DrawLabels(camera, view, font, fontSize);
     DrawRectangleLinesEx(view, 1.0f, (Color) { 112, 112, 112, 255 });
 }
@@ -829,7 +834,7 @@ static void DrawLayerToggles(Rectangle area) {
     GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, 0x2F5F8FFF);
     float width = fminf(100.0f, (area.width - (LAYER_COUNT - 1) * 4.0f) / LAYER_COUNT);
     for (int i = 0; i < LAYER_COUNT; i++)
-        GuiToggle((Rectangle) { area.x + i * (width + 4.0f), area.y, width, area.height }, g_layerNames[i], &g_view.layers[i]);
+        GuiToggle((Rectangle) { area.x + i * (width + 4.0f), area.y, width, area.height }, g_layerNames[i], &g_options.layers[i]);
     GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, pressedColor);
 }
 

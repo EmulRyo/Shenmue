@@ -8,7 +8,8 @@
 // models are searched in the folder of the script (<name>.chrm or <name>.mt5), where the IPAC block that contains it
 // is extracted, and their textures as in the MT5 viewer
 
-// Loads a script and its models, replacing the current one. Returns false if the script can't be loaded
+// Loads a script and its models, replacing the current one, with the same options (labels, sleeping characters,
+// wireframe, back faces, fly mode). Returns false if the script can't be loaded
 bool CHRTView_Open(const char* filepath);
 void CHRTView_Close(void);
 bool CHRTView_IsOpen(void);

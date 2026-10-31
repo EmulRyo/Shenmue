@@ -34,14 +34,20 @@ typedef struct {
     int             listFocus;
     float           time;       // Seconds
     bool            playing;
-    bool            cutsceneCamera; // Show the scene from the camera of the cutscene
     bool            seeking;    // Dragging on the timeline
     Vector3         center;     // Of the scene
     float           radius;
     FreeCamera     camera;     // Free camera
 } AUTHView_State;
 
+// Kept when another cutscene is opened
+typedef struct {
+    bool            cutsceneCamera; // Show the scene from the camera of the cutscene
+    bool            fly;
+} AUTHView_Options;
+
 static AUTHView_State g_view;
+static AUTHView_Options g_options = { .cutsceneCamera = true };
 
 static const Color g_characterColors[] = {
     { 230, 120, 80, 255 }, { 90, 170, 255, 255 }, { 120, 210, 110, 255 }, { 230, 200, 80, 255 },
@@ -200,6 +206,8 @@ static void ResetCamera(void) {
 }
 
 void AUTHView_Close(void) {
+    if (g_view.open)
+        g_options.fly = g_view.camera.fly;
     AUTH_Free(&g_view.sequence);
     for (uint32_t i = 0; i < g_view.bankCount; i++)
         MOTN_Free(&g_view.banks[i]);
@@ -226,7 +234,7 @@ bool AUTHView_Open(const char* filepath) {
     }
     ComputeBounds();
     ResetCamera();
-    g_view.cutsceneCamera = true;
+    FreeCamera_SetFly(&g_view.camera, g_options.fly);
     g_view.playing = true;
 
     printf("%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files in the folder\n", g_view.filename,
@@ -305,7 +313,7 @@ static Camera3D CutsceneCamera(void) {
 
 // The arrows move the flying free camera
 static bool Flying(void) {
-    return !g_view.cutsceneCamera && g_view.camera.fly;
+    return !g_options.cutsceneCamera && g_view.camera.fly;
 }
 
 static void UpdateInput(Rectangle scene) {
@@ -318,10 +326,10 @@ static void UpdateInput(Rectangle scene) {
     if (IsKeyPressed(KEY_HOME))
         Seek(0.0f);
     if (IsKeyPressed(KEY_V))
-        g_view.cutsceneCamera = !g_view.cutsceneCamera;
+        g_options.cutsceneCamera = !g_options.cutsceneCamera;
     if (IsKeyPressed(KEY_F)) {
         // Flies from the position of the camera of the cutscene, or of the free camera, looking around it
-        if (g_view.cutsceneCamera) {
+        if (g_options.cutsceneCamera) {
             Camera3D view = CutsceneCamera();
             Vector3 direction = Vector3Normalize(Vector3Subtract(view.position, view.target));
             g_view.camera.yaw = atan2f(direction.x, direction.z);
@@ -329,12 +337,12 @@ static void UpdateInput(Rectangle scene) {
             g_view.camera.target = view.target;
             g_view.camera.distance = Vector3Distance(view.position, view.target);
         }
-        FreeCamera_SetFly(&g_view.camera, g_view.cutsceneCamera || !g_view.camera.fly);
-        g_view.cutsceneCamera = false;
+        FreeCamera_SetFly(&g_view.camera, g_options.cutsceneCamera || !g_view.camera.fly);
+        g_options.cutsceneCamera = false;
     }
     if (IsKeyPressed(KEY_R))
         ResetCamera();
-    if (!g_view.cutsceneCamera)
+    if (!g_options.cutsceneCamera)
         FreeCamera_Update(&g_view.camera, scene, 0.1f);
 
     if (g_view.playing && !g_view.seeking) {
@@ -525,7 +533,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     Camera3D camera;
     Rectangle view = area;
-    if (g_view.cutsceneCamera) {
+    if (g_options.cutsceneCamera) {
         // The screen of the game, letterboxed
         camera = CutsceneCamera();
         view.width = fminf(area.width, area.height * AUTHVIEW_ASPECT);
@@ -540,7 +548,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
         camera = FreeCamera_Begin3D(&g_view.camera, view);
 
     DrawGround();
-    if (!g_view.cutsceneCamera) {
+    if (!g_options.cutsceneCamera) {
         DrawPath(&g_view.sequence.camera[AUTH_CAMERA_X], Fade(g_cameraColor, 0.5f));
         for (uint32_t i = 0; i < g_view.sequence.characterCount; i++)
             DrawPath(&g_view.sequence.characters[i].curves[AUTH_CHARACTER_X], Fade(CharacterColor((int)i), 0.5f));
@@ -646,7 +654,7 @@ void AUTHView_Draw(Rectangle area) {
         g_view.filename,
         TextFormat("Cutscene, %u frames (%s), %u characters (%s), %u commands, %u sounds", sequence->duration,
             FormatTime(Duration()), sequence->characterCount, characters, sequence->commandCount, sequence->soundCount),
-        g_view.cutsceneCamera ?
+        g_options.cutsceneCamera ?
             "Space: play/pause   Left/Right: previous/next command   Home: start   V: free camera   F: fly   Click on the timeline: seek" :
             TextFormat("Space: play/pause   %sHome: start   V: cutscene camera   %s   R: reset", Flying() ? "" : "Left/Right: previous/next command   ",
                 FreeCamera_Help(&g_view.camera)),
@@ -691,10 +699,10 @@ void AUTHView_Draw(Rectangle area) {
     // The style of the application draws the pressed controls like the normal ones: highlight the selected toggle
     int pressedColor = GuiGetStyle(TOGGLE, BASE_COLOR_PRESSED);
     GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, 0x2F5F8FFF);
-    int mode = g_view.cutsceneCamera ? 1 : 0;
+    int mode = g_options.cutsceneCamera ? 1 : 0;
     GuiToggleGroup((Rectangle) { x, controls.y, 140.0f, controlsHeight }, "Free camera;Cutscene camera", &mode);
     GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, pressedColor);
-    g_view.cutsceneCamera = mode == 1;
+    g_options.cutsceneCamera = mode == 1;
     x += 2 * 140.0f + GuiGetStyle(TOGGLE, GROUP_PADDING) + margin;
     // TextFormat uses a rotating buffer, so the two times can be formatted in the same call
     const char* status = TextFormat("Frame %u/%u   %s / %s", CurrentFrame(), sequence->duration, FormatTime(g_view.time),

@@ -68,6 +68,8 @@ void FreeCamera_Fit(FreeCamera* camera, const Vector3* points, uint32_t count, f
         camera->target = Vector3Add(camera->target, Vector3Add(Vector3Scale(right, center.x), Vector3Scale(up, center.y)));
     }
     camera->distance = FitDistance(camera, points, count, right, up, forward, tanX, tanY);
+    if (camera->fly)
+        FreeCamera_SetFly(camera, true);
 }
 
 Camera3D FreeCamera_Camera3D(const FreeCamera* camera) {

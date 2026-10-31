@@ -7,7 +7,8 @@
 // 3D viewer of MT5/CHRM models. The textures of CHRM files are searched in the folder of the model, where the PKF of
 // the scene is extracted (tex_<index>_<texture ID>.pvr files)
 
-// Loads a model to show it, replacing the current one. Returns false if the file is not a valid model
+// Loads a model to show it, replacing the current one, with the same options (wireframe, back faces, fly mode). Returns
+// false if the file is not a valid model
 bool MT5View_Open(const char* filepath);
 void MT5View_Close(void);
 bool MT5View_IsOpen(void);
