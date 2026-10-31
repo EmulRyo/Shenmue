@@ -25,7 +25,7 @@ typedef struct {
     MT5Mesh_Group*  groups;
     uint32_t        triangleCount;
     uint32_t        skippedTriangles; // Triangles with vertex indices that can't be resolved
-    uint32_t        hiddenNodes;      // Alternative meshes
+    uint32_t        hiddenNodes;      // Alternative meshes and CLOSE signs
     uint32_t        frameCount;       // Animation frames (see FindFrames), 0 if the model is not animated
     Vector3         front;            // Direction the model looks to
     Vector3         center;           // Bounding sphere of the model

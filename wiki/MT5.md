@@ -173,6 +173,17 @@ A negative vertex index `-n` points to the vertex `vertexCount - n` of the mesh 
 
 Some character models have a second branch under the root with copies of a node that have no mesh (same `id` as the head) and children with `parentOffset` = 0 and the same `id` as the face. They look like alternative faces (e.g. expressions) that replace the face mesh. Their negative vertex indices point to the mesh of the node with the same `id` as their parent (the head). The copy of the head is placed at the origin, not at the head, so these meshes are only correct when attached to the original node.
 
+## Door signs
+
+Many doors of the shops (`DRnn_nnn` models, e.g. `scene/01/dski/dr13_012.mt5`, `scene/01/dpiz/dr01_009.mt5`) have a small sign that says whether the shop is open or closed. The sign is made of two sibling nodes, children of the node of a door leaf (`0x0C` or `0x07`), with the same transform (usually none) and the same bounding sphere: both meshes are in the same place, and only one of them is meant to be shown.
+
+| Node ID | Content |
+|---------|---------|
+| `0x0D`  | Sign with the **OPEN** text |
+| `0x08`  | Sign with the **CLOSE** (or **CLOSED**) text |
+
+The frame of the sign is the same in both meshes; only the polygons of the text change (different UVs on the same texture, which has both words, sometimes with the opening hours). 93 models of the `scene` folders have this sign (counting the copies of the same model in several maps). The IDs `0x08` and `0x0D` are also used by other models (the wheels of the cars, the bones of the characters), but there the two nodes are in different places.
+
 ## Animation frames
 
 Some models are animations made of frames: a node without mesh whose children are the frames, 3 or more leaf nodes with a mesh, the same transform and overlapping bounding spheres. Shown at the same time, the frames overlap. They are found in:

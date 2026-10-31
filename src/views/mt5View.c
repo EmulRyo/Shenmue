@@ -70,7 +70,7 @@ bool MT5View_Open(const char* filepath) {
     g_view.model = model;
     MT5Render_Init(&g_view.render);
     if (model.mesh.hiddenNodes > 0)
-        printf("[MT5View_Open]: %u alternative meshes are not shown\n", model.mesh.hiddenNodes);
+        printf("[MT5View_Open]: %u alternative meshes and CLOSE signs are not shown\n", model.mesh.hiddenNodes);
     if (model.mesh.skippedTriangles > 0)
         printf("[MT5View_Open]: %u triangles with unresolved vertex indices are not shown\n", model.mesh.skippedTriangles);
 
