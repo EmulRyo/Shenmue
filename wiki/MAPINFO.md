@@ -134,6 +134,8 @@ Holds a [CHRT](CHRT) script: the characters and objects of the map, with their m
 | 0x00   | 8    | —    | header | [Chunk header](#chunk-header-8-bytes) (`CHRD`) |
 | 0x08   | —    | —    | script | `CHRS` block followed by its `STRG` block, exactly as in a [CHRT](CHRT) file. `CHRD.size` = 8 + `CHRS.size` + size of the `STRG` block |
 
+21 files (`dgct`, `dkpa`, `dmaj`, `drht`, `dsba` and `dsus` of `scene/01`, `02` and `03`, `ydb1` of `scene/02` and `03`, and `scene/03/tery`) have no characters: their `CHRD` chunk, the smallest one (0x4C bytes), is the same in all of them and holds the [empty script](CHRT#empty-script) `Character('____', 3) { Flags("Kill") }`.
+
 ## ECAM — Cameras
 
 A list of fixed or animated cameras, each one with a 4-digit ID. The game files have 4924 cameras, 1 to 261 per file. The chunk header is followed by the cameras, one after the other, until the end of the chunk.

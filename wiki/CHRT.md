@@ -104,7 +104,7 @@ The most common commands, from most to least used:
 | `Image` | `name:string` | 2680 | Model of the character, the `name` of a `DefImage`. 98% of the names are defined in the same file; the rest (e.g. `KGSH501G`) are defined in other files |
 | `Image` | `name:string, size:int` | 47 | Animated model: block with `Num` and optionally `Loop`, `Wait` and `Kind` (see below) |
 | `Position` | `x:float, y:float, z:float` | 2708 | Position of the character in the scene. `y` is the height, usually 0. Characters can have 2 `Position` commands (401 characters): the first one is usually off the scene (`(0, 0, -1000)`, `(-300, 0, 0)`, `(0, -1000, 0)`...). The last position is also off the scene, with a coordinate of ±1000 or more, in 807 of the 2307 characters that have one: `(-1300, 0, 1000)` (233), `(0, 0, -1000)` (205), `(0, -1000, 0)` (99), `(1000, 0, 0)` (62)...; these characters *probably* wait there until other scripts place them. 467 characters have no `Position`, e.g. the 51 characters of `scene/01/d000/shuki` (shutters and fronts of shops, bikes...), whose models are centered at the origin |
-| `Flags` | `flag:string` or `flag1:string, flag2:string` | 2608 | State of the character: `DISP` (displayed), `SLEEP` (*probably* inactive until something wakes it), `NOMAPEV` (*probably* without map events). The usual combinations are `DISP`, `SLEEP`, `DISP NOMAPEV` and `SLEEP NOMAPEV` |
+| `Flags` | `flag:string` or `flag1:string, flag2:string` | 2608 | State of the character: `DISP` (displayed), `SLEEP` (*probably* inactive until something wakes it), `NOMAPEV` (*probably* without map events). The usual combinations are `DISP`, `SLEEP`, `DISP NOMAPEV` and `SLEEP NOMAPEV`. `Kill` is only found in the [empty script](#empty-script) |
 | `Angle` | `y:float` or `x:float, y:float, z:float` | 2307 | Rotation in degrees (`0`, `90`, `-90`, `180`, `270`...). The short form has only the rotation around the vertical axis |
 | `Object` | — | 1917 | The character is an object (doors, cans, boxes, bikes...) |
 | `ColiOff` | — | 1898 | *Probably* disables the collision of the character |
@@ -158,6 +158,32 @@ The animated `Image` holds an animation of the model, e.g. `Image("BFA0101G", 12
 ### Inside `Entry`
 
 `Entry(unknown:float, size:int)` is a block with a `Position` and an `Angle`, found in the player character (`AKIR`). A character can have several, with `unknown` 0, 10 and 20; they are *probably* alternative places where the character appears.
+
+## Empty script
+
+The maps without characters don't have a script without commands: the `CHRD` chunk of 21 [MAPINFO](MAPINFO#chrd--characters) files holds the same 0x44-byte script, with a single placeholder character whose ID is `____` (4 underscores), no model and no position, and the flag `Kill`, not used anywhere else:
+
+```
+Character('____', 3)
+    Flags("Kill")
+```
+
+| Offset | Size | Value                    | Description |
+|-------:|-----:|--------------------------|-------------|
+| 0x00   | 4    | `CHRS`                   | Magic |
+| 0x04   | 4    | 0x24                     | Size of the CHRS block |
+| 0x08   | 4    | 0x2F                     | Name: 0x08 + 0x2F = 0x37, `Character` |
+| 0x0C   | 4    | 0x22                     | Argument types: literal, int |
+| 0x10   | 4    | `____`                   | ID |
+| 0x14   | 4    | 3                        | Size of the block, in words |
+| 0x18   | 4    | 0x19                     | Name: 0x18 + 0x19 = 0x31, `Flags` |
+| 0x1C   | 4    | 0x03                     | Argument types: string |
+| 0x20   | 4    | 0x0C                     | String: 0x20 + 0x0C = 0x2C, `Kill` |
+| 0x24   | 4    | `STRG`                   | Magic of the STRG block |
+| 0x28   | 4    | 0x20                     | Size of the STRG block |
+| 0x2C   | 24   | `Kill`, `Flags`, `Character` | Null terminated strings (21 bytes), padded with zeros to 4 bytes |
+
+No CHRT file stored in an [IPAC](IPAC) block has this placeholder.
 
 ## Example
 
