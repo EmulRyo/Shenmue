@@ -75,6 +75,8 @@ typedef struct {
 
 // Loads an MT5/CHRM file (gzipped or not). Returns false if the file is not a valid model
 bool MT5_Load(const char* filepath, MT5_Model* model);
+// Loads a model already in memory, not gzipped. The data is copied. name is used in the error messages
+bool MT5_LoadFromMemory(const uint8_t* data, size_t size, const char* name, MT5_Model* model);
 void MT5_Free(MT5_Model* model);
 
 // Node whose mesh is used by the negative vertex indices of the children of parent: the nearest ancestor that has a

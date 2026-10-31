@@ -30,23 +30,26 @@ typedef struct {
     uint8_t     data[]; // PVR (GBIX/PVRT) or DDS texture
 } PKF_Texture;
 
-static bool SaveTexture(const PKF_Texture* texture, uint32_t textureID, const char* outputFolder) {
-    size_t dataSize = texture->size - sizeof(PKF_Texture);
-    const char* ext = File_ExtensionFromMagic(texture->data, dataSize);
+// Called with each texture of a PKF file, named as tex_<index>_<texture ID>.<ext>. Returns false if the texture
+// couldn't be handled
+typedef bool (*PKF_TextureCallback)(const char* filename, const uint8_t* data, size_t size, void* context);
 
+static bool SaveTexture(const char* filename, const uint8_t* data, size_t size, void* context) {
     char outputFilename[PKF_PATH_SIZE];
-    int length = snprintf(outputFilename, sizeof(outputFilename), "%s/tex_%03u_", outputFolder, textureID);
-    for (int i = 0; i < 8 && length < (int)sizeof(outputFilename); i++)
-        length += snprintf(outputFilename + length, sizeof(outputFilename) - length, "%02X", texture->textureID[i]);
-    snprintf(outputFilename + length, sizeof(outputFilename) - length, ".%s", ext != NULL ? ext : "bin");
-
-    printf(" -> %s\n", File_GetFilename(outputFilename));
-    return File_Save(outputFilename, texture->data, dataSize);
+    snprintf(outputFilename, sizeof(outputFilename), "%s/%s", (const char*)context, filename);
+    printf(" -> %s\n", filename);
+    return File_Save(outputFilename, data, size);
 }
 
-static uint32_t ExtractTextures(const uint8_t* buffer, size_t size, const char* outputFolder) {
+static bool AddTexture(const char* filename, const uint8_t* data, size_t size, void* context) {
+    return IPAC_AddFile((IPAC_FileList*)context, filename, data, size);
+}
+
+// Reads the textures between the header and the IPAC block, printing the blocks if verbose. Returns the number of
+// textures handled by the callback
+static uint32_t ReadTextures(const uint8_t* buffer, size_t size, bool verbose, PKF_TextureCallback callback, void* context) {
     uint32_t textureID = 0;
-    uint32_t extracted = 0;
+    uint32_t handled = 0;
     size_t pos = sizeof(PKF_Header);
     while (pos + sizeof(PKF_Block) <= size) {
         const PKF_Block* block = (const PKF_Block*)(buffer + pos);
@@ -55,17 +58,27 @@ static uint32_t ExtractTextures(const uint8_t* buffer, size_t size, const char* 
             break;
 
         if (memcmp(block->id, "TEXN", 4) == 0 && block->size >= sizeof(PKF_Texture)) {
-            printf("  Texture %u: offset = 0x%04zX, size = 0x%04X", textureID, pos, block->size);
-            if (SaveTexture((const PKF_Texture*)block, textureID, outputFolder))
-                extracted++;
+            const PKF_Texture* texture = (const PKF_Texture*)block;
+            size_t dataSize = texture->size - sizeof(PKF_Texture);
+            const char* ext = File_ExtensionFromMagic(texture->data, dataSize);
+            char filename[IPAC_FILENAME_SIZE];
+            int length = snprintf(filename, sizeof(filename), "tex_%03u_", textureID);
+            for (int i = 0; i < 8 && length < (int)sizeof(filename); i++)
+                length += snprintf(filename + length, sizeof(filename) - length, "%02X", texture->textureID[i]);
+            snprintf(filename + length, sizeof(filename) - length, ".%s", ext != NULL ? ext : "bin");
+
+            if (verbose)
+                printf("  Texture %u: offset = 0x%04zX, size = 0x%04X", textureID, pos, block->size);
+            if (callback(filename, texture->data, dataSize, context))
+                handled++;
             textureID++;
         }
-        else
+        else if (verbose)
             printf("  Block %.4s: offset = 0x%04zX, size = 0x%04X\n", block->id, pos, block->size);
 
         pos += block->size;
     }
-    return extracted;
+    return handled;
 }
 
 void PKF_ExtractAllFiles(const char* filepath, const char* outputPath) {
@@ -101,10 +114,36 @@ void PKF_ExtractAllFiles(const char* filepath, const char* outputPath) {
     printf("  Output folder: %s\n", outputFolder);
 
     size_t texturesEnd = header->ipacOffset < size ? header->ipacOffset : size;
-    uint32_t extracted = ExtractTextures(buffer, texturesEnd, outputFolder);
+    uint32_t extracted = ReadTextures(buffer, texturesEnd, true, SaveTexture, outputFolder);
     if (header->ipacOffset < size)
         extracted += IPAC_ExtractAllFiles(buffer + header->ipacOffset, size - header->ipacOffset, outputFolder);
     printf("[PKF_ExtractAllFiles]: Extracted %u files to %s\n", extracted, outputFolder);
 
     free(buffer);
+}
+
+bool PKF_LoadFiles(const char* filepath, IPAC_FileList* list) {
+    size_t size = 0;
+    uint8_t* buffer = File_LoadToMemoryDecompressed(filepath, &size);
+    if (buffer == NULL)
+        return false;
+
+    // Some files have the wrong extension
+    if (size >= 4 && memcmp(buffer, "PAKS", 4) == 0) {
+        free(buffer);
+        return PKS_LoadFiles(filepath, list);
+    }
+
+    const PKF_Header* header = (const PKF_Header*)buffer;
+    if (size < sizeof(PKF_Header) || memcmp(header->id, "PAKF", 4) != 0) {
+        fprintf(stderr, "[PKF_LoadFiles]: Invalid PKF file %s\n", filepath);
+        free(buffer);
+        return false;
+    }
+    size_t texturesEnd = header->ipacOffset < size ? header->ipacOffset : size;
+    ReadTextures(buffer, texturesEnd, false, AddTexture, list);
+    if (header->ipacOffset < size)
+        IPAC_LoadFiles(buffer + header->ipacOffset, size - header->ipacOffset, list);
+    free(buffer);
+    return true;
 }

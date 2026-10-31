@@ -54,3 +54,26 @@ void PKS_ExtractAllFiles(const char* filepath, const char* outputPath) {
 
     free(buffer);
 }
+
+bool PKS_LoadFiles(const char* filepath, IPAC_FileList* list) {
+    size_t size = 0;
+    uint8_t* buffer = File_LoadToMemoryDecompressed(filepath, &size);
+    if (buffer == NULL)
+        return false;
+
+    // Some files have the wrong extension
+    if (size >= 4 && memcmp(buffer, "PAKF", 4) == 0) {
+        free(buffer);
+        return PKF_LoadFiles(filepath, list);
+    }
+
+    const PKS_Header* header = (const PKS_Header*)buffer;
+    if (size < sizeof(PKS_Header) || memcmp(header->id, "PAKS", 4) != 0 || header->ipacOffset > size) {
+        fprintf(stderr, "[PKS_LoadFiles]: Invalid PKS file %s\n", filepath);
+        free(buffer);
+        return false;
+    }
+    IPAC_LoadFiles(buffer + header->ipacOffset, size - header->ipacOffset, list);
+    free(buffer);
+    return true;
+}

@@ -340,15 +340,11 @@ void MT5_Free(MT5_Model* model) {
     memset(model, 0, sizeof(MT5_Model));
 }
 
-bool MT5_Load(const char* filepath, MT5_Model* model) {
-    memset(model, 0, sizeof(MT5_Model));
-    model->buffer = File_LoadToMemoryDecompressed(filepath, &model->size);
-    if (model->buffer == NULL)
-        return false;
-
+// Parses model->buffer. name is used in the error messages
+static bool Parse(MT5_Model* model, const char* name) {
     MT5_Header header;
     if (model->size < sizeof(MT5_Header) || memcmp(model->buffer, "HRCM", 4) != 0) {
-        fprintf(stderr, "[MT5_Load]: Invalid MT5 file %s\n", filepath);
+        fprintf(stderr, "[MT5_Load]: Invalid MT5 file %s\n", name);
         MT5_Free(model);
         return false;
     }
@@ -356,11 +352,29 @@ bool MT5_Load(const char* filepath, MT5_Model* model) {
 
     uint32_t capacity = 0;
     if (!ReadNodes(model, header.firstNodeOffset, -1, &capacity) || !ReadTextures(model, header.texturesOffset)) {
-        fprintf(stderr, "[MT5_Load]: Invalid MT5 file %s\n", filepath);
+        fprintf(stderr, "[MT5_Load]: Invalid MT5 file %s\n", name);
         MT5_Free(model);
         return false;
     }
     return true;
+}
+
+bool MT5_Load(const char* filepath, MT5_Model* model) {
+    memset(model, 0, sizeof(MT5_Model));
+    model->buffer = File_LoadToMemoryDecompressed(filepath, &model->size);
+    if (model->buffer == NULL)
+        return false;
+    return Parse(model, filepath);
+}
+
+bool MT5_LoadFromMemory(const uint8_t* data, size_t size, const char* name, MT5_Model* model) {
+    memset(model, 0, sizeof(MT5_Model));
+    model->buffer = malloc(size > 0 ? size : 1);
+    if (model->buffer == NULL)
+        return false;
+    memcpy(model->buffer, data, size);
+    model->size = size;
+    return Parse(model, name);
 }
 
 int32_t MT5_ParentMeshNode(const MT5_Model* model, int32_t parent) {

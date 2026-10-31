@@ -4,10 +4,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <raylib.h>
+#include "formats/archive/ipac.h"
 #include "views/mt5Mesh.h"
 
 // Drawing of MT5/CHRM models with their textures, for the views that show models. The textures of CHRM files are
-// searched in the folder of the model, where the PKF of the scene is extracted (tex_<index>_<texture ID>.pvr files)
+// searched in the folder of the model, where the PKF of the scene is extracted (tex_<index>_<texture ID>.pvr files),
+// or in the files of the PKF loaded in memory
 
 // Shader and material shared by the models
 typedef struct {
@@ -33,6 +35,8 @@ void MT5Render_Free(MT5Render* render);
 
 // Loads a model file with its textures and uploads its meshes. Returns false if the file is not a valid model
 bool MT5Render_LoadModel(const char* filepath, MT5Render_Model* model);
+// Same with a file of a PKF/PKS file loaded in memory, whose textures are searched in the files of that PKF
+bool MT5Render_LoadPackedModel(const IPAC_File* file, const IPAC_FileList* files, MT5Render_Model* model);
 void MT5Render_FreeModel(MT5Render_Model* model);
 // Copies the vertices of the triangles of the model, placed with transform, to points (mesh.triangleCount * 3 of them).
 // Returns the number of vertices

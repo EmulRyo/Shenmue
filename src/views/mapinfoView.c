@@ -9,6 +9,9 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "raygui.h"
+#include "core/file.h"
+#include "formats/archive/pkf.h"
+#include "formats/archive/pks.h"
 #include "formats/map/mapinfo.h"
 #include "formats/text/chrt.h"
 #include "views/mt5Render.h"
@@ -218,7 +221,7 @@ static void LoadCharacters(void) {
     }
 }
 
-// Models of the map: MAP.mt5, MAP01.mt5... in the folder and in its subfolders (mpk00, map0...)
+// Models of the map: MAP.mt5, MAP01.mt5... in the folder, in its subfolders (mpk00, map0...) and in its PKF/PKS files
 static bool IsMapModel(const char* path) {
     const char* name = GetFileName(path);
     if (toupper((unsigned char)name[0]) != 'M' || toupper((unsigned char)name[1]) != 'A' || toupper((unsigned char)name[2]) != 'P')
@@ -228,9 +231,26 @@ static bool IsMapModel(const char* path) {
     return *name == '.';
 }
 
+// A model or CHRT file of the map: on disk, or in a PKF/PKS file of the map that isn't extracted, loaded in memory
+typedef struct {
+    const char*             path;   // NULL if the file is in memory
+    const char*             name;
+    const IPAC_File*        packed;
+} MapFile;
+
+// The external textures of the packed files are searched in the files of all the PKF/PKS files (e.g. the MAP.mt5 of
+// mpk00.pks uses the textures of mpk00.pkf)
+static bool LoadMapModel(const MapFile* file, const IPAC_FileList* packed, MT5Render_Model* model) {
+    return file->packed != NULL ? MT5Render_LoadPackedModel(file->packed, packed, model) : MT5Render_LoadModel(file->path, model);
+}
+
+static bool LoadMapScript(const MapFile* file, CHRT_Script* script) {
+    return file->packed != NULL ? CHRT_LoadFromMemory(file->packed->data, file->packed->size, file->name, script) : CHRT_Load(file->path, script);
+}
+
 // Model file (MT5 or CHRM) of a model name, without the $ and @ prefixes and the extension of the names of the CHRT
 // scripts (e.g. "$DR01_009.MT5"). Returns -1 if there is none
-static int ModelFile(const FilePathList* files, const bool* usable, const char* name) {
+static int ModelFile(const MapFile* files, uint32_t count, const char* name) {
     char base[64];
     while (*name == '$' || *name == '@')
         name++;
@@ -238,9 +258,8 @@ static int ModelFile(const FilePathList* files, const bool* usable, const char* 
     char* dot = strchr(base, '.');
     if (dot != NULL)
         *dot = '\0';
-    for (unsigned int i = 0; i < files->count; i++) {
-        if (usable[i] && !IsFileExtension(files->paths[i], ".chrt") &&
-            CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files->paths[i]), base))
+    for (uint32_t i = 0; i < count; i++) {
+        if (!IsFileExtension(files[i].name, ".chrt") && CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files[i].name), base))
             return (int)i;
     }
     return -1;
@@ -248,14 +267,30 @@ static int ModelFile(const FilePathList* files, const bool* usable, const char* 
 
 // Model file of the model of a door: the file with its name, or the file of the DefImage with its name in the CHRT
 // scripts of the map (the CHRD chunk and the CHRT files, e.g. mpk00/CHARA.chrt). Returns -1 if there is none
-static int DoorModelFile(const FilePathList* files, const bool* usable, const CHRT_Script* scripts, uint32_t scriptCount, const char* name) {
-    int file = ModelFile(files, usable, name);
+static int DoorModelFile(const MapFile* files, uint32_t count, const CHRT_Script* scripts, uint32_t scriptCount, const char* name) {
+    int file = ModelFile(files, count, name);
     for (uint32_t i = 0; file < 0 && i < scriptCount; i++) {
         const char* image = CHRT_ImageFile(&scripts[i], name);
         if (image != NULL)
-            file = ModelFile(files, usable, image);
+            file = ModelFile(files, count, image);
     }
     return file;
+}
+
+// The files of the PKF and PKS files of the folder that aren't extracted (no folder named as the file next to it)
+static void LoadPacks(const char* folder, IPAC_FileList* packed) {
+    FilePathList files = LoadDirectoryFilesEx(folder, ".pkf;.pks", false);
+    for (unsigned int i = 0; i < files.count; i++) {
+        char extracted[1024];
+        File_GetOutputFolder(files.paths[i], "", extracted, sizeof(extracted));
+        if (DirectoryExists(extracted))
+            continue;
+        if (IsFileExtension(files.paths[i], ".pkf"))
+            PKF_LoadFiles(files.paths[i], packed);
+        else
+            PKS_LoadFiles(files.paths[i], packed);
+    }
+    UnloadDirectoryFiles(files);
 }
 
 static void AddInstance(uint32_t model, bool door, Matrix transform) {
@@ -267,32 +302,54 @@ static void AddInstance(uint32_t model, bool door, Matrix transform) {
 }
 
 // The models of the map, and the models of the doors at their placements, from the MT5 and CHRM files of the folder and
-// of one level of subfolders (the extracted PKF files of the map). Each file is loaded once
+// of one level of subfolders (the extracted PKF files of the map), and of the PKF and PKS files of the folder that
+// aren't extracted. Each file is loaded once
 static void LoadModels(const char* folder) {
     const MAPINFO_File* file = &g_view.file;
-    FilePathList files = LoadDirectoryFilesEx(folder, ".mt5;.chrm;.chrt", true);
-    bool* usable = calloc(files.count + 1, sizeof(bool));
-    int* fileModels = malloc((files.count + 1) * sizeof(int)); // Model of each file, -1 if not loaded
-    CHRT_Script* scripts = calloc(files.count + 2, sizeof(CHRT_Script)); // The CHRD chunk and the CHRT files
+    FilePathList paths = LoadDirectoryFilesEx(folder, ".mt5;.chrm;.chrt", true);
+    IPAC_FileList packed = { 0 };
+    LoadPacks(folder, &packed);
+    uint32_t capacity = paths.count + packed.count;
+
+    MapFile* files = calloc(capacity + 1, sizeof(MapFile));
+    uint32_t count = 0;
+    int* fileModels = malloc((capacity + 1) * sizeof(int)); // Model of each file, -1 if not loaded
+    CHRT_Script* scripts = calloc(capacity + 2, sizeof(CHRT_Script)); // The CHRD chunk and the CHRT files
     uint32_t scriptCount = 0;
-    g_view.models = calloc(files.count + 1, sizeof(MT5Render_Model));
-    g_view.instances = calloc(files.count + file->doorCount + 1, sizeof(Instance));
+    g_view.models = calloc(capacity + 1, sizeof(MT5Render_Model));
+    g_view.instances = calloc(capacity + file->doorCount + 1, sizeof(Instance));
     g_view.doorErrors = calloc(file->doorCount + 1, sizeof(const char*));
-    if (usable != NULL && fileModels != NULL && scripts != NULL && g_view.models != NULL && g_view.instances != NULL &&
-        g_view.doorErrors != NULL) {
-        if (g_view.script.commandCount > 0)
-            scripts[scriptCount++] = g_view.script;
-        for (unsigned int i = 0; i < files.count; i++) {
-            const char* relative = files.paths[i] + strlen(folder);
+    if (files != NULL && fileModels != NULL && scripts != NULL && g_view.models != NULL &&
+        g_view.instances != NULL && g_view.doorErrors != NULL) {
+        for (unsigned int i = 0; i < paths.count; i++) {
+            const char* relative = paths.paths[i] + strlen(folder);
             int separators = 0;
             for (const char* p = relative + 1; *p != '\0'; p++)
                 separators += *p == '/' || *p == '\\';
-            usable[i] = separators <= 1;
+            if (separators <= 1)
+                files[count++] = (MapFile) { paths.paths[i], GetFileName(paths.paths[i]), NULL };
+        }
+        // The files of the folder with the name of a packed file are used instead of it (e.g. map.mt5 is the MAP.mt5 of
+        // mpk00.pks with its textures)
+        uint32_t diskCount = count;
+        for (uint32_t i = 0; i < packed.count; i++) {
+            char name[IPAC_FILENAME_SIZE];
+            snprintf(name, sizeof(name), "%s", GetFileNameWithoutExt(packed.files[i].filename));
+            bool onDisk = false;
+            for (uint32_t d = 0; d < diskCount && !onDisk; d++)
+                onDisk = CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files[d].name), name);
+            if (!onDisk && IsFileExtension(packed.files[i].filename, ".mt5;.chrm;.chrt"))
+                files[count++] = (MapFile) { NULL, packed.files[i].filename, &packed.files[i] };
+        }
+
+        if (g_view.script.commandCount > 0)
+            scripts[scriptCount++] = g_view.script;
+        for (uint32_t i = 0; i < count; i++) {
             fileModels[i] = -1;
-            if (usable[i] && file->doorCount > 0 && IsFileExtension(files.paths[i], ".chrt") && CHRT_Load(files.paths[i], &scripts[scriptCount]))
+            if (file->doorCount > 0 && IsFileExtension(files[i].name, ".chrt") && LoadMapScript(&files[i], &scripts[scriptCount]))
                 scriptCount++;
-            else if (usable[i] && IsFileExtension(files.paths[i], ".mt5") && IsMapModel(files.paths[i]) &&
-                MT5Render_LoadModel(files.paths[i], &g_view.models[g_view.modelCount])) {
+            else if (IsFileExtension(files[i].name, ".mt5") && IsMapModel(files[i].name) &&
+                LoadMapModel(&files[i], &packed, &g_view.models[g_view.modelCount])) {
                 fileModels[i] = (int)g_view.modelCount;
                 AddInstance(g_view.modelCount++, false, MatrixIdentity());
             }
@@ -301,12 +358,12 @@ static void LoadModels(const char* folder) {
 
         for (uint32_t i = 0; i < file->doorCount; i++) {
             const MAPINFO_Door* door = &file->doors[i];
-            int f = DoorModelFile(&files, usable, scripts, scriptCount, door->model);
+            int f = DoorModelFile(files, count, scripts, scriptCount, door->model);
             if (f < 0) {
                 g_view.doorErrors[i] = "no model file";
                 continue;
             }
-            if (fileModels[f] < 0 && MT5Render_LoadModel(files.paths[f], &g_view.models[g_view.modelCount]))
+            if (fileModels[f] < 0 && LoadMapModel(&files[f], &packed, &g_view.models[g_view.modelCount]))
                 fileModels[f] = (int)g_view.modelCount++;
             if (fileModels[f] < 0) {
                 g_view.doorErrors[i] = "invalid model file";
@@ -323,9 +380,10 @@ static void LoadModels(const char* folder) {
     for (uint32_t i = g_view.script.commandCount > 0 ? 1 : 0; scripts != NULL && i < scriptCount; i++)
         CHRT_Free(&scripts[i]);
     free(scripts);
-    free(usable);
+    free(files);
     free(fileModels);
-    UnloadDirectoryFiles(files);
+    IPAC_FreeFiles(&packed);
+    UnloadDirectoryFiles(paths);
 }
 
 // Point of a shape in the scene: the shapes have x and z coordinates

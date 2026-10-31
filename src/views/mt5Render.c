@@ -8,6 +8,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "core/file.h"
+#include "formats/archive/ipac.h"
 #include "formats/texture/pvr.h"
 #include "formats/model/mt5.h"
 #include "views/mt5Mesh.h"
@@ -100,17 +101,20 @@ static Texture LoadTextureData(const uint8_t* data, size_t size) {
     return texture;
 }
 
-// Texture of a CHRM file, extracted from the PKF of the scene to the folder of the model as tex_<index>_<ID>.<ext>
-static Texture LoadExternalTexture(const FilePathList* files, const uint8_t id[8]) {
+// Whether a file is a texture extracted from the PKF of the scene with the given ID: tex_<index>_<ID>.<ext>
+static bool IsTextureFile(const char* filename, const uint8_t id[8]) {
     char suffix[20];
     int length = snprintf(suffix, sizeof(suffix), "_");
     for (int i = 0; i < 8; i++)
         length += snprintf(suffix + length, sizeof(suffix) - length, "%02X", id[i]);
     snprintf(suffix + length, sizeof(suffix) - length, ".");
+    return strncmp(filename, "tex_", 4) == 0 && strstr(filename, suffix) != NULL;
+}
 
+// Texture of a CHRM file, extracted from the PKF of the scene to the folder of the model
+static Texture LoadExternalTexture(const FilePathList* files, const uint8_t id[8]) {
     for (unsigned int i = 0; i < files->count; i++) {
-        const char* filename = GetFileName(files->paths[i]);
-        if (strncmp(filename, "tex_", 4) != 0 || strstr(filename, suffix) == NULL)
+        if (!IsTextureFile(GetFileName(files->paths[i]), id))
             continue;
         size_t size = 0;
         uint8_t* data = File_LoadToMemoryDecompressed(files->paths[i], &size);
@@ -124,7 +128,20 @@ static Texture LoadExternalTexture(const FilePathList* files, const uint8_t id[8
     return (Texture) { 0 };
 }
 
-static bool LoadTextures(const MT5_Model* source, const char* filepath, MT5Render_Model* model) {
+// Texture of a CHRM file, from the files of the PKF of the scene loaded in memory
+static Texture LoadPackedTexture(const IPAC_FileList* files, const uint8_t id[8]) {
+    for (uint32_t i = 0; files != NULL && i < files->count; i++) {
+        if (!IsTextureFile(files->files[i].filename, id))
+            continue;
+        Texture texture = LoadTextureData(files->files[i].data, files->files[i].size);
+        if (texture.id > 0)
+            return texture;
+    }
+    return (Texture) { 0 };
+}
+
+// The external textures are searched in packedFiles if it isn't NULL, in the folder of the model otherwise
+static bool LoadTextures(const MT5_Model* source, const char* filepath, const IPAC_FileList* packedFiles, MT5Render_Model* model) {
     model->textureCount = source->textureCount;
     if (source->textureCount == 0)
         return true;
@@ -136,23 +153,37 @@ static bool LoadTextures(const MT5_Model* source, const char* filepath, MT5Rende
     bool external = false;
     for (uint32_t i = 0; i < source->textureCount; i++)
         external |= source->textures[i].data == NULL;
-    if (external)
+    if (external && packedFiles == NULL)
         files = LoadDirectoryFiles(GetDirectoryPath(filepath));
 
     for (uint32_t i = 0; i < source->textureCount; i++) {
         const MT5_Texture* texture = &source->textures[i];
         if (texture->data != NULL)
             model->textures[i] = LoadTextureData(texture->data, texture->size);
+        else if (packedFiles != NULL)
+            model->textures[i] = LoadPackedTexture(packedFiles, texture->id);
         else
             model->textures[i] = LoadExternalTexture(&files, texture->id);
         if (model->textures[i].id > 0)
             model->loadedTextures++;
     }
 
-    if (external)
+    if (external && packedFiles == NULL)
         UnloadDirectoryFiles(files);
     if (model->loadedTextures < model->textureCount)
         fprintf(stderr, "[MT5Render_LoadModel]: Loaded %u of %u textures of %s\n", model->loadedTextures, model->textureCount, GetFileName(filepath));
+    return true;
+}
+
+static bool Build(MT5_Model* source, const char* filepath, const IPAC_FileList* packedFiles, MT5Render_Model* model) {
+    model->nodeCount = source->nodeCount;
+    bool success = MT5Mesh_Build(source, &model->mesh) && LoadTextures(source, filepath, packedFiles, model);
+    MT5_Free(source);
+    if (!success) {
+        fputs("[MT5Render_LoadModel]: Memory error\n", stderr);
+        MT5Render_FreeModel(model);
+        return false;
+    }
     return true;
 }
 
@@ -161,16 +192,15 @@ bool MT5Render_LoadModel(const char* filepath, MT5Render_Model* model) {
     MT5_Model source;
     if (!MT5_Load(filepath, &source))
         return false;
+    return Build(&source, filepath, NULL, model);
+}
 
-    model->nodeCount = source.nodeCount;
-    bool success = MT5Mesh_Build(&source, &model->mesh) && LoadTextures(&source, filepath, model);
-    MT5_Free(&source);
-    if (!success) {
-        fputs("[MT5Render_LoadModel]: Memory error\n", stderr);
-        MT5Render_FreeModel(model);
+bool MT5Render_LoadPackedModel(const IPAC_File* file, const IPAC_FileList* files, MT5Render_Model* model) {
+    memset(model, 0, sizeof(*model));
+    MT5_Model source;
+    if (!MT5_LoadFromMemory(file->data, file->size, file->filename, &source))
         return false;
-    }
-    return true;
+    return Build(&source, file->filename, files, model);
 }
 
 void MT5Render_FreeModel(MT5Render_Model* model) {
