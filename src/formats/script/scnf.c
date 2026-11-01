@@ -7,7 +7,7 @@
 #include <windows.h>
 #endif
 #include "core/file.h"
-#include "formats/text/scnf.h"
+#include "formats/script/scnf.h"
 
 // A SCNF file is a header followed by blocks, one per character (or group of lines).
 // Each block has a script, a table of lines and the strings: voice names and subtitles in EUC-JP.

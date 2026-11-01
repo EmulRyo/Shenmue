@@ -56,15 +56,15 @@ set(SRC
     src/formats/model/mt5.c
     src/formats/model/mt5.h
 
+    src/formats/script/chrt.c
+    src/formats/script/chrt.h
+    src/formats/script/scnf.c
+    src/formats/script/scnf.h
+
     src/formats/sound/snd.c
     src/formats/sound/snd.h
     src/formats/sound/xwm.c
     src/formats/sound/xwm.h
-
-    src/formats/text/chrt.c
-    src/formats/text/chrt.h
-    src/formats/text/scnf.c
-    src/formats/text/scnf.h
 
     src/formats/texture/pvr.c
     src/formats/texture/pvr.h

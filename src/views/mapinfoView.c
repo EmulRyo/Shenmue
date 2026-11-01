@@ -13,7 +13,7 @@
 #include "formats/archive/pkf.h"
 #include "formats/archive/pks.h"
 #include "formats/map/mapinfo.h"
-#include "formats/text/chrt.h"
+#include "formats/script/chrt.h"
 #include "views/mt5Render.h"
 #include "views/freeCamera.h"
 #include "views/listView.h"

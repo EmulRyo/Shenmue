@@ -5,7 +5,7 @@
 #include <ctype.h>
 #include <math.h>
 #include "core/file.h"
-#include "formats/text/chrt.h"
+#include "formats/script/chrt.h"
 
 // A CHRT file is a CHRS block with a list of commands followed by a STRG block with the strings.
 // Each command is:

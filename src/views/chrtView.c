@@ -8,7 +8,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "raygui.h"
-#include "formats/text/chrt.h"
+#include "formats/script/chrt.h"
 #include "views/mt5Render.h"
 #include "views/freeCamera.h"
 #include "views/listView.h"
