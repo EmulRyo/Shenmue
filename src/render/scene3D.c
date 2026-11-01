@@ -3,7 +3,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include "formats/animation/auth.h"
-#include "views/scene3D.h"
+#include "render/scene3D.h"
 
 float Scene3D_FrameTime(void) {
     return fminf(GetFrameTime(), 0.25f);

@@ -7,9 +7,9 @@
 #include "raygui.h"
 #include "formats/sound/snd.h"
 #include "audio/sndSynth.h"
-#include "views/listView.h"
+#include "ui/list.h"
+#include "ui/waveform.h"
 #include "views/sndView.h"
-#include "views/waveform.h"
 
 #define SNDVIEW_LABEL_SIZE 64
 #define SNDVIEW_LIST_WIDTH 300.0f
@@ -207,7 +207,7 @@ static bool CreateLabels(void) {
         g_player.invalidSamples[i] = sample->pcm == NULL;
         g_player.invalidCount += sample->pcm == NULL;
         if (sample->pcm == NULL)
-            snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, LISTVIEW_FAILED "%u: invalid", i);
+            snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, LIST_FAILED "%u: invalid", i);
         else
             snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, "%u: %s, %u frames%s", i,
                 sample->encoding == SND_ENCODING_ADPCM ? "ADPCM" : "PCM", sample->frameCount, sample->loop ? ", loop" : "");
@@ -391,7 +391,7 @@ void SNDView_Draw(Rectangle area) {
     SetMode((Mode)mode);
 
     int active = g_player.selected[g_player.mode];
-    ListView_Draw(list, g_player.labelPointers[g_player.mode], g_player.mode == MODE_SAMPLES ? g_player.invalidSamples : NULL,
+    List_Draw(list, g_player.labelPointers[g_player.mode], g_player.mode == MODE_SAMPLES ? g_player.invalidSamples : NULL,
         ItemCount(g_player.mode), &g_player.listScroll[g_player.mode], &active, &g_player.listFocus);
     if (active >= 0 && active != g_player.selected[g_player.mode])
         Select(active);

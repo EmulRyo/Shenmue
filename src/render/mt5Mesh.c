@@ -6,7 +6,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include "formats/model/mt5.h"
-#include "views/mt5Mesh.h"
+#include "render/mt5Mesh.h"
 
 #define MT5MESH_ARM_SPREAD 12.0f // Degrees
 

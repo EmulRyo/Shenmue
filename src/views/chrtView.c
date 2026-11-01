@@ -9,10 +9,10 @@
 #include <rlgl.h>
 #include "raygui.h"
 #include "formats/script/chrt.h"
-#include "views/mt5Render.h"
-#include "views/freeCamera.h"
-#include "views/listView.h"
-#include "views/scene3D.h"
+#include "render/mt5Render.h"
+#include "render/freeCamera.h"
+#include "render/scene3D.h"
+#include "ui/list.h"
 #include "views/chrtView.h"
 
 #define CHRTVIEW_FOVY 45.0f
@@ -221,7 +221,7 @@ static bool CreateLabels(void) {
         const CHRTView_Character* character = &g_view.characters[i];
         g_view.failed[i] = character->model < 0;
         if (character->model < 0)
-            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, LISTVIEW_FAILED "%s  %s%s%s", character->info.id,
+            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, LIST_FAILED "%s  %s%s%s", character->info.id,
                 character->info.image != NULL ? character->info.image : "", character->info.image != NULL ? "  " : "", character->error);
         else
             snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s  %s%s%s", character->info.id, GetFileName(g_view.models[character->model].path),
@@ -434,7 +434,7 @@ void CHRTView_Draw(Rectangle area) {
     int active = g_view.selected;
     int alignment = GuiGetStyle(LISTVIEW, TEXT_ALIGNMENT);
     GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, TEXT_ALIGN_LEFT);
-    ListView_Draw(list, g_view.labelPointers, g_view.failed, (int)g_view.characterCount, &g_view.listScroll, &active, &g_view.listFocus);
+    List_Draw(list, g_view.labelPointers, g_view.failed, (int)g_view.characterCount, &g_view.listScroll, &active, &g_view.listFocus);
     GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, alignment);
     if (active != g_view.selected) {
         if (active >= 0)

@@ -6,7 +6,7 @@
 #include <raylib.h>
 #include "raygui.h"
 #include "formats/sound/xwm.h"
-#include "views/waveform.h"
+#include "ui/waveform.h"
 #include "views/xwmView.h"
 
 typedef struct {

@@ -1,11 +1,11 @@
 #include <stdbool.h>
 #include <raylib.h>
 #include "raygui.h"
-#include "views/listView.h"
+#include "ui/list.h"
 
 static const Color g_failedColor = { 230, 70, 60, 255 };
 
-void ListView_Draw(Rectangle bounds, char** labels, const bool* failed, int count, int* scroll, int* active, int* focus) {
+void List_Draw(Rectangle bounds, char** labels, const bool* failed, int count, int* scroll, int* active, int* focus) {
     GuiListViewEx(bounds, labels, count, scroll, active, focus);
     if (failed == NULL)
         return;

@@ -14,10 +14,10 @@
 #include "formats/archive/pks.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/chrt.h"
-#include "views/mt5Render.h"
-#include "views/freeCamera.h"
-#include "views/listView.h"
-#include "views/scene3D.h"
+#include "render/mt5Render.h"
+#include "render/freeCamera.h"
+#include "render/scene3D.h"
+#include "ui/list.h"
 #include "views/mapinfoView.h"
 
 #define MAPINFOVIEW_LABEL_SIZE   160
@@ -394,7 +394,7 @@ static void FitCamera(Rectangle area) {
 // The failed items are marked in the list
 static void AddItem(ItemKind kind, uint32_t index, const char* text, bool failed) {
     g_view.items[g_view.itemCount] = (Item) { kind, index };
-    snprintf(g_view.labels[g_view.itemCount], MAPINFOVIEW_LABEL_SIZE, "%s%s", failed ? LISTVIEW_FAILED : "", text);
+    snprintf(g_view.labels[g_view.itemCount], MAPINFOVIEW_LABEL_SIZE, "%s%s", failed ? LIST_FAILED : "", text);
     g_view.labelPointers[g_view.itemCount] = g_view.labels[g_view.itemCount];
     g_view.failedItems[g_view.itemCount] = failed;
     g_view.itemCount++;
@@ -800,7 +800,7 @@ void MAPINFOView_Draw(Rectangle area) {
     int active = g_view.selected;
     int alignment = GuiGetStyle(LISTVIEW, TEXT_ALIGNMENT);
     GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, TEXT_ALIGN_LEFT);
-    ListView_Draw(list, g_view.labelPointers, g_view.failedItems, (int)g_view.itemCount, &g_view.listScroll, &active, &g_view.listFocus);
+    List_Draw(list, g_view.labelPointers, g_view.failedItems, (int)g_view.itemCount, &g_view.listScroll, &active, &g_view.listFocus);
     GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, alignment);
     if (active != g_view.selected)
         Select(active);

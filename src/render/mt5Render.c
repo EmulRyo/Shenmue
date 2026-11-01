@@ -11,8 +11,8 @@
 #include "formats/archive/ipac.h"
 #include "formats/texture/pvr.h"
 #include "formats/model/mt5.h"
-#include "views/mt5Mesh.h"
-#include "views/mt5Render.h"
+#include "render/mt5Mesh.h"
+#include "render/mt5Render.h"
 
 typedef struct {
     float       depth;

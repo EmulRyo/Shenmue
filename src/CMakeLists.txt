@@ -71,32 +71,34 @@ set(SRC
     src/formats/texture/spr.c
     src/formats/texture/spr.h
 
+    src/render/freeCamera.c
+    src/render/freeCamera.h
+    src/render/mt5Mesh.c
+    src/render/mt5Mesh.h
+    src/render/mt5Render.c
+    src/render/mt5Render.h
+    src/render/scene3D.c
+    src/render/scene3D.h
+
+    src/ui/list.c
+    src/ui/list.h
+    src/ui/waveform.c
+    src/ui/waveform.h
+
     src/views/authView.c
     src/views/authView.h
     src/views/chrtView.c
     src/views/chrtView.h
-    src/views/freeCamera.c
-    src/views/freeCamera.h
     src/views/imageView.c
     src/views/imageView.h
-    src/views/listView.c
-    src/views/listView.h
     src/views/mapinfoView.c
     src/views/mapinfoView.h
-    src/views/mt5Mesh.c
-    src/views/mt5Mesh.h
-    src/views/mt5Render.c
-    src/views/mt5Render.h
     src/views/mt5View.c
     src/views/mt5View.h
-    src/views/scene3D.c
-    src/views/scene3D.h
     src/views/sndView.c
     src/views/sndView.h
     src/views/views.c
     src/views/views.h
-    src/views/waveform.c
-    src/views/waveform.h
     src/views/xwmView.c
     src/views/xwmView.h
     PARENT_SCOPE

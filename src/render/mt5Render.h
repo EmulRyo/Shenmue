@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <raylib.h>
 #include "formats/archive/ipac.h"
-#include "views/mt5Mesh.h"
+#include "render/mt5Mesh.h"
 
 // Drawing of MT5/CHRM models with their textures, for the views that show models. The textures of CHRM files are
 // searched in the folder of the model, where the PKF of the scene is extracted (tex_<index>_<texture ID>.pvr files),

@@ -7,9 +7,9 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "raygui.h"
-#include "views/mt5Render.h"
-#include "views/freeCamera.h"
-#include "views/scene3D.h"
+#include "render/mt5Render.h"
+#include "render/freeCamera.h"
+#include "render/scene3D.h"
 #include "views/mt5View.h"
 
 #define MT5VIEW_FOVY 45.0f

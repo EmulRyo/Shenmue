@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <raylib.h>
-#include "views/waveform.h"
+#include "ui/waveform.h"
 
 void Waveform_Compute(Waveform* waveform, const int16_t* pcm, uint32_t frameCount, uint32_t channels) {
     waveform->frameCount = frameCount;

@@ -3,7 +3,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
-#include "views/freeCamera.h"
+#include "render/freeCamera.h"
 
 void FreeCamera_Reset(FreeCamera* camera, Vector3 center, Vector3 front, float radius, float fovy) {
     camera->target = center;

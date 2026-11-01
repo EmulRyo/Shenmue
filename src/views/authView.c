@@ -9,8 +9,8 @@
 #include "raygui.h"
 #include "formats/animation/auth.h"
 #include "formats/animation/motn.h"
-#include "views/freeCamera.h"
-#include "views/scene3D.h"
+#include "render/freeCamera.h"
+#include "render/scene3D.h"
 #include "views/authView.h"
 
 #define AUTHVIEW_LABEL_SIZE     128
