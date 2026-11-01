@@ -28,6 +28,7 @@
 #define MAPINFOVIEW_HEIGHT       1.7f    // Of the characters, drawn as cylinders
 #define MAPINFOVIEW_RADIUS       0.25f
 #define MAPINFOVIEW_CIRCLE_SIDES 24
+#define MAPINFOVIEW_JUKEBOX_ID   "JBOX"  // Character of the jukebox in the CHRT scripts of the map
 
 typedef enum {
     ITEM_INFO,
@@ -35,6 +36,7 @@ typedef enum {
     ITEM_LIGHT,
     ITEM_CHARACTER,
     ITEM_DOOR,
+    ITEM_JUKEBOX,
 } ItemKind;
 
 typedef struct {
@@ -45,6 +47,7 @@ typedef struct {
 typedef enum {
     LAYER_MAP,
     LAYER_DOORS,
+    LAYER_JUKEBOX,
     LAYER_GROUPS,           // One per COLS group, MAPINFO_GROUP_COUNT
     LAYER_LIGHTS = LAYER_GROUPS + MAPINFO_GROUP_COUNT,
     LAYER_CAMERAS,
@@ -54,7 +57,7 @@ typedef enum {
 } Layer;
 
 static const char* g_layerNames[LAYER_COUNT] = {
-    "Map", "Doors", "COLI", "HGHT", "EVNT", "UNDU", "SOND", "PROP", "Lights", "Cameras", "Characters", "Labels",
+    "Map", "Doors", "Jukebox", "COLI", "HGHT", "EVNT", "UNDU", "SOND", "PROP", "Lights", "Cameras", "Characters", "Labels",
 };
 
 static const Color g_groupColors[MAPINFO_GROUP_COUNT] = {
@@ -66,6 +69,15 @@ static const Color g_cameraColor = { 220, 220, 220, 255 };
 static const Color g_selectedColor = { 255, 230, 60, 255 };
 static const Color g_characterColor = { 90, 170, 255, 255 };
 
+// The JBOX character of a CHRT script of the map (the bars), placed with the model of its DefImage
+typedef struct {
+    bool        present;
+    char        model[IPAC_FILENAME_SIZE]; // File of its DefImage, e.g. "JUKK202G.MT5"
+    float       position[3];
+    float       angle;          // Around the vertical axis, degrees
+    const char* error;          // Why its model couldn't be loaded, NULL if it was
+} Jukebox;
+
 typedef struct {
     bool                open;
     char                filename[256];
@@ -75,17 +87,19 @@ typedef struct {
     CHRT_Character*     characters;
     MT5Render           render;
     uint32_t            modelCount;
-    MT5Render_Model*    models;         // The models of the map, then the models of the doors
+    MT5Render_Model*    models;         // The models of the map, then the models of the doors and of the jukebox
     uint32_t            mapModelCount;
     uint32_t            instanceCount;
     MT5Render_Instance* instances;      // Each model of the map (mapModelCount), then each door with its model
+                                        // (loadedDoors), then the jukebox if its model was loaded
     uint32_t            loadedDoors;    // Doors with their model
+    Jukebox             jukebox;
     const char**        doorErrors;     // Why the model of each door couldn't be loaded, NULL if it was
     uint32_t            itemCount;
     Item*               items;
     char                (*labels)[MAPINFOVIEW_LABEL_SIZE];
     char**              labelPointers;
-    bool*               failedItems;    // Doors without their model
+    bool*               failedItems;    // Doors and jukebox without their model
     int                 listScroll;
     int                 listFocus;
     int                 selected;       // Item, -1 if none
@@ -108,7 +122,7 @@ typedef struct {
 
 static MAPINFOView_State g_view;
 static MAPINFOView_Options g_options = {
-    .layers = { [LAYER_MAP] = true, [LAYER_DOORS] = true, [LAYER_CHARACTERS] = true, [LAYER_LABELS] = true },
+    .layers = { [LAYER_MAP] = true, [LAYER_DOORS] = true, [LAYER_JUKEBOX] = true, [LAYER_CHARACTERS] = true, [LAYER_LABELS] = true },
 };
 
 static Vector3 LightPosition(const MAPINFO_Light* light) {
@@ -286,15 +300,38 @@ static void LoadPacks(const char* folder, IPAC_FileList* packed) {
     UnloadDirectoryFiles(files);
 }
 
+// The first positioned JBOX character of the scripts. Its model is the file of the DefImage of its image
+static void FindJukebox(const CHRT_Script* scripts, uint32_t scriptCount) {
+    for (uint32_t s = 0; s < scriptCount; s++) {
+        const CHRT_Script* script = &scripts[s];
+        for (uint32_t c = 0; c < script->commandCount; c++) {
+            if (script->commands[c].parent != -1 || !CHRT_IsCommand(&script->commands[c], "Character"))
+                continue;
+            CHRT_Character character;
+            CHRT_ReadCharacter(script, c, &character);
+            if (strcmp(character.id, MAPINFOVIEW_JUKEBOX_ID) != 0 || !character.positioned)
+                continue;
+            Jukebox* jukebox = &g_view.jukebox;
+            const char* model = character.image != NULL ? CHRT_ImageFile(script, character.image) : NULL;
+            jukebox->present = true;
+            snprintf(jukebox->model, sizeof(jukebox->model), "%s", model != NULL ? model : character.id);
+            memcpy(jukebox->position, character.position, sizeof(jukebox->position));
+            jukebox->angle = character.angle[1];
+            jukebox->error = model == NULL ? "no DefImage" : NULL;
+            return;
+        }
+    }
+}
+
 static void AddInstance(uint32_t model, Matrix transform) {
     MT5Render_Model* instanced = &g_view.models[model];
     g_view.instances[g_view.instanceCount++] = (MT5Render_Instance) { instanced, transform,
         Vector3Transform(instanced->mesh.center, transform), 0 };
 }
 
-// The models of the map, and the models of the doors at their placements, from the MT5 and CHRM files of the folder and
-// of one level of subfolders (the extracted PKF files of the map), and of the PKF and PKS files of the folder that
-// aren't extracted. Each file is loaded once
+// The models of the map, the models of the doors at their placements and the jukebox, from the MT5 and CHRM files of
+// the folder and of one level of subfolders (the extracted PKF files of the map), and of the PKF and PKS files of the
+// folder that aren't extracted. Each file is loaded once
 static void LoadModels(const char* folder) {
     const MAPINFO_File* file = &g_view.file;
     FilePathList paths = LoadDirectoryFilesEx(folder, ".mt5;.chrm;.chrt", true);
@@ -308,7 +345,7 @@ static void LoadModels(const char* folder) {
     CHRT_Script* scripts = calloc(capacity + 2, sizeof(CHRT_Script)); // The CHRD chunk and the CHRT files
     uint32_t scriptCount = 0;
     g_view.models = calloc(capacity + 1, sizeof(MT5Render_Model));
-    g_view.instances = calloc(capacity + file->doorCount + 1, sizeof(MT5Render_Instance));
+    g_view.instances = calloc(capacity + file->doorCount + 2, sizeof(MT5Render_Instance));
     g_view.doorErrors = calloc(file->doorCount + 1, sizeof(const char*));
     if (files != NULL && fileModels != NULL && scripts != NULL && g_view.models != NULL &&
         g_view.instances != NULL && g_view.doorErrors != NULL) {
@@ -337,7 +374,7 @@ static void LoadModels(const char* folder) {
             scripts[scriptCount++] = g_view.script;
         for (uint32_t i = 0; i < count; i++) {
             fileModels[i] = -1;
-            if (file->doorCount > 0 && IsFileExtension(files[i].name, ".chrt") && LoadMapScript(&files[i], &scripts[scriptCount]))
+            if (IsFileExtension(files[i].name, ".chrt") && LoadMapScript(&files[i], &scripts[scriptCount]))
                 scriptCount++;
             else if (IsFileExtension(files[i].name, ".mt5") && IsMapModel(files[i].name) &&
                 LoadMapModel(&files[i], &packed, &g_view.models[g_view.modelCount])) {
@@ -365,6 +402,22 @@ static void LoadModels(const char* folder) {
             transform = MatrixMultiply(transform, MatrixTranslate(door->position[0], door->position[1], door->position[2]));
             AddInstance((uint32_t)fileModels[f], transform);
             g_view.loadedDoors++;
+        }
+
+        FindJukebox(scripts, scriptCount);
+        Jukebox* jukebox = &g_view.jukebox;
+        int f = jukebox->present && jukebox->error == NULL ? ModelFile(files, count, jukebox->model) : -1;
+        if (jukebox->present && jukebox->error == NULL && f < 0)
+            jukebox->error = "no model file";
+        if (f >= 0 && fileModels[f] < 0 && LoadMapModel(&files[f], &packed, &g_view.models[g_view.modelCount]))
+            fileModels[f] = (int)g_view.modelCount++;
+        if (f >= 0 && fileModels[f] < 0)
+            jukebox->error = "invalid model file";
+        else if (f >= 0) {
+            // Rotated around the vertical axis as the characters (angle 0 faces -Z), then moved to its position
+            Matrix transform = MatrixMultiply(MatrixRotateY(jukebox->angle * DEG2RAD),
+                MatrixTranslate(jukebox->position[0], jukebox->position[1], jukebox->position[2]));
+            AddInstance((uint32_t)fileModels[f], transform);
         }
     }
     // The script of the CHRD chunk is kept
@@ -457,10 +510,10 @@ static const char* ScnText(uint32_t version) {
     return version == 0x20000 ? "SH-4 code" : version == 0x100 ? "bytecode" : "unknown version";
 }
 
-// Information lines, then the cameras, the lights, the characters and the doors
+// Information lines, then the cameras, the lights, the characters, the doors and the jukebox
 static bool CreateItems(void) {
     const MAPINFO_File* file = &g_view.file;
-    uint32_t count = 16 + file->bankCount + file->cameraCount + file->lightCount + g_view.characterCount + file->doorCount;
+    uint32_t count = 17 + file->bankCount + file->cameraCount + file->lightCount + g_view.characterCount + file->doorCount;
     g_view.items = malloc(count * sizeof(Item));
     g_view.labels = malloc(count * sizeof(*g_view.labels));
     g_view.labelPointers = malloc(count * sizeof(*g_view.labelPointers));
@@ -532,6 +585,11 @@ static bool CreateItems(void) {
             door->model, door->position[0], door->position[1], door->position[2], door->angle, error != NULL ? "  " : "",
             error != NULL ? error : ""), error != NULL);
     }
+    const Jukebox* jukebox = &g_view.jukebox;
+    if (jukebox->present)
+        AddItem(ITEM_JUKEBOX, 0, TextFormat("Jukebox %s  (%.2f, %.2f, %.2f)  %.1f deg%s%s", jukebox->model,
+            jukebox->position[0], jukebox->position[1], jukebox->position[2], jukebox->angle,
+            jukebox->error != NULL ? "  " : "", jukebox->error != NULL ? jukebox->error : ""), jukebox->error != NULL);
     return true;
 }
 
@@ -612,6 +670,10 @@ static void Select(int item) {
         const float* position = g_view.file.doors[selected->index].position;
         target = (Vector3) { position[0], position[1] + 1.0f, position[2] };
     }
+    else if (selected->kind == ITEM_JUKEBOX) {
+        const float* position = g_view.jukebox.position;
+        target = (Vector3) { position[0], position[1] + 0.75f, position[2] };
+    }
     else
         return;
     g_view.camera.target = target;
@@ -646,12 +708,16 @@ static void UpdateInput(Rectangle scene) {
     g_view.time += Scene3D_FrameTime();
 }
 
-// The instances of the visible layers: the models of the map are before the doors
+// The instances of the visible layers: the models of the map, then the doors, then the jukebox
 static void DrawModels(Camera3D camera) {
-    uint32_t first = g_options.layers[LAYER_MAP] ? 0 : g_view.mapModelCount;
-    uint32_t end = g_options.layers[LAYER_DOORS] ? g_view.instanceCount : g_view.mapModelCount;
-    if (first < end)
-        MT5Render_DrawInstances(&g_view.render, g_view.instances + first, end - first, camera);
+    uint32_t doors = g_view.mapModelCount, jukebox = doors + g_view.loadedDoors;
+    const uint32_t starts[] = { 0, doors, jukebox };
+    const uint32_t ends[] = { doors, jukebox, g_view.instanceCount };
+    const Layer layers[] = { LAYER_MAP, LAYER_DOORS, LAYER_JUKEBOX };
+    for (int i = 0; i < 3; i++) {
+        if (g_options.layers[layers[i]] && starts[i] < ends[i])
+            MT5Render_DrawInstances(&g_view.render, g_view.instances + starts[i], ends[i] - starts[i], camera);
+    }
 }
 
 // Height of the point of a shape: the height of HGHT, the height of each corner of UNDU, 0 for the rest
@@ -839,8 +905,8 @@ void MAPINFOView_Draw(Rectangle area) {
             file->doorCount, g_view.loadedDoors < file->doorCount ?
                 TextFormat(" (%u without their model)", file->doorCount - g_view.loadedDoors) : ""),
         g_view.mapCamera && camera != NULL ?
-            TextFormat("Camera %s   V: free camera   F: fly   R: reset the free camera   Click on the list: select a camera, light, character or door", camera->id) :
-            TextFormat("%s   R: reset   V: camera of the map   Click on the list: select a camera, light, character or door",
+            TextFormat("Camera %s   V: free camera   F: fly   R: reset the free camera   Click on the list: select a camera, light, character, door or jukebox", camera->id) :
+            TextFormat("%s   R: reset   V: camera of the map   Click on the list: select a camera, light, character, door or jukebox",
                 FreeCamera_Help(&g_view.camera)),
     };
 

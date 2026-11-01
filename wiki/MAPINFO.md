@@ -125,6 +125,22 @@ The model is scaled, rotated around the vertical axis and moved to its position,
 
 A door and a dark box are often placed together, at the same or almost the same position, with the same angle or with angles 180° apart.
 
+### Jukebox
+
+The program of the 13 bars with a jukebox (`dbhb`, `dgct` and `dsli` of `scene/01`, `02` and `03`, `mfsy` and `mkyu` of `scene/02` and `03`) uses the jukebox as a character: its code has the IDs `JBOX` (the jukebox) and `JCNT` as 4-character literals, next to other character IDs such as `AKIR`, `ASTD` or `MO01`, and its data has strings of the jukebox such as `HMOT_JBX.BIN` and the list of its songs (`bgm045.snd`, `bgm015.snd`...). The jukebox isn't placed by the program nor by the chunks of the file: it is the character `JBOX` of a [CHRT](CHRT) script (`CHARA`) of a [PKF](PKF) of the map folder, with the model of its `DefImage("JBOX")`:
+
+| Maps   | PKF           | Model          | Position                   | Angle |
+|--------|---------------|----------------|----------------------------|------:|
+| `dbhb` | `jukebox.pkf` | `JUKK202G.MT5` | (4.5, 0, -8.09)            | 0     |
+| `dgct` | `mpk00.pkf`   | `JUKK203G.MT5` | (4.3, 0, -0.69)            | 229.99 |
+| `mkyu` | `mpk00.pkf`   | `JUKK204G.MT5` | (-79.1523, 0.0007, 46.2496) | -45  |
+| `mfsy` | `alpha.pkf`   | `JUKK205G.MT5` | (-29.419, 0, 76.4475)      | 44.99 |
+| `dsli` | `mpk00.pkf`   | `JUKK206G.MT5` | (-0.754, 0, -0.086)        | 180   |
+
+The model file is in the PKS of the same name (e.g. `jukebox.pks`). The package that isn't `mpk00` is named in the data of the program: `JUKEBOX` after `scene/01/DBHB` in `scene/01/dbhb`, `ALPHA` after `scene/02/MFSY` in `scene/02/mfsy`. The character is a standing object with a collision: `Image("JBOX")`, `OBJECT`, `FLAGS("DISP")`, `Position`, `Angle` (none in `dbhb`), `SHADOWOFF`, `TinyMot`, and in all but `dsli` `Coli(8)`, `Size(1.0, 1.5, 0.55)` and `Level(1.0)`. The position and the angle are in the coordinates of the map models and the cameras; the model is made around the origin, on the floor, with its front towards -Z at angle 0, and the placed jukebox stands with its back against a wall of the bar.
+
+The same scripts have the characters `JCNT`, `ASTD` and `D_TE` (with `Position(0, 0, 0)`, or without a position in `dgct`) and `YKUR` (the model `YKB_UR.MT5` of the `DefImage("YKB_UDE_R")`, a right arm, placed next to the jukebox). In `mfsy` they are in another package, `alp_juke.pkf` (named `ALP_JUKE` in the program). `scene/03/m3fb` and `scene/03/ma00` also have `JBOX` in their program, but no jukebox character in their folder.
+
 ## CHRD — Characters
 
 Holds a [CHRT](CHRT) script: the characters and objects of the map, with their models, positions and flags.
@@ -164,7 +180,7 @@ Bit `0x400000` of `flags` is set in 362 cameras, always together with bit `0x200
 
 ### Cameras near the origin
 
-Bit `0x200` (almost always together with bit `0x2000`) is set in many cameras whose values stay near the origin, even in maps whose other cameras are 100 or more units away. In the maps with a camera beyond 30 units, 985 of the 1200 cameras with bit `0x200` stay within 5 units of the origin, against 24 of the 1087 cameras without it. Those positions are *probably* relative to a character or an object, not to the map. Cameras `0150` to `0152` of the shops are an example: their targets are about 0.25 units from the origin, with a field of view of 15 (a close-up). The 13 files that have them (`dbhb`, `dgct`, `dsli`, `mfsy` and `mkyu`) are the bars with a jukebox, and their [scene program](#scn3--scene-program) contains the strings `JBOX` and `JCNT`: they are *probably* the cameras of the jukebox, relative to it. Its position isn't in the chunks of the file (only `scene/03/m3fb` and `scene/03/ma00` also contain `JBOX`, without these cameras).
+Bit `0x200` (almost always together with bit `0x2000`) is set in many cameras whose values stay near the origin, even in maps whose other cameras are 100 or more units away. In the maps with a camera beyond 30 units, 985 of the 1200 cameras with bit `0x200` stay within 5 units of the origin, against 24 of the 1087 cameras without it. Those positions are *probably* relative to a character or an object, not to the map. Cameras `0150` to `0152` of the shops are an example: their targets are about 0.25 units from the origin, with a field of view of 15 (a close-up). The 13 files that have them (`dbhb`, `dgct`, `dsli`, `mfsy` and `mkyu`) are the bars with a jukebox, and their [scene program](#scn3--scene-program) contains the strings `JBOX` and `JCNT`: they are *probably* the cameras of the jukebox, relative to it or to Ryo in front of it. Its position isn't in the chunks of the file but in a CHRT script of the map folder (see [Jukebox](#jukebox)); only `scene/03/m3fb` and `scene/03/ma00` also contain `JBOX`, without these cameras.
 
 ## LGHT — Lights
 
