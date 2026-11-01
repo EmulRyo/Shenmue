@@ -110,11 +110,13 @@ static int32_t LoadCharacterModel(const char* path) {
 }
 
 // As the nodes of the models: rotation around X, Y and Z, and translation. The characters not positioned in the scene
-// are placed at the origin
-static Matrix CharacterTransform(const CHRT_Character* character) {
+// are placed at the origin. The models of the persons have their origin at the hips (the motions place them), so they
+// are lifted to stand at their position
+static Matrix CharacterTransform(const CHRT_Character* character, const MT5Render_Model* model) {
     const float* angle = character->angle;
     const float* position = character->position;
-    Matrix matrix = MatrixRotateX(angle[0] * DEG2RAD);
+    Matrix matrix = MatrixTranslate(0.0f, character->human ? -MT5Render_Bottom(model) : 0.0f, 0.0f);
+    matrix = MatrixMultiply(matrix, MatrixRotateX(angle[0] * DEG2RAD));
     matrix = MatrixMultiply(matrix, MatrixRotateY(angle[1] * DEG2RAD));
     matrix = MatrixMultiply(matrix, MatrixRotateZ(angle[2] * DEG2RAD));
     if (!character->positioned)
@@ -126,7 +128,6 @@ static void LoadCharacter(uint32_t index, const char* folder) {
     CHRTView_Character* character = &g_view.characters[g_view.characterCount++];
     CHRT_ReadCharacter(&g_view.script, index, &character->info);
     character->model = -1;
-    character->transform = CharacterTransform(&character->info);
 
     char path[CHRTVIEW_PATH_SIZE];
     if (character->info.image == NULL)
@@ -142,6 +143,7 @@ static void LoadCharacter(uint32_t index, const char* folder) {
     }
 
     const MT5Mesh* mesh = &g_view.models[character->model].model.mesh;
+    character->transform = CharacterTransform(&character->info, &g_view.models[character->model].model);
     character->center = Vector3Transform(mesh->center, character->transform);
     character->radius = mesh->radius;
     g_view.modelledCount++;

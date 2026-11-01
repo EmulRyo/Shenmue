@@ -49,6 +49,8 @@ void MT5Render_FreeModel(MT5Render_Model* model);
 // Copies the vertices of the triangles of the model, placed with transform, to points (mesh.triangleCount * 3 of them).
 // Returns the number of vertices
 uint32_t MT5Render_Vertices(const MT5Render_Model* model, Matrix transform, Vector3* points);
+// Lowest height of the vertices of the model, in model space. 0 if it has none
+float MT5Render_Bottom(const MT5Render_Model* model);
 // The vertices of the triangles of the instances, in a new array with room for extra more points. Returns NULL on
 // memory error
 Vector3* MT5Render_InstanceVertices(const MT5Render_Instance* instances, uint32_t count, uint32_t extra, uint32_t* vertexCount);

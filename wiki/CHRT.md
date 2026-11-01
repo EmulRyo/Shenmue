@@ -109,7 +109,7 @@ The most common commands, from most to least used:
 | `Object` | — | 1917 | The character is an object (doors, cans, boxes, bikes...) |
 | `ColiOff` | — | 1898 | *Probably* disables the collision of the character |
 | `ShadowOff` | — | 1553 | *Probably* disables the shadow of the character |
-| `Human` | — | 557 | The character is a person. Never in the same block as `Object`; 310 characters have neither |
+| `Human` | — | 557 | The character is a person. Never in the same block as `Object`; 310 characters have neither. The body model of some of them has its origin at the hips, not at the feet: in the pose of its nodes, the vertices of `YKB_M.MT5` (`AKIR`, Ryo) go from y = -1.145 to 0.649, and those of `BAT_L.MT5` (`HATO`) start at -1.156, while the objects stand on their origin (e.g. the slot machine `SLT02LWX.MT5`, from 0 to 1.781). Placed at its `Position` (y = 0), such a model is under the floor up to the chest; *probably* the motions of the character give the height of its hips. Other `Human` models, like `KC1_M.MT5` (`CATM`), start at the origin |
 | `Range` | `range:float` | 543 | Unknown distance. Values from 0.6 to 1000 (0.6, 5, 30, 9, 1.5, 100...) |
 | `Trans` | — or `unknown:float` | 364 | Unknown. One `Trans(0.5)`, the rest without arguments |
 | `MOTCLIP` | `mode:string` | 324 | Only in `Human` characters: `HYPER` (321) or `HIGH` (8), once `NONE` |
@@ -119,7 +119,7 @@ The most common commands, from most to least used:
 | `Mode` | `mode:float` | 222 | Unknown: 2, 4, 0, 1 or 3 |
 | `Size` | `x:float` or `x:float, y:float` or `x:float, y:float, z:float` | 191 | *Probably* size of the collision of objects (e.g. `(0.9, 0.9, 0.9)`, `(0.8, 0.8, 0.8)`) |
 | `Scale` | `x:float, y:float, z:float` | 145 | Unknown, almost only in objects (e.g. `(1.5, 1.5, 1.5)`) |
-| `Hand` | `left:string, right:string` or `left:string, right:string, unknown:float` | 118 | Models of the hands, e.g. `KAS_TL.MT5` and `KAS_TR.MT5`. Both can be the same model. `unknown` is 1 or 2 |
+| `Hand` | `left:string, right:string` or `left:string, right:string, unknown:float` | 118 | Models of the hands, e.g. `KAS_TL.MT5` and `KAS_TR.MT5`. Both can be the same model. `unknown` is 1 or 2. In an `Object` it marks an [arm of Ryo](#arms-of-ryo) |
 | `TinyMot` | — | 116 | Unknown, almost only in objects |
 | `ProjectionTrans` | — | 113 | Unknown |
 | `Height` | `height:float` | 113 | Unknown height: 0.02, 1.5, 1, -0.65 or 2.59 |
@@ -159,14 +159,44 @@ The animated `Image` holds an animation of the model, e.g. `Image("BFA0101G", 12
 
 `Entry(unknown:float, size:int)` is a block with a `Position` and an `Angle`, found in the player character (`AKIR`). A character can have several, with `unknown` 0, 10 and 20; they are *probably* alternative places where the character appears.
 
+## Arms of Ryo
+
+34 characters of 19 CHRT files are an `Object` with a `Hand` command: all of them are an arm of Ryo, with the same model as their `Image` in both arguments of `Hand`. Their IDs are `YKUR`, `URDM`, `ARMR`, `HAND` (right arm) and `YKUL`, `ARML` (left arm), and their `DefImage` names `YKB_UDE_R`, `YKB_UDE_L`, `YKA_UDE_R`, `YKA_UDE_L` (*ude* is arm) or `YKB_UR`, `YKUR`. No other `Object` has a `Hand`.
+
+| Model        | Arm   |
+|--------------|-------|
+| `YKB_UR.MT5` | Right |
+| `YKB_UL.MT5` | Left  |
+| `YKA_UR.MT5` | Right |
+| `YKA_UL.MT5` | Left  |
+
+The models are 10 times bigger than the rest of the scene (see [MT5](MT5#arms-of-ryo)). They are *probably* the arms of the close-ups where Ryo uses an object: some are in the packages of the bars with a jukebox (e.g. `scene/01/dsli/mpk00.pkf`, `scene/01/dbhb/jukebox.pkf`), next to the motion `HMN_YKA_COIN_IRE` (putting a coin), and others in the `vend` packages of the vending machines. Their position is `(0, 0, 0)` or the place of the close-up (e.g. `(6.513, 1.061, -7.255)`, rotated, in `scene/01/dbhb/jukebox.pkf`), and their flags are `DISP`, `SLEEP` or none.
+
+```
+Character('YKUR', 26)
+    Image("YKB_UDE_R")
+    Object()
+    Hand("YKB_UR.MT5", "YKB_UR.MT5")
+    Flags("DISP")
+    Position(0, 0, 0)
+    Angle(0, 0, 0)
+    ShadowOff()
+    ColiOff()
+```
+
 ## Empty script
 
-The maps without characters don't have a script without commands: the `CHRD` chunk of 21 [MAPINFO](MAPINFO#chrd--characters) files holds the same 0x44-byte script, with a single placeholder character whose ID is `____` (4 underscores), no model and no position, and the flag `Kill`, not used anywhere else:
+The maps without characters in their [MAPINFO](MAPINFO#chrd--characters) file don't have a script without commands there: the `CHRD` chunk of 26 MAPINFO files holds a 0x44-byte script, with a single placeholder character with no model and no position, and the flag `Kill`, not used anywhere else. The characters of these maps are in the `CHARA` script of their base package (see [MAPINFO](MAPINFO#characters-of-the-base-package)). There are two variants of the placeholder, of the same size:
+
+- 21 files: ID `____` (4 underscores) and flag `Kill`
+- 5 files (`scene/01/dhqb`, `dslt` of `scene/01`, `02` and `03`, and `scene/03/mb9q`): ID `....` (4 dots) and flag `KILL`
 
 ```
 Character('____', 3)
     Flags("Kill")
 ```
+
+The values below are those of the first variant; the second one only differs in the ID at 0x10 and in the first string at 0x2C.
 
 | Offset | Size | Value                    | Description |
 |-------:|-----:|--------------------------|-------------|

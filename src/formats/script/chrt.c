@@ -89,6 +89,7 @@ void CHRT_ReadCharacter(const CHRT_Script* script, uint32_t index, CHRT_Characte
     const CHRT_Command* command = &script->commands[index];
     snprintf(character->id, sizeof(character->id), "%s", command->argCount > 0 && command->args[0].type == CHRT_ARG_LITERAL ? command->args[0].literal : "?");
     int32_t entry = -1;
+    bool object = false, hand = false;
     for (uint32_t c = index + 1; c < script->commandCount && script->commands[c].depth > command->depth; c++) {
         const CHRT_Command* child = &script->commands[c];
         if (child->parent != (int32_t)index)
@@ -97,11 +98,18 @@ void CHRT_ReadCharacter(const CHRT_Script* script, uint32_t index, CHRT_Characte
             character->image = child->args[0].string;
         else if (CHRT_IsCommand(child, "Entry") && entry < 0)
             entry = (int32_t)c;
+        else if (CHRT_IsCommand(child, "Human"))
+            character->human = true;
+        else if (CHRT_IsCommand(child, "Object"))
+            object = true;
+        else if (CHRT_IsCommand(child, "Hand"))
+            hand = true;
         else if (CHRT_IsCommand(child, "Flags")) {
             for (uint32_t i = 0; i < child->argCount; i++)
                 character->sleep |= child->args[i].type == CHRT_ARG_STRING && CHRT_EqualsIgnoreCase(child->args[i].string, "SLEEP");
         }
     }
+    character->arm = object && hand;
 
     // The Entry blocks are only read when the character isn't placed in the scene by its own commands
     character->hasPosition = ReadPlacement(script, index, character);

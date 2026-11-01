@@ -228,6 +228,19 @@ The detailed faces (`_F`, e.g. `model/face/aso_f.mt5`, `ASO_F.chrm`) and hands (
 
 The upper 16 bits of the root ID are `0`, `1`, `4` or `9` (unknown meaning). The rotations are the ones of 154 of the 166 bodies of the game (the rest are posed differently). The meshes of the body nodes `0xFFBD`, `0xFFBE` and `0xFFBF` are low detail versions of the parts that replace them, with about the same bounding box. A few faces (e.g. `mgr_f.mt5`) have the root ID `0xFFFF` and only triangles with negative indices.
 
+## Arms of Ryo
+
+The arms of Ryo of the close-ups (`YKB_UR`, `YKB_UL`, `YKA_UR` and `YKA_UL`, used by the [arm characters](CHRT#arms-of-ryo) of the CHRT scripts) are a chain of the nodes of an arm of the bodies, from the upper arm to the hand. The root has the scale (10, 10, 10) and the rotation (0, 0, 270°); the other nodes have no transform. The vertices have the size of the body (the arm of `YKB_UR` is about 0.75 long), so the arm is 10 times bigger than the scene.
+
+| Model    | Nodes                                   |
+|----------|-----------------------------------------|
+| `YKB_UR` | `0x40005` → `0x40006` → `0x40008` (hand) |
+| `YKB_UL` | `0x4000A` → `0x4000B` → `0x4000D` (hand) |
+| `YKA_UR` | `0x40006` → `0x40008`                    |
+| `YKA_UL` | `0x4000B` → `0x4000D`                    |
+
+The hand of `YKB_UR` has the same mesh as the right hand `YKB_TR`.
+
 ## Textures
 
 ### TEXD block (12 bytes)

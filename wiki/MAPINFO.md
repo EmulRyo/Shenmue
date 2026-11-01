@@ -150,7 +150,20 @@ Holds a [CHRT](CHRT) script: the characters and objects of the map, with their m
 | 0x00   | 8    | —    | header | [Chunk header](#chunk-header-8-bytes) (`CHRD`) |
 | 0x08   | —    | —    | script | `CHRS` block followed by its `STRG` block, exactly as in a [CHRT](CHRT) file. `CHRD.size` = 8 + `CHRS.size` + size of the `STRG` block |
 
-21 files (`dgct`, `dkpa`, `dmaj`, `drht`, `dsba` and `dsus` of `scene/01`, `02` and `03`, `ydb1` of `scene/02` and `03`, and `scene/03/tery`) have no characters: their `CHRD` chunk, the smallest one (0x4C bytes), is the same in all of them and holds the [empty script](CHRT#empty-script) `Character('____', 3) { Flags("Kill") }`.
+26 files have no characters in this chunk: their `CHRD` chunk, the smallest one (0x4C bytes), holds the [empty script](CHRT#empty-script) `Character('____', 3) { Flags("Kill") }`. 21 of them (`dgct`, `dkpa`, `dmaj`, `drht`, `dsba` and `dsus` of `scene/01`, `02` and `03`, `ydb1` of `scene/02` and `03`, and `scene/03/tery`) have exactly that script; the other 5 (`scene/01/dhqb`, `dslt` of `scene/01`, `02` and `03`, and `scene/03/mb9q`) have the variant `Character('....', 3) { Flags("KILL") }`. All 26 maps have their characters in the script of their base package (see below).
+
+### Characters of the base package
+
+Most map folders have a package named `mpk00` (`mpk00.pkf` and `mpk00.pks`, 96 of the 136 maps). In 87 of them, the [IPAC](IPAC) block of `mpk00.pkf` has a [CHRT](CHRT) script named `CHARA`, with more characters and objects of the map than the `CHRD` chunk: 1294 characters in those 87 scripts, against 395 in the `CHRD` chunks of 110 maps. Counting only the characters with an image, without the flag `SLEEP` and with a position in the scene (no coordinate of ±1000 or more), there are 490 in the `CHARA` scripts of 63 maps and 242 in the `CHRD` chunks.
+
+The positions are in the coordinates of the map models and of the cameras, as those of the `CHRD` chunk. In `scene/01/dslt` (a slot machine hall), the `CHRD` chunk is the empty script and the `CHARA` script has the 38 characters of the map: `AKIR`, the slot machines `SLT1` to `SLTG` (all with the model `$SLT02LWX.MT5`) placed in rows along the walls (e.g. `SLT1` to `SLT4` at x = 0 and z from -6.9 to -4.65, at angle 90, and `SLT5` to `SLT8` at x = 5.7, at angle -90), the ceiling fans `FAN1` to `FAN4`, `DRAM` (`$DRM02S2G.MT5`, a set of reels), `RMP1` to `RMP3`, `RMPY`, `RMPR` and `RMPG` (`RAMP`, *probably* lamps), and others. `SLTM` (`$SLT02HXG.MT5`) is placed at (0, -10, 0), under the floor.
+
+Not every character of the script is in the map when it is loaded:
+
+- Many have the flag `SLEEP` and no position, e.g. the 6 objects of `scene/01/dbhb` (`SHAKER`, `GLASS`, `SAKE_SET`...).
+- Many wait off the scene, e.g. most characters of `scene/01/dcbn`, at (0, 0, -1000). Some wait at positions below 1000, outside the map models: `ZASI` of `scene/01/daza` has a single `Position(300, 0, 0)`.
+
+Other packages of the folder have their own `CHARA` script, with the characters of other situations of the map: `scene/01/d000` has 17 more (`yoru`, `omg`, `yq14`, `buss`, `auth`...), `scene/01/dcbn` has `dcb0` to `dcb4`, and some bars have the [jukebox](#jukebox) in another package (`jukebox`, `alp_juke`). *Probably* the [scene program](#scn3--scene-program) loads them when needed.
 
 ## ECAM — Cameras
 

@@ -40,6 +40,9 @@ typedef struct {
     char            id[5];          // "?" if the Character command has no ID
     const char*     image;          // Name of its first Image, NULL if none. Points into the buffer of the script
     bool            sleep;          // SLEEP flag
+    bool            human;          // Human command: a person, whose body model has its origin at the hips
+    bool            arm;            // Object and Hand commands: an arm of Ryo for the close-ups (e.g. putting a coin
+                                    // in a jukebox), whose model is scaled 10 times
     bool            hasPosition;    // Has a Position, in its block or in its first Entry block
     bool            positioned;     // Its last Position is in the scene (see CHRT_OFF_SCENE)
     float           position[3];    // Of the last Position command, of its first Entry if the character isn't

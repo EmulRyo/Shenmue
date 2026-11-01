@@ -225,6 +225,16 @@ uint32_t MT5Render_Vertices(const MT5Render_Model* model, Matrix transform, Vect
     return count;
 }
 
+float MT5Render_Bottom(const MT5Render_Model* model) {
+    float bottom = INFINITY;
+    for (uint32_t i = 0; i < model->mesh.groupCount; i++) {
+        const Mesh* mesh = &model->mesh.groups[i].mesh;
+        for (int v = 0; v < mesh->vertexCount; v++)
+            bottom = fminf(bottom, mesh->vertices[v * 3 + 1]);
+    }
+    return bottom == INFINITY ? 0.0f : bottom;
+}
+
 Vector3* MT5Render_InstanceVertices(const MT5Render_Instance* instances, uint32_t count, uint32_t extra, uint32_t* vertexCount) {
     uint32_t total = extra;
     for (uint32_t i = 0; i < count; i++)
