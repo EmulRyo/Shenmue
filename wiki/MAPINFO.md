@@ -167,7 +167,27 @@ Not every character of the script is in the map when it is loaded:
 - Many have the flag `SLEEP` and no position, e.g. the 6 objects of `scene/01/dbhb` (`SHAKER`, `GLASS`, `SAKE_SET`...). Others have `SLEEP` and a position in the map, e.g. `TAXI` of `scene/01/jd99` at (10.9, -0.1, -2.6).
 - Many wait off the scene, e.g. most characters of `scene/01/dcbn`, at (0, 0, -1000). Some wait at positions below 1000, outside the map models: `ZASI` of `scene/01/daza` has a single `Position(300, 0, 0)`.
 
-Other packages of the folder have their own `CHARA` script, with the characters of other situations of the map: `scene/01/d000` has 17 more (`yoru`, `omg`, `yq14`, `buss`, `auth`...), `scene/01/dcbn` has `dcb0` to `dcb4`, and some bars have the [jukebox](#jukebox) in another package (`jukebox`, `alp_juke`). *Probably* the [scene program](#scn3--scene-program) loads them when needed.
+### Characters of the other packages
+
+Other packages of the folder have their own `CHARA` script, with the characters of other situations of the map: `scene/01/d000` has 17 more (`yoru`, `omg`, `yq14`, `buss`, `auth`...), `scene/01/dcbn` has `dcb0` to `dcb4`, and some bars have the [jukebox](#jukebox) in another package (`jukebox`, `alp_juke`). The data of the [scene program](#scn3--scene-program) usually has their names in uppercase (`COMMON01`, `NINJIN`, `DCB0`...): *probably* the program loads them when needed.
+
+The Hazuki house (`jomo` of `scene/01`, `02` and `03`) has no `CHARA` script in `mpk00`, which only has the map models (`MAP.MAPM` to `MAP08.MAPM` in `mpk00.pks`). The furniture parts that open are in the `CHARA` script of `common01`, `common02` or `common03` (141 characters, the models in the PKS of the same name), as objects with `Flags("SLEEP")`, a first `Position(0, 0, -1000)` and a second `POSITION` and `ANGLE` in the map:
+
+| Characters        | Models                                   | Position (scene/01) | Object |
+|-------------------|------------------------------------------|---------------------|--------|
+| `DDR1`, `DDR2`    | `REIO101G`, `REIO102G`                   | (12.81, 1.55 and 0.62, -1.8), -90 | Upper and lower doors of the fridge |
+| `ATS1` to `ATS7`  | `TANM4w3G` (4), `TANM4w4G` (2), `TANM402G` | x 18.02 to 18.59, z 2.44 | Drawers of the chest of Ryo's room |
+| `AKD2` to `AKD4`  | `DESM402G` (2), `DESM403G`               | (16.87, 0.1 to 0.56, 3.77), 90 | Drawers of Ryo's desk |
+| `ITS1` to `ITS7`  | as `ATS1` to `ATS7`                      | x 20.26, z -4.15 to -3.58, -90 | Drawers of the chest of Iwao's room |
+| `IKD1`, `IKD2`    | `HIKW101G`                               | (20.35, 0.24, -2.26 and -2.55), -90 | Drawers of Iwao's room |
+| `BMB1` to `BMB5`, `BMBO` | `BUTM401G` to `BUTM403G`, `BUTK300G` | x 2.63 to 2.69 | Drawers and doors of the Buddhist altar |
+| `D1C1` to `D1C4`, `IMC1` to `IMC4` | `CHDS500G`, `CHSS500G`, `CHSS501G` | x 12.89 and x 14.15 | Doors and drawers of two cupboards |
+| `DND1`, `DND2`    | `TUDT202G`, `TUDT203G`                   | (11.92, 1.92, -4.84) | Doors of a wall cupboard of the kitchen |
+| `itbL`/`itbR`, `btbL`/`btbR`, `ktbL`/`ktbR` | `TNBR102G`, `TNBR101G` | y 2.2 | Left and right doors of the upper closets |
+
+The same script has other objects of the house (the lamps `LGWS2nnG`, the telephone `TEL_`, clocks, pictures, futons, a radio cassette...) and the `DefImage` of the doors of the door table (`DR15_026`, `DR23_000`, `DR01_015`...). Some objects have positions near the origin, e.g. `pwkm` (`WALKMAN`) at (0.02, 0.01, -0.2) and `IDEN` at (0, 0.05, -0.2): *probably* relative to something that holds them. The package `ninjin` of `scene/01/jomo` has a meal for two (rice `GOHR`/`GOHI`, miso soup `MISR`/`MSOI`, chopsticks `HSR1`/`HSR2` and `HSI1`/`HSI2`, the carrots `NINJ`...) on the table at about (10.7, 0.75, -2.5).
+
+Some packages define the same character IDs as another one: they are *probably* alternatives, of which the program loads one. `dcb0` to `dcb4` of `dcbn` and `mky0` to `mky4` of `mkyu` share their 20 IDs (`cnc1`..., `mnc1`..., objects waiting at (0, 0, -1000) with a different image in each package, e.g. `mnc1` has the image `mnc1`, `mnc8`, `mncc`, `mncg` or `mnck`), and `pk_box` and `pk_box2` of `scene/03/ma00` and `mfsy` share the boxes `BOX1`, `BOX2`... (images `BOX_M` and `BOX2_M`). Fewer IDs are shared elsewhere: `HAUK` in `mpm1` and `mpm2` of `jhd0`, `SINF` in `bebf` and `houmon` of `scene/02/jomo`, and the can `CAN1` in `coke`, `fatg`, `fato` and `sprt` of `d000` (`COKS520G`, `FAGS520G`, `FAOS520G`, `SPRS520G`, one per drink).
 
 ## ECAM — Cameras
 

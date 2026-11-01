@@ -28,22 +28,21 @@
 #define MAPINFOVIEW_HEIGHT       1.7f    // Of the characters, drawn as cylinders
 #define MAPINFOVIEW_RADIUS       0.25f
 #define MAPINFOVIEW_CIRCLE_SIDES 24
-#define MAPINFOVIEW_JUKEBOX_ID   "JBOX"  // Character of the jukebox of the bars, in the CHARA script of a package of the map
 #define MAPINFOVIEW_PACKAGE      "mpk00" // Base package of the map (PKF/PKS files or their extracted folder)
-#define MAPINFOVIEW_PACKAGE_SCRIPT "CHARA" // CHRT script of the base package with the characters of the map
 #define MAPINFOVIEW_SCENE_MODELS "model/chara" // Models of the characters in the folder of the scene, for the maps without them
 
 typedef enum {
     ITEM_INFO,
     ITEM_CAMERA,
     ITEM_LIGHT,
+    ITEM_PACKAGE,
     ITEM_CHARACTER,
     ITEM_DOOR,
 } ItemKind;
 
 typedef struct {
     ItemKind    kind;
-    uint32_t    index;  // In the cameras, lights, characters or doors
+    uint32_t    index;  // In the cameras, lights, packages, characters or doors
 } Item;
 
 typedef enum {
@@ -70,13 +69,25 @@ static const Color g_cameraColor = { 220, 220, 220, 255 };
 static const Color g_selectedColor = { 255, 230, 60, 255 };
 static const Color g_characterColor = { 90, 170, 255, 255 };
 
-// A character of the CHRD chunk or of a CHRT script of the map. The displayed ones (positioned in the scene, not an arm
-// of Ryo, with an image) that are in the map are drawn with their model, sleeping or not
+// A CHRT script of a package of the map, with the characters of a situation of the map (e.g. the furniture of the Hazuki
+// house in common01 of scene/01/jomo, the night in yoru of scene/01/d000). A package with a character ID of a previous
+// one is a variant of it (e.g. dcb0 to dcb4 of scene/01/dcbn): the program loads one of them
+typedef struct {
+    uint32_t            script;         // In g_view.scripts
+    char                name[IPAC_FILENAME_SIZE]; // Of its PKF/PKS files or of their extracted folder
+    uint32_t            characterCount;
+    int                 variantOf;      // Previous package with one of its character IDs, -1 if none
+    bool                shown;          // Its characters are shown; at first, those of the packages that aren't variants
+} MapPackage;
+
+// A character of the CHRD chunk or of a CHRT script of a package of the map. The displayed ones (positioned in the scene,
+// not an arm of Ryo, with an image) that are in the map are drawn with their model, sleeping or not, if they are shown
 typedef struct {
     CHRT_Character      info;           // Its image points into the buffer of its script
     uint32_t            script;         // In g_view.scripts
-    char                package[IPAC_FILENAME_SIZE]; // Of its script, empty for the CHRD chunk
-    bool                modelled;       // Drawn with its model
+    int                 package;        // In g_view.packages, -1 for the CHRD chunk
+    int                 model;          // In g_view.models, -1 if it isn't drawn with a model
+    bool                shown;          // The CHRD chunk or a shown package, and no character shown before has its ID
     const char*         error;          // Why the model of a displayed character couldn't be loaded, NULL otherwise
 } MapCharacter;
 
@@ -86,16 +97,19 @@ typedef struct {
     MAPINFO_File        file;
     uint32_t            scriptCount;
     CHRT_Script*        scripts;        // The CHRD chunk, then the CHRT files of the map
+    uint32_t            packageCount;
+    MapPackage*         packages;       // The base package first, then those with more characters
     uint32_t            characterCount;
-    MapCharacter*       characters;     // Of the CHRD chunk, of the script of the base package and the jukebox
-    uint32_t            modelledCharacters;
+    MapCharacter*       characters;     // Of the CHRD chunk, then of each package
+    uint32_t            modelledCharacters; // Shown with their model
     MT5Render           render;
     uint32_t            modelCount;
     MT5Render_Model*    models;         // The models of the map, then the models of the doors and of the characters
     uint32_t            mapModelCount;
     uint32_t            instanceCount;
     MT5Render_Instance* instances;      // Each model of the map (mapModelCount), then each door with its model
-                                        // (loadedDoors), then the modelled characters (from characterInstances)
+                                        // (loadedDoors), then the shown characters with their model (from
+                                        // characterInstances)
     uint32_t            loadedDoors;    // Doors with their model
     uint32_t            characterInstances;
     const char**        doorErrors;     // Why the model of each door couldn't be loaded, NULL if it was
@@ -217,25 +231,38 @@ static void SetStart(void) {
     memcpy(g_view.start, values, sizeof(values));
 }
 
-// Appends the characters of a script of g_view.scripts, or only those with an ID if it isn't NULL
-static void AddCharacters(uint32_t script, const char* package, const char* id) {
+static bool IsCharacterCommand(const CHRT_Script* script, uint32_t command) {
+    return script->commands[command].parent == -1 && CHRT_IsCommand(&script->commands[command], "Character");
+}
+
+static uint32_t CountCharacters(const CHRT_Script* script) {
+    uint32_t count = 0;
+    for (uint32_t c = 0; c < script->commandCount; c++)
+        count += IsCharacterCommand(script, c);
+    return count;
+}
+
+// Appends the characters of a script of g_view.scripts, of a package of g_view.packages (-1 for the CHRD chunk)
+static void AddCharacters(uint32_t script, int package) {
     const CHRT_Script* source = &g_view.scripts[script];
     MapCharacter* characters = realloc(g_view.characters, (g_view.characterCount + source->commandCount + 1) * sizeof(MapCharacter));
     if (characters == NULL)
         return;
     g_view.characters = characters;
     for (uint32_t c = 0; c < source->commandCount; c++) {
-        if (source->commands[c].parent != -1 || !CHRT_IsCommand(&source->commands[c], "Character"))
+        if (!IsCharacterCommand(source, c))
             continue;
-        MapCharacter* character = &characters[g_view.characterCount];
+        MapCharacter* character = &characters[g_view.characterCount++];
         memset(character, 0, sizeof(*character));
         CHRT_ReadCharacter(source, c, &character->info);
-        if (id != NULL && strcmp(character->info.id, id) != 0)
-            continue;
         character->script = script;
-        snprintf(character->package, sizeof(character->package), "%s", package);
-        g_view.characterCount++;
+        character->package = package;
+        character->model = -1;
     }
+}
+
+static const char* PackageName(int package) {
+    return package >= 0 ? g_view.packages[package].name : NULL;
 }
 
 static Vector3 CharacterPosition(const CHRT_Character* character) {
@@ -299,25 +326,31 @@ static void ModelBaseName(const char* name, char* base, size_t size) {
         *dot = '\0';
 }
 
-// Model file (MT5 or CHRM) of a model name of the CHRT scripts. Returns -1 if there is none
-static int ModelFile(const MapFile* files, uint32_t count, const char* name) {
+// Model file (MT5 or CHRM) of a model name of the CHRT scripts, preferably of a package (the variants can have models
+// with the same name), of any package if it is NULL. Returns -1 if there is none
+static int ModelFile(const MapFile* files, uint32_t count, const char* name, const char* package) {
     char base[64];
     ModelBaseName(name, base, sizeof(base));
+    int found = -1;
     for (uint32_t i = 0; i < count; i++) {
-        if (!IsFileExtension(files[i].name, ".chrt") && CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files[i].name), base))
+        if (IsFileExtension(files[i].name, ".chrt") || !CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files[i].name), base))
+            continue;
+        if (package == NULL || CHRT_EqualsIgnoreCase(files[i].package, package))
             return (int)i;
+        if (found < 0)
+            found = (int)i;
     }
-    return -1;
+    return found;
 }
 
 // Model file of the model of a door: the file with its name, or the file of the DefImage with its name in the CHRT
 // scripts of the map (the CHRD chunk and the CHRT files, e.g. mpk00/CHARA.chrt). Returns -1 if there is none
 static int DoorModelFile(const MapFile* files, uint32_t count, const char* name) {
-    int file = ModelFile(files, count, name);
+    int file = ModelFile(files, count, name, NULL);
     for (uint32_t i = 0; file < 0 && i < g_view.scriptCount; i++) {
         const char* image = CHRT_ImageFile(&g_view.scripts[i], name);
         if (image != NULL)
-            file = ModelFile(files, count, image);
+            file = ModelFile(files, count, image, NULL);
     }
     return file;
 }
@@ -408,8 +441,27 @@ static int FolderSceneModel(const char* folder, const char* name, SceneModel* sc
     return added->model;
 }
 
-// The instances of the models of the map, of the doors at their placements and of the displayed characters in the map.
-// The characters whose model isn't in the map are drawn with the model of the folder of the scene
+// A character is shown if its package is (the CHRD chunk always is) and no character shown before has its ID: the
+// first shown package with an ID wins. The instances of the characters are those of the shown ones with their model
+static void ShowCharacters(void) {
+    g_view.instanceCount = g_view.characterInstances;
+    g_view.modelledCharacters = 0;
+    for (uint32_t i = 0; i < g_view.characterCount; i++) {
+        MapCharacter* character = &g_view.characters[i];
+        character->shown = character->package < 0 || g_view.packages[character->package].shown;
+        for (uint32_t c = 0; c < i && character->shown; c++) {
+            const MapCharacter* previous = &g_view.characters[c];
+            character->shown = !previous->shown || previous->script == character->script || strcmp(previous->info.id, character->info.id) != 0;
+        }
+        if (character->shown && character->model >= 0) {
+            AddInstance((uint32_t)character->model, CharacterTransform(&character->info, &g_view.models[character->model]));
+            g_view.modelledCharacters++;
+        }
+    }
+}
+
+// The instances of the models of the map, of the doors at their placements and of the shown characters in the map. The
+// characters whose model isn't in the map are drawn with the model of the folder of the scene
 static void PlaceModels(const char* folder, const MapFile* files, uint32_t count, int* fileModels, const IPAC_FileList* packed) {
     const MAPINFO_File* file = &g_view.file;
     for (uint32_t i = 0; i < count; i++) {
@@ -444,34 +496,68 @@ static void PlaceModels(const char* folder, const MapFile* files, uint32_t count
         if (!IsDisplayed(&character->info) || !InMapModels(CharacterPosition(&character->info)))
             continue;
         const char* name = CharacterModelName(character);
-        int f = ModelFile(files, count, name);
+        int f = ModelFile(files, count, name, PackageName(character->package));
         int model = f >= 0 ? FileModel(files, f, fileModels, packed) : FolderSceneModel(folder, name, sceneModels, &sceneModelCount);
         if (model < 0)
             character->error = f < 0 ? "no model file" : "invalid model file";
-        else {
-            AddInstance((uint32_t)model, CharacterTransform(&character->info, &g_view.models[model]));
-            character->modelled = true;
-            g_view.modelledCharacters++;
-        }
+        character->model = model;
     }
     free(sceneModels);
+    ShowCharacters();
 }
 
-// The scripts of the map: the CHRD chunk and the CHRT files. The characters are those of the CHRD chunk, of the script
-// of the base package (mpk00/CHARA.chrt) and the jukebox of the bars, which can be in another package
+// The base package first, then those with more characters
+static int ComparePackages(const void* a, const void* b) {
+    const MapPackage* first = a;
+    const MapPackage* second = b;
+    bool firstBase = CHRT_EqualsIgnoreCase(first->name, MAPINFOVIEW_PACKAGE), secondBase = CHRT_EqualsIgnoreCase(second->name, MAPINFOVIEW_PACKAGE);
+    if (firstBase != secondBase)
+        return firstBase ? -1 : 1;
+    if (first->characterCount != second->characterCount)
+        return first->characterCount > second->characterCount ? -1 : 1;
+    return strcmp(first->name, second->name);
+}
+
+static bool ShareCharacter(int package, int other) {
+    for (uint32_t i = 0; i < g_view.characterCount; i++) {
+        if (g_view.characters[i].package != package)
+            continue;
+        for (uint32_t j = 0; j < g_view.characterCount; j++) {
+            if (g_view.characters[j].package == other && strcmp(g_view.characters[i].info.id, g_view.characters[j].info.id) == 0)
+                return true;
+        }
+    }
+    return false;
+}
+
+// The scripts of the map: the CHRD chunk, then the CHRT files of the packages (CHARA.chrt), with their characters
 static void LoadScripts(const MapFile* files, uint32_t count) {
     const MAPINFO_File* file = &g_view.file;
     if (file->characters != NULL &&
         CHRT_LoadFromMemory(file->characters, file->charactersSize, g_view.filename, &g_view.scripts[g_view.scriptCount]))
-        AddCharacters(g_view.scriptCount++, "", NULL);
-    bool base = false;
+        AddCharacters(g_view.scriptCount++, -1);
+    g_view.packages = calloc(count + 1, sizeof(MapPackage));
+    if (g_view.packages == NULL)
+        return;
     for (uint32_t i = 0; i < count; i++) {
         if (!IsFileExtension(files[i].name, ".chrt") || !LoadMapScript(&files[i], &g_view.scripts[g_view.scriptCount]))
             continue;
-        bool isBase = !base && CHRT_EqualsIgnoreCase(files[i].package, MAPINFOVIEW_PACKAGE) &&
-            CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files[i].name), MAPINFOVIEW_PACKAGE_SCRIPT);
-        base |= isBase;
-        AddCharacters(g_view.scriptCount++, files[i].package, isBase ? NULL : MAPINFOVIEW_JUKEBOX_ID);
+        MapPackage* package = &g_view.packages[g_view.packageCount++];
+        package->script = g_view.scriptCount++;
+        snprintf(package->name, sizeof(package->name), "%s", files[i].package[0] != '\0' ? files[i].package : GetFileNameWithoutExt(files[i].name));
+        package->characterCount = CountCharacters(&g_view.scripts[package->script]);
+    }
+    qsort(g_view.packages, g_view.packageCount, sizeof(MapPackage), ComparePackages);
+    for (uint32_t p = 0; p < g_view.packageCount; p++)
+        AddCharacters(g_view.packages[p].script, (int)p);
+    for (uint32_t p = 0; p < g_view.packageCount; p++) {
+        MapPackage* package = &g_view.packages[p];
+        package->variantOf = -1;
+        for (uint32_t q = 0; q < p && package->variantOf < 0; q++) {
+            if (ShareCharacter((int)p, (int)q))
+                package->variantOf = (int)q;
+        }
+        package->shown = package->variantOf < 0;
     }
 }
 
@@ -605,22 +691,51 @@ static void FitCamera(Rectangle area) {
 }
 
 // The failed items are marked in the list
+static void SetLabel(uint32_t item, const char* text, bool failed) {
+    snprintf(g_view.labels[item], MAPINFOVIEW_LABEL_SIZE, "%s%s", failed ? LIST_FAILED : "", text);
+    g_view.labelPointers[item] = g_view.labels[item];
+    g_view.failedItems[item] = failed;
+}
+
 static void AddItem(ItemKind kind, uint32_t index, const char* text, bool failed) {
     g_view.items[g_view.itemCount] = (Item) { kind, index };
-    snprintf(g_view.labels[g_view.itemCount], MAPINFOVIEW_LABEL_SIZE, "%s%s", failed ? LIST_FAILED : "", text);
-    g_view.labelPointers[g_view.itemCount] = g_view.labels[g_view.itemCount];
-    g_view.failedItems[g_view.itemCount] = failed;
-    g_view.itemCount++;
+    SetLabel(g_view.itemCount++, text, failed);
+}
+
+static const char* PackageText(const MapPackage* package) {
+    return TextFormat("Package %s  %u characters  %s%s%s", package->name, package->characterCount, package->shown ? "shown" : "hidden",
+        package->variantOf >= 0 ? "  variant of " : "", package->variantOf >= 0 ? g_view.packages[package->variantOf].name : "");
+}
+
+static const char* CharacterText(const MapCharacter* character) {
+    const CHRT_Character* info = &character->info;
+    const char* position = info->positioned ?
+        TextFormat("(%.2f, %.2f, %.2f)", info->position[0], info->position[1], info->position[2]) : "no position";
+    const char* package = PackageName(character->package);
+    return TextFormat("Character %s  %s%s%s%s%s%s%s%s", info->id, position, info->sleep ? "  sleep" : "", info->arm ? "  arm" : "",
+        package != NULL ? "  " : "", package != NULL ? package : "", character->shown ? "" : "  hidden", character->error != NULL ? "  " : "",
+        character->error != NULL ? character->error : "");
+}
+
+// After a package is shown or hidden
+static void UpdateLabels(void) {
+    for (uint32_t i = 0; i < g_view.itemCount; i++) {
+        const Item* item = &g_view.items[i];
+        if (item->kind == ITEM_PACKAGE)
+            SetLabel(i, PackageText(&g_view.packages[item->index]), false);
+        else if (item->kind == ITEM_CHARACTER)
+            SetLabel(i, CharacterText(&g_view.characters[item->index]), g_view.characters[item->index].error != NULL);
+    }
 }
 
 static const char* ScnText(uint32_t version) {
     return version == 0x20000 ? "SH-4 code" : version == 0x100 ? "bytecode" : "unknown version";
 }
 
-// Information lines, then the cameras, the lights, the characters and the doors
+// Information lines, then the cameras, the lights, the packages, the characters and the doors
 static bool CreateItems(void) {
     const MAPINFO_File* file = &g_view.file;
-    uint32_t count = 17 + file->bankCount + file->cameraCount + file->lightCount + g_view.characterCount + file->doorCount;
+    uint32_t count = 17 + file->bankCount + file->cameraCount + file->lightCount + g_view.packageCount + g_view.characterCount + file->doorCount;
     g_view.items = malloc(count * sizeof(Item));
     g_view.labels = malloc(count * sizeof(*g_view.labels));
     g_view.labelPointers = malloc(count * sizeof(*g_view.labelPointers));
@@ -678,15 +793,10 @@ static bool CreateItems(void) {
         AddItem(ITEM_LIGHT, i, TextFormat("Light %u.%u  (%.2f, %.2f, %.2f)  color (%.2f, %.2f, %.2f)", light->group, light->id,
             light->position[0], light->position[1], light->position[2], light->color[0], light->color[1], light->color[2]), false);
     }
-    for (uint32_t i = 0; i < g_view.characterCount; i++) {
-        const MapCharacter* character = &g_view.characters[i];
-        const CHRT_Character* info = &character->info;
-        const char* position = info->positioned ?
-            TextFormat("(%.2f, %.2f, %.2f)", info->position[0], info->position[1], info->position[2]) : "no position";
-        AddItem(ITEM_CHARACTER, i, TextFormat("Character %s  %s%s%s%s%s%s%s", info->id, position, info->sleep ? "  sleep" : "",
-            info->arm ? "  arm" : "", character->package[0] != '\0' ? "  " : "", character->package, character->error != NULL ? "  " : "",
-            character->error != NULL ? character->error : ""), character->error != NULL);
-    }
+    for (uint32_t i = 0; i < g_view.packageCount; i++)
+        AddItem(ITEM_PACKAGE, i, PackageText(&g_view.packages[i]), false);
+    for (uint32_t i = 0; i < g_view.characterCount; i++)
+        AddItem(ITEM_CHARACTER, i, CharacterText(&g_view.characters[i]), g_view.characters[i].error != NULL);
     for (uint32_t i = 0; i < file->doorCount; i++) {
         const MAPINFO_Door* door = &file->doors[i];
         const char* error = g_view.doorErrors != NULL ? g_view.doorErrors[i] : NULL;
@@ -707,6 +817,7 @@ void MAPINFOView_Close(void) {
     free((void*)g_view.doorErrors);
     MT5Render_Free(&g_view.render);
     free(g_view.characters);
+    free(g_view.packages);
     free(g_view.items);
     free(g_view.labels);
     free(g_view.labelPointers);
@@ -742,7 +853,7 @@ bool MAPINFOView_Open(const char* filepath) {
     g_view.selected = -1;
     g_view.listFocus = -1;
 
-    printf("[MAPINFOView_Open]: %u chunks, %u cameras, %u lights, %u shapes, %u characters (%u with their model), %u map models, %u of %u doors\n",
+    printf("[MAPINFOView_Open]: %u chunks, %u cameras, %u lights, %u shapes, %u characters (%u shown with their model), %u map models, %u of %u doors\n",
         file.chunkCount, file.cameraCount, file.lightCount, file.shapeCount, g_view.characterCount, g_view.modelledCharacters,
         g_view.mapModelCount, g_view.loadedDoors, file.doorCount);
     g_view.open = true;
@@ -753,8 +864,16 @@ bool MAPINFOView_IsOpen(void) {
     return g_view.open;
 }
 
-// A camera of the list shows the map from it; a light or a character is looked at with the free camera
+// A camera of the list shows the map from it; a light or a character is looked at with the free camera. A package is
+// shown or hidden, and the selection is kept
 static void Select(int item) {
+    if (item >= 0 && g_view.items[item].kind == ITEM_PACKAGE) {
+        MapPackage* package = &g_view.packages[g_view.items[item].index];
+        package->shown = !package->shown;
+        ShowCharacters();
+        UpdateLabels();
+        return;
+    }
     SetStart();
     g_view.selected = item;
     g_view.mapCamera = false;
@@ -918,12 +1037,12 @@ static void DrawOverlays(void) {
             DrawLine3D(position, Vector3Add(position, Vector3Scale(direction, 0.5f)), selected ? g_selectedColor : color);
         }
     }
-    // The characters without their model are drawn as cylinders, and the selected one too
+    // The shown characters without their model are drawn as cylinders, and the selected one too
     if (g_options.layers[LAYER_CHARACTERS]) {
         for (uint32_t i = 0; i < g_view.characterCount; i++) {
             const CHRT_Character* character = &g_view.characters[i].info;
             bool selected = g_view.selected >= 0 && g_view.items[g_view.selected].kind == ITEM_CHARACTER && g_view.items[g_view.selected].index == i;
-            if (!character->positioned || (g_view.characters[i].modelled && !selected))
+            if (!character->positioned || (!selected && (!g_view.characters[i].shown || g_view.characters[i].model >= 0)))
                 continue;
             Color color = selected ? g_selectedColor : character->sleep ? GRAY : g_characterColor;
             DrawCylinderWires(CharacterPosition(character), MAPINFOVIEW_RADIUS, MAPINFOVIEW_RADIUS, MAPINFOVIEW_HEIGHT, 8, color);
@@ -948,7 +1067,7 @@ static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSiz
     if (g_options.layers[LAYER_CHARACTERS]) {
         for (uint32_t i = 0; i < g_view.characterCount; i++) {
             const CHRT_Character* character = &g_view.characters[i].info;
-            if (character->positioned)
+            if (character->positioned && g_view.characters[i].shown)
                 DrawLabel(camera, area, font, fontSize, Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT + 0.1f, 0.0f }),
                     character->id, character->sleep ? GRAY : g_characterColor);
         }
@@ -1002,13 +1121,13 @@ void MAPINFOView_Draw(Rectangle area) {
     const MAPINFO_Camera* camera = SelectedCamera();
     const char* lines[3] = {
         g_view.filename,
-        TextFormat("Map info, %u chunks: %u cameras, %u lights, %u collision and area shapes, %u characters (%u with their model), %u map models, %u doors%s",
+        TextFormat("Map info, %u chunks: %u cameras, %u lights, %u collision and area shapes, %u characters (%u shown with their model), %u map models, %u doors%s",
             file->chunkCount, file->cameraCount, file->lightCount, file->shapeCount, g_view.characterCount,
             g_view.modelledCharacters, g_view.mapModelCount, file->doorCount, g_view.loadedDoors < file->doorCount ?
                 TextFormat(" (%u without their model)", file->doorCount - g_view.loadedDoors) : ""),
         g_view.mapCamera && camera != NULL ?
-            TextFormat("Camera %s   V: free camera   F: fly   R: reset the free camera   Click on the list: select a camera, light, character or door", camera->id) :
-            TextFormat("%s   R: reset   V: camera of the map   Click on the list: select a camera, light, character or door",
+            TextFormat("Camera %s   V: free camera   F: fly   R: reset the free camera   Click on the list: select a camera, light, character or door, show or hide a package", camera->id) :
+            TextFormat("%s   R: reset   V: camera of the map   Click on the list: select a camera, light, character or door, show or hide a package",
                 FreeCamera_Help(&g_view.camera)),
     };
 
