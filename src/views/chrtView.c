@@ -231,8 +231,9 @@ static bool CreateLabels(void) {
     return true;
 }
 
+// From the front of the characters with angle 0, which face -Z as the bodies of the models
 static void ResetCamera(void) {
-    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, 1.0f }, g_view.radius, CHRTVIEW_FOVY);
+    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, -1.0f }, g_view.radius, CHRTVIEW_FOVY);
     g_view.selected = -1;
     g_view.fit = true;
 }

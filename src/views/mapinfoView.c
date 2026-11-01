@@ -696,10 +696,10 @@ static void DrawOverlays(void) {
             bool selected = g_view.selected >= 0 && g_view.items[g_view.selected].kind == ITEM_CHARACTER && g_view.items[g_view.selected].index == i;
             Color color = selected ? g_selectedColor : character->sleep ? GRAY : g_characterColor;
             DrawCylinderWires(CharacterPosition(character), MAPINFOVIEW_RADIUS, MAPINFOVIEW_RADIUS, MAPINFOVIEW_HEIGHT, 8, color);
-            // Direction it faces: angle 0 faces +Z
+            // Direction it faces: angle 0 faces -Z, as the bodies of the models
             float yaw = character->angle[1] * DEG2RAD;
             Vector3 eyes = Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT * 0.9f, 0.0f });
-            DrawLine3D(eyes, Vector3Add(eyes, (Vector3) { sinf(yaw) * 0.5f, 0.0f, cosf(yaw) * 0.5f }), color);
+            DrawLine3D(eyes, Vector3Add(eyes, (Vector3) { -sinf(yaw) * 0.5f, 0.0f, -cosf(yaw) * 0.5f }), color);
         }
     }
     rlDrawRenderBatchActive();
