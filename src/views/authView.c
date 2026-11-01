@@ -6,11 +6,11 @@
 #include <math.h>
 #include <raylib.h>
 #include <raymath.h>
-#include <rlgl.h>
 #include "raygui.h"
 #include "formats/animation/auth.h"
 #include "formats/animation/motn.h"
 #include "views/freeCamera.h"
+#include "views/scene3D.h"
 #include "views/authView.h"
 
 #define AUTHVIEW_LABEL_SIZE     128
@@ -301,14 +301,7 @@ static Vector3 CurvePoint(const AUTH_Curve* curves, float time) {
 
 // The camera of the cutscene at the current time, with its roll
 static Camera3D CutsceneCamera(void) {
-    const AUTH_Curve* curves = g_view.sequence.camera;
-    Vector3 position = CurvePoint(&curves[AUTH_CAMERA_X], g_view.time);
-    Vector3 target = CurvePoint(&curves[AUTH_CAMERA_TARGET_X], g_view.time);
-    Vector3 forward = Vector3Normalize(Vector3Subtract(target, position));
-    float roll = AUTH_CurveValue(&curves[AUTH_CAMERA_ROLL], g_view.time, 0.0f);
-    Vector3 up = Vector3RotateByAxisAngle((Vector3) { 0.0f, 1.0f, 0.0f }, forward, roll * DEG2RAD);
-    float fovy = AUTH_CurveValue(&curves[AUTH_CAMERA_FOV], g_view.time, AUTHVIEW_FOVY);
-    return (Camera3D) { position, target, up, fovy > 1.0f && fovy < 179.0f ? fovy : AUTHVIEW_FOVY, CAMERA_PERSPECTIVE };
+    return Scene3D_CurveCamera(g_view.sequence.camera, g_view.time, AUTHVIEW_FOVY);
 }
 
 // The arrows move the flying free camera
@@ -329,14 +322,8 @@ static void UpdateInput(Rectangle scene) {
         g_options.cutsceneCamera = !g_options.cutsceneCamera;
     if (IsKeyPressed(KEY_F)) {
         // Flies from the position of the camera of the cutscene, or of the free camera, looking around it
-        if (g_options.cutsceneCamera) {
-            Camera3D view = CutsceneCamera();
-            Vector3 direction = Vector3Normalize(Vector3Subtract(view.position, view.target));
-            g_view.camera.yaw = atan2f(direction.x, direction.z);
-            g_view.camera.pitch = Clamp(asinf(direction.y), -1.55f, 1.55f);
-            g_view.camera.target = view.target;
-            g_view.camera.distance = Vector3Distance(view.position, view.target);
-        }
+        if (g_options.cutsceneCamera)
+            FreeCamera_LookFrom(&g_view.camera, CutsceneCamera());
         FreeCamera_SetFly(&g_view.camera, g_options.cutsceneCamera || !g_view.camera.fly);
         g_options.cutsceneCamera = false;
     }
@@ -346,7 +333,7 @@ static void UpdateInput(Rectangle scene) {
         FreeCamera_Update(&g_view.camera, scene, 0.1f);
 
     if (g_view.playing && !g_view.seeking) {
-        g_view.time += fminf(GetFrameTime(), 0.25f); // Without skipping frames after a long one (loading)
+        g_view.time += Scene3D_FrameTime();
         if (g_view.time >= Duration()) {
             g_view.time = Duration();
             g_view.playing = false;
@@ -397,27 +384,7 @@ static bool HasMovement(const AUTH_Character* character) {
 
 static void DrawCameraGizmo(void) {
     Camera3D camera = CutsceneCamera();
-    Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
-    Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
-    Vector3 up = Vector3CrossProduct(right, forward);
-    float depth = fmaxf(g_view.radius * 0.15f, 0.5f);
-    float halfHeight = depth * tanf(camera.fovy * 0.5f * DEG2RAD);
-    float halfWidth = halfHeight * AUTHVIEW_ASPECT;
-    Vector3 center = Vector3Add(camera.position, Vector3Scale(forward, depth));
-    Vector3 corners[4];
-    for (int i = 0; i < 4; i++) {
-        float sx = (i == 0 || i == 3) ? -1.0f : 1.0f;
-        float sy = i < 2 ? 1.0f : -1.0f;
-        corners[i] = Vector3Add(center, Vector3Add(Vector3Scale(right, sx * halfWidth), Vector3Scale(up, sy * halfHeight)));
-    }
-    for (int i = 0; i < 4; i++) {
-        DrawLine3D(camera.position, corners[i], g_cameraColor);
-        DrawLine3D(corners[i], corners[(i + 1) % 4], g_cameraColor);
-    }
-    // Triangle over the top edge, to show the up direction
-    Vector3 top = Vector3Add(Vector3Scale(Vector3Add(corners[0], corners[1]), 0.5f), Vector3Scale(up, halfHeight * 0.4f));
-    DrawLine3D(corners[0], top, g_cameraColor);
-    DrawLine3D(corners[1], top, g_cameraColor);
+    Scene3D_DrawCameraGizmo(camera, fmaxf(g_view.radius * 0.15f, 0.5f), AUTHVIEW_ASPECT, true, g_cameraColor);
     DrawLine3D(camera.position, camera.target, Fade(g_cameraColor, 0.3f));
     DrawSphere(camera.target, 0.05f, g_cameraColor);
 }
@@ -446,18 +413,6 @@ static void DrawCharacters(void) {
         DrawLine3D(eyes, front, color);
         DrawSphere(front, 0.06f, color);
     }
-}
-
-static void Begin3D(Camera3D camera, Rectangle area, double nearPlane, double farPlane) {
-    BeginMode3D(camera);
-    // Draw only inside the area, with its aspect ratio
-    FreeCamera_Viewport(area);
-    rlMatrixMode(RL_PROJECTION);
-    rlLoadIdentity();
-    double top = nearPlane * tan(camera.fovy * 0.5 * DEG2RAD);
-    double right = top * area.width / area.height;
-    rlFrustum(-right, right, -top, top, nearPlane, farPlane);
-    rlMatrixMode(RL_MODELVIEW);
 }
 
 // Is the character speaking, or making a sound, at the current frame: text of the last voice or sound
@@ -496,17 +451,13 @@ static const AUTH_Command* CharacterMotion(uint32_t idValue) {
 
 // Name, sound and motion of the characters, over the 3D view
 static void DrawCharacterLabels(Camera3D camera, Rectangle area, Font font, float fontSize) {
-    Vector3 forward = Vector3Subtract(camera.target, camera.position);
     for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {
         const AUTH_Character* character = &g_view.sequence.characters[i];
         if (!HasMovement(character))
             continue;
         Vector3 head = Vector3Add(CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time), (Vector3) { 0.0f, AUTHVIEW_HEIGHT + 0.15f, 0.0f });
-        if (Vector3DotProduct(Vector3Subtract(head, camera.position), forward) <= 0.0f)
-            continue;
-        Vector2 point = GetWorldToScreenEx(head, camera, (int)area.width, (int)area.height);
-        point = (Vector2) { area.x + point.x, area.y + point.y };
-        if (!CheckCollisionPointRec(point, area))
+        Vector2 point;
+        if (!Scene3D_ScreenPoint(camera, area, head, &point))
             continue;
 
         const char* lines[3] = { character->id, CharacterSound(character->idValue), NULL };
@@ -515,16 +466,13 @@ static void DrawCharacterLabels(Camera3D camera, Rectangle area, Font font, floa
             const char* name = MotionName(Arg(motion, 1));
             lines[2] = name != NULL ? name : TextFormat("motion 0x%X", Arg(motion, 1));
         }
-        float y = point.y - fontSize * 1.2f;
+        // Stacked upwards, from a line over the head
+        Vector2 bottom = { point.x, point.y - fontSize * 0.2f };
         for (int l = 0; l < 3; l++) {
             if (lines[l] == NULL)
                 continue;
-            Vector2 size = MeasureTextEx(font, lines[l], fontSize, 1.0f);
-            Rectangle box = { point.x - size.x * 0.5f - 3.0f, y - 1.0f, size.x + 6.0f, fontSize + 2.0f };
-            DrawRectangleRec(box, Fade(BLACK, 0.6f));
-            DrawTextEx(font, lines[l], (Vector2) { box.x + 3.0f, y }, fontSize, 1.0f,
-                l == 0 ? CharacterColor((int)i) : l == 1 ? g_voiceColor : LIGHTGRAY);
-            y -= fontSize * 1.2f;
+            Scene3D_DrawLabel(bottom, lines[l], font, fontSize, l == 0 ? CharacterColor((int)i) : l == 1 ? g_voiceColor : LIGHTGRAY);
+            bottom.y -= fontSize * 1.2f;
         }
     }
 }
@@ -534,15 +482,9 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     Camera3D camera;
     Rectangle view = area;
     if (g_options.cutsceneCamera) {
-        // The screen of the game, letterboxed
         camera = CutsceneCamera();
-        view.width = fminf(area.width, area.height * AUTHVIEW_ASPECT);
-        view.height = view.width / AUTHVIEW_ASPECT;
-        view.x = roundf(area.x + (area.width - view.width) * 0.5f);
-        view.y = roundf(area.y + (area.height - view.height) * 0.5f);
-        DrawRectangleRec(area, BLACK);
-        DrawRectangleRec(view, (Color) { 45, 45, 48, 255 });
-        Begin3D(camera, view, 0.05, 1000.0);
+        view = Scene3D_Letterbox(area, AUTHVIEW_ASPECT);
+        FreeCamera_BeginCamera3D(camera, view, 0.05, 1000.0);
     }
     else
         camera = FreeCamera_Begin3D(&g_view.camera, view);

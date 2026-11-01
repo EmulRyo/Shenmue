@@ -17,6 +17,7 @@
 #include "views/mt5Render.h"
 #include "views/freeCamera.h"
 #include "views/listView.h"
+#include "views/scene3D.h"
 #include "views/mapinfoView.h"
 
 #define MAPINFOVIEW_LABEL_SIZE   160
@@ -24,7 +25,6 @@
 #define MAPINFOVIEW_FOVY         45.0f
 #define MAPINFOVIEW_CAMERA_FOVY  60.0f   // Of the cameras without a field of view curve
 #define MAPINFOVIEW_ASPECT       (4.0f / 3.0f) // Of the screen of the game, for the cameras of the map
-#define MAPINFOVIEW_OFF_SCENE    999.0f  // Coordinate of the positions of the characters off the scene
 #define MAPINFOVIEW_HEIGHT       1.7f    // Of the characters, drawn as cylinders
 #define MAPINFOVIEW_RADIUS       0.25f
 #define MAPINFOVIEW_CIRCLE_SIDES 24
@@ -41,22 +41,6 @@ typedef struct {
     ItemKind    kind;
     uint32_t    index;  // In the cameras, lights, characters or doors
 } Item;
-
-typedef struct {
-    char        id[5];
-    bool        positioned; // Has a Position in the scene
-    bool        sleep;      // SLEEP flag
-    Vector3     position;
-    float       angle;      // Around the vertical axis, degrees
-} Character;
-
-// A model drawn in the scene
-typedef struct {
-    uint32_t    model;      // Index in the models
-    bool        door;
-    Matrix      transform;
-    Vector3     center;     // Of the bounding sphere, in the scene
-} Instance;
 
 typedef enum {
     LAYER_MAP,
@@ -88,13 +72,13 @@ typedef struct {
     MAPINFO_File        file;
     CHRT_Script         script;
     uint32_t            characterCount;
-    Character*          characters;
+    CHRT_Character*     characters;
     MT5Render           render;
     uint32_t            modelCount;
     MT5Render_Model*    models;         // The models of the map, then the models of the doors
     uint32_t            mapModelCount;
     uint32_t            instanceCount;
-    Instance*           instances;      // Each model of the map, and each door with its model
+    MT5Render_Instance* instances;      // Each model of the map (mapModelCount), then each door with its model
     uint32_t            loadedDoors;    // Doors with their model
     const char**        doorErrors;     // Why the model of each door couldn't be loaded, NULL if it was
     uint32_t            itemCount;
@@ -149,18 +133,7 @@ static uint32_t CameraKeys(const MAPINFO_Camera* camera) {
 static Camera3D MapCamera(const MAPINFO_Camera* source) {
     float duration = CameraDuration(source);
     float time = duration > 0.0f ? fmodf(g_view.time, duration) : 0.0f;
-    const AUTH_Curve* curves = source->curves;
-    Vector3 position = { AUTH_CurveValue(&curves[AUTH_CAMERA_X], time, 0.0f), AUTH_CurveValue(&curves[AUTH_CAMERA_Y], time, 0.0f),
-        AUTH_CurveValue(&curves[AUTH_CAMERA_Z], time, 0.0f) };
-    Vector3 target = { AUTH_CurveValue(&curves[AUTH_CAMERA_TARGET_X], time, 0.0f),
-        AUTH_CurveValue(&curves[AUTH_CAMERA_TARGET_Y], time, 0.0f), AUTH_CurveValue(&curves[AUTH_CAMERA_TARGET_Z], time, 0.0f) };
-    if (Vector3Equals(position, target))
-        target.z -= 1.0f;
-    Vector3 forward = Vector3Normalize(Vector3Subtract(target, position));
-    float roll = AUTH_CurveValue(&curves[AUTH_CAMERA_ROLL], time, 0.0f);
-    Vector3 up = Vector3RotateByAxisAngle((Vector3) { 0.0f, 1.0f, 0.0f }, forward, roll * DEG2RAD);
-    float fovy = AUTH_CurveValue(&curves[AUTH_CAMERA_FOV], time, MAPINFOVIEW_CAMERA_FOVY);
-    return (Camera3D) { position, target, up, fovy > 1.0f && fovy < 179.0f ? fovy : MAPINFOVIEW_CAMERA_FOVY, CAMERA_PERSPECTIVE };
+    return Scene3D_CurveCamera(source->curves, time, MAPINFOVIEW_CAMERA_FOVY);
 }
 
 static const MAPINFO_Camera* SelectedCamera(void) {
@@ -169,56 +142,23 @@ static const MAPINFO_Camera* SelectedCamera(void) {
     return &g_view.file.cameras[g_view.items[g_view.selected].index];
 }
 
-// Reads the Position and Angle commands of a block. Returns true if it has a Position in the scene (see CHRTView)
-static bool ReadPlacement(uint32_t block, Character* character) {
-    const CHRT_Script* script = &g_view.script;
-    bool hasPosition = false;
-    for (uint32_t c = block + 1; c < script->commandCount && script->commands[c].depth > script->commands[block].depth; c++) {
-        const CHRT_Command* command = &script->commands[c];
-        if (command->parent != (int32_t)block || command->argCount == 0 || command->args[0].type != CHRT_ARG_FLOAT)
-            continue;
-        if (CHRT_IsCommand(command, "Position") && command->argCount == 3) {
-            Vector3 position = { command->args[0].f, command->args[1].f, command->args[2].f };
-            if (fabsf(position.x) < MAPINFOVIEW_OFF_SCENE && fabsf(position.y) < MAPINFOVIEW_OFF_SCENE &&
-                fabsf(position.z) < MAPINFOVIEW_OFF_SCENE) {
-                character->position = position;
-                hasPosition = true;
-            }
-        }
-        else if (CHRT_IsCommand(command, "Angle"))
-            character->angle = command->args[command->argCount == 3 ? 1 : 0].f;
-    }
-    return hasPosition;
-}
-
-// The characters of the CHRD chunk, at their last Position in the scene, or that of their first Entry
+// The characters of the CHRD chunk
 static void LoadCharacters(void) {
     const MAPINFO_File* file = &g_view.file;
     if (file->characters == NULL || !CHRT_LoadFromMemory(file->characters, file->charactersSize, g_view.filename, &g_view.script))
         return;
     const CHRT_Script* script = &g_view.script;
-    g_view.characters = calloc(script->commandCount + 1, sizeof(Character));
+    g_view.characters = calloc(script->commandCount + 1, sizeof(CHRT_Character));
     if (g_view.characters == NULL)
         return;
     for (uint32_t c = 0; c < script->commandCount; c++) {
-        const CHRT_Command* command = &script->commands[c];
-        if (command->parent != -1 || !CHRT_IsCommand(command, "Character"))
-            continue;
-        Character* character = &g_view.characters[g_view.characterCount++];
-        snprintf(character->id, sizeof(character->id), "%s", command->argCount > 0 && command->args[0].type == CHRT_ARG_LITERAL ? command->args[0].literal : "?");
-        character->positioned = ReadPlacement(c, character);
-        for (uint32_t i = c + 1; i < script->commandCount && script->commands[i].depth > command->depth; i++) {
-            const CHRT_Command* child = &script->commands[i];
-            if (child->parent != (int32_t)c)
-                continue;
-            if (!character->positioned && CHRT_IsCommand(child, "Entry"))
-                character->positioned = ReadPlacement(i, character);
-            if (CHRT_IsCommand(child, "Flags")) {
-                for (uint32_t a = 0; a < child->argCount; a++)
-                    character->sleep |= child->args[a].type == CHRT_ARG_STRING && CHRT_EqualsIgnoreCase(child->args[a].string, "SLEEP");
-            }
-        }
+        if (script->commands[c].parent == -1 && CHRT_IsCommand(&script->commands[c], "Character"))
+            CHRT_ReadCharacter(script, c, &g_view.characters[g_view.characterCount++]);
     }
+}
+
+static Vector3 CharacterPosition(const CHRT_Character* character) {
+    return (Vector3) { character->position[0], character->position[1], character->position[2] };
 }
 
 // Models of the map: MAP.mt5, MAP01.mt5... in the folder, in its subfolders (mpk00, map0...) and in its PKF/PKS files
@@ -293,12 +233,10 @@ static void LoadPacks(const char* folder, IPAC_FileList* packed) {
     UnloadDirectoryFiles(files);
 }
 
-static void AddInstance(uint32_t model, bool door, Matrix transform) {
-    Instance* instance = &g_view.instances[g_view.instanceCount++];
-    instance->model = model;
-    instance->door = door;
-    instance->transform = transform;
-    instance->center = Vector3Transform(g_view.models[model].mesh.center, transform);
+static void AddInstance(uint32_t model, Matrix transform) {
+    MT5Render_Model* instanced = &g_view.models[model];
+    g_view.instances[g_view.instanceCount++] = (MT5Render_Instance) { instanced, transform,
+        Vector3Transform(instanced->mesh.center, transform), 0 };
 }
 
 // The models of the map, and the models of the doors at their placements, from the MT5 and CHRM files of the folder and
@@ -317,7 +255,7 @@ static void LoadModels(const char* folder) {
     CHRT_Script* scripts = calloc(capacity + 2, sizeof(CHRT_Script)); // The CHRD chunk and the CHRT files
     uint32_t scriptCount = 0;
     g_view.models = calloc(capacity + 1, sizeof(MT5Render_Model));
-    g_view.instances = calloc(capacity + file->doorCount + 1, sizeof(Instance));
+    g_view.instances = calloc(capacity + file->doorCount + 1, sizeof(MT5Render_Instance));
     g_view.doorErrors = calloc(file->doorCount + 1, sizeof(const char*));
     if (files != NULL && fileModels != NULL && scripts != NULL && g_view.models != NULL &&
         g_view.instances != NULL && g_view.doorErrors != NULL) {
@@ -351,7 +289,7 @@ static void LoadModels(const char* folder) {
             else if (IsFileExtension(files[i].name, ".mt5") && IsMapModel(files[i].name) &&
                 LoadMapModel(&files[i], &packed, &g_view.models[g_view.modelCount])) {
                 fileModels[i] = (int)g_view.modelCount;
-                AddInstance(g_view.modelCount++, false, MatrixIdentity());
+                AddInstance(g_view.modelCount++, MatrixIdentity());
             }
         }
         g_view.mapModelCount = g_view.modelCount;
@@ -372,7 +310,7 @@ static void LoadModels(const char* folder) {
             // As the nodes of the models: scale, rotation and translation
             Matrix transform = MatrixMultiply(MatrixScale(door->scale[0], door->scale[1], door->scale[2]), MatrixRotateY(door->angle * DEG2RAD));
             transform = MatrixMultiply(transform, MatrixTranslate(door->position[0], door->position[1], door->position[2]));
-            AddInstance((uint32_t)fileModels[f], true, transform);
+            AddInstance((uint32_t)fileModels[f], transform);
             g_view.loadedDoors++;
         }
     }
@@ -440,17 +378,10 @@ static void ResetCamera(void) {
 // Fits the camera to the models of the map and of the doors, or to the corners of the bounds if there is no model
 static void FitCamera(Rectangle area) {
     g_view.fit = false;
-    uint32_t total = 8;
-    for (uint32_t i = 0; i < g_view.instanceCount; i++)
-        total += g_view.models[g_view.instances[i].model].mesh.triangleCount * 3;
-    Vector3* points = malloc(total * sizeof(Vector3));
+    uint32_t count;
+    Vector3* points = MT5Render_InstanceVertices(g_view.instances, g_view.instanceCount, 8, &count);
     if (points == NULL)
         return;
-    uint32_t count = 0;
-    for (uint32_t i = 0; i < g_view.instanceCount; i++) {
-        const Instance* instance = &g_view.instances[i];
-        count += MT5Render_Vertices(&g_view.models[instance->model], instance->transform, points + count);
-    }
     if (count == 0) {
         for (int i = 0; i < 8; i++)
             points[count++] = (Vector3) { (i & 1) ? g_view.max.x : g_view.min.x, (i & 2) ? g_view.max.y : g_view.min.y,
@@ -532,10 +463,10 @@ static bool CreateItems(void) {
             light->position[0], light->position[1], light->position[2], light->color[0], light->color[1], light->color[2]), false);
     }
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
-        const Character* character = &g_view.characters[i];
+        const CHRT_Character* character = &g_view.characters[i];
         AddItem(ITEM_CHARACTER, i, character->positioned ?
-            TextFormat("Character %s  (%.2f, %.2f, %.2f)%s", character->id, character->position.x, character->position.y,
-                character->position.z, character->sleep ? "  sleep" : "") :
+            TextFormat("Character %s  (%.2f, %.2f, %.2f)%s", character->id, character->position[0], character->position[1],
+                character->position[2], character->sleep ? "  sleep" : "") :
             TextFormat("Character %s  no position%s", character->id, character->sleep ? "  sleep" : ""), false);
     }
     for (uint32_t i = 0; i < file->doorCount; i++) {
@@ -618,7 +549,7 @@ static void Select(int item) {
     if (selected->kind == ITEM_LIGHT)
         target = LightPosition(&g_view.file.lights[selected->index]);
     else if (selected->kind == ITEM_CHARACTER && g_view.characters[selected->index].positioned)
-        target = Vector3Add(g_view.characters[selected->index].position, (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT * 0.5f, 0.0f });
+        target = Vector3Add(CharacterPosition(&g_view.characters[selected->index]), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT * 0.5f, 0.0f });
     else if (selected->kind == ITEM_DOOR) {
         const float* position = g_view.file.doors[selected->index].position;
         target = (Vector3) { position[0], position[1] + 1.0f, position[2] };
@@ -636,14 +567,8 @@ static void UpdateInput(Rectangle scene) {
     if (IsKeyPressed(KEY_F)) {
         // Flies from the position of the camera of the map, or of the free camera, looking around it
         const MAPINFO_Camera* source = g_view.mapCamera ? SelectedCamera() : NULL;
-        if (source != NULL) {
-            Camera3D view = MapCamera(source);
-            Vector3 direction = Vector3Normalize(Vector3Subtract(view.position, view.target));
-            g_view.camera.yaw = atan2f(direction.x, direction.z);
-            g_view.camera.pitch = Clamp(asinf(direction.y), -1.55f, 1.55f);
-            g_view.camera.target = view.target;
-            g_view.camera.distance = Vector3Distance(view.position, view.target);
-        }
+        if (source != NULL)
+            FreeCamera_LookFrom(&g_view.camera, MapCamera(source));
         FreeCamera_SetFly(&g_view.camera, g_view.mapCamera || !g_view.camera.fly);
         g_view.mapCamera = false;
     }
@@ -655,38 +580,15 @@ static void UpdateInput(Rectangle scene) {
         FitCamera(scene);
     if (!g_view.mapCamera)
         FreeCamera_Update(&g_view.camera, scene, 0.1f);
-    g_view.time += fminf(GetFrameTime(), 0.25f);
+    g_view.time += Scene3D_FrameTime();
 }
 
-static Camera3D g_sortCamera;
-
-static int CompareDistance(const void* a, const void* b) {
-    float distanceA = Vector3DistanceSqr(g_view.instances[*(const uint32_t*)a].center, g_sortCamera.position);
-    float distanceB = Vector3DistanceSqr(g_view.instances[*(const uint32_t*)b].center, g_sortCamera.position);
-    return distanceA < distanceB ? 1 : distanceA > distanceB ? -1 : 0; // Farthest first
-}
-
-// The opaque part of the visible models, then the translucent part from the farthest model to the nearest one
+// The instances of the visible layers: the models of the map are before the doors
 static void DrawModels(Camera3D camera) {
-    uint32_t* order = malloc((g_view.instanceCount + 1) * sizeof(uint32_t));
-    if (order == NULL)
-        return;
-    MT5Render_SetCamera(&g_view.render, camera);
-    uint32_t count = 0;
-    for (uint32_t i = 0; i < g_view.instanceCount; i++) {
-        const Instance* instance = &g_view.instances[i];
-        if (!g_options.layers[instance->door ? LAYER_DOORS : LAYER_MAP])
-            continue;
-        MT5Render_DrawOpaque(&g_view.render, &g_view.models[instance->model], instance->transform, 0);
-        order[count++] = i;
-    }
-    g_sortCamera = camera;
-    qsort(order, count, sizeof(uint32_t), CompareDistance);
-    for (uint32_t i = 0; i < count; i++) {
-        const Instance* instance = &g_view.instances[order[i]];
-        MT5Render_DrawTranslucent(&g_view.render, &g_view.models[instance->model], instance->transform, 0, camera);
-    }
-    free(order);
+    uint32_t first = g_options.layers[LAYER_MAP] ? 0 : g_view.mapModelCount;
+    uint32_t end = g_options.layers[LAYER_DOORS] ? g_view.instanceCount : g_view.mapModelCount;
+    if (first < end)
+        MT5Render_DrawInstances(&g_view.render, g_view.instances + first, end - first, camera);
 }
 
 // Height of the point of a shape: the height of HGHT, the height of each corner of UNDU, 0 for the rest
@@ -748,23 +650,7 @@ static void DrawShape(const MAPINFO_Shape* shape, Color color) {
 }
 
 static void DrawCameraGizmo(Camera3D camera, Color color) {
-    Vector3 forward = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
-    Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, camera.up));
-    Vector3 up = Vector3CrossProduct(right, forward);
-    float depth = 0.6f;
-    float halfHeight = depth * tanf(camera.fovy * 0.5f * DEG2RAD);
-    float halfWidth = halfHeight * MAPINFOVIEW_ASPECT;
-    Vector3 center = Vector3Add(camera.position, Vector3Scale(forward, depth));
-    Vector3 corners[4];
-    for (int i = 0; i < 4; i++) {
-        float sx = (i == 0 || i == 3) ? -1.0f : 1.0f;
-        float sy = i < 2 ? 1.0f : -1.0f;
-        corners[i] = Vector3Add(center, Vector3Add(Vector3Scale(right, sx * halfWidth), Vector3Scale(up, sy * halfHeight)));
-    }
-    for (int i = 0; i < 4; i++) {
-        DrawLine3D(camera.position, corners[i], color);
-        DrawLine3D(corners[i], corners[(i + 1) % 4], color);
-    }
+    Scene3D_DrawCameraGizmo(camera, 0.6f, MAPINFOVIEW_ASPECT, false, color);
 }
 
 // The layers over the map, always visible
@@ -804,15 +690,15 @@ static void DrawOverlays(void) {
     }
     if (g_options.layers[LAYER_CHARACTERS]) {
         for (uint32_t i = 0; i < g_view.characterCount; i++) {
-            const Character* character = &g_view.characters[i];
+            const CHRT_Character* character = &g_view.characters[i];
             if (!character->positioned)
                 continue;
             bool selected = g_view.selected >= 0 && g_view.items[g_view.selected].kind == ITEM_CHARACTER && g_view.items[g_view.selected].index == i;
             Color color = selected ? g_selectedColor : character->sleep ? GRAY : g_characterColor;
-            DrawCylinderWires(character->position, MAPINFOVIEW_RADIUS, MAPINFOVIEW_RADIUS, MAPINFOVIEW_HEIGHT, 8, color);
+            DrawCylinderWires(CharacterPosition(character), MAPINFOVIEW_RADIUS, MAPINFOVIEW_RADIUS, MAPINFOVIEW_HEIGHT, 8, color);
             // Direction it faces: angle 0 faces +Z
-            float yaw = character->angle * DEG2RAD;
-            Vector3 eyes = Vector3Add(character->position, (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT * 0.9f, 0.0f });
+            float yaw = character->angle[1] * DEG2RAD;
+            Vector3 eyes = Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT * 0.9f, 0.0f });
             DrawLine3D(eyes, Vector3Add(eyes, (Vector3) { sinf(yaw) * 0.5f, 0.0f, cosf(yaw) * 0.5f }), color);
         }
     }
@@ -821,26 +707,18 @@ static void DrawOverlays(void) {
 }
 
 static void DrawLabel(Camera3D camera, Rectangle area, Font font, float fontSize, Vector3 position, const char* text, Color color) {
-    Vector3 forward = Vector3Subtract(camera.target, camera.position);
-    if (Vector3DotProduct(Vector3Subtract(position, camera.position), forward) <= 0.0f)
-        return;
-    Vector2 point = GetWorldToScreenEx(position, camera, (int)area.width, (int)area.height);
-    point = (Vector2) { area.x + point.x, area.y + point.y };
-    if (!CheckCollisionPointRec(point, area))
-        return;
-    Vector2 size = MeasureTextEx(font, text, fontSize, 1.0f);
-    Rectangle box = { point.x - size.x * 0.5f - 3.0f, point.y - fontSize - 1.0f, size.x + 6.0f, fontSize + 2.0f };
-    DrawRectangleRec(box, Fade(BLACK, 0.6f));
-    DrawTextEx(font, text, (Vector2) { box.x + 3.0f, box.y + 1.0f }, fontSize, 1.0f, color);
+    Vector2 point;
+    if (Scene3D_ScreenPoint(camera, area, position, &point))
+        Scene3D_DrawLabel(point, text, font, fontSize, color);
 }
 
 static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSize) {
     const MAPINFO_File* file = &g_view.file;
     if (g_options.layers[LAYER_CHARACTERS]) {
         for (uint32_t i = 0; i < g_view.characterCount; i++) {
-            const Character* character = &g_view.characters[i];
+            const CHRT_Character* character = &g_view.characters[i];
             if (character->positioned)
-                DrawLabel(camera, area, font, fontSize, Vector3Add(character->position, (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT + 0.1f, 0.0f }),
+                DrawLabel(camera, area, font, fontSize, Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT + 0.1f, 0.0f }),
                     character->id, character->sleep ? GRAY : g_characterColor);
         }
     }
@@ -857,23 +735,9 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     Rectangle view = area;
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     if (source != NULL) {
-        // The screen of the game, letterboxed
         camera = MapCamera(source);
-        view.width = fminf(area.width, area.height * MAPINFOVIEW_ASPECT);
-        view.height = view.width / MAPINFOVIEW_ASPECT;
-        view.x = roundf(area.x + (area.width - view.width) * 0.5f);
-        view.y = roundf(area.y + (area.height - view.height) * 0.5f);
-        DrawRectangleRec(area, BLACK);
-        DrawRectangleRec(view, (Color) { 45, 45, 48, 255 });
-        BeginMode3D(camera);
-        FreeCamera_Viewport(view);
-        rlMatrixMode(RL_PROJECTION);
-        rlLoadIdentity();
-        double nearPlane = 0.05;
-        double top = nearPlane * tan(camera.fovy * 0.5 * DEG2RAD);
-        double right = top * view.width / view.height;
-        rlFrustum(-right, right, -top, top, nearPlane, g_view.radius * 4.0 + 100.0);
-        rlMatrixMode(RL_MODELVIEW);
+        view = Scene3D_Letterbox(area, MAPINFOVIEW_ASPECT);
+        FreeCamera_BeginCamera3D(camera, view, 0.05, g_view.radius * 4.0 + 100.0);
     }
     else
         camera = FreeCamera_Begin3D(&g_view.camera, area);

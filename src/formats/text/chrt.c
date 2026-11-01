@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 #include "core/file.h"
 #include "formats/text/chrt.h"
 
@@ -55,6 +56,60 @@ const char* CHRT_ImageFile(const CHRT_Script* script, const char* name) {
         }
     }
     return NULL;
+}
+
+static bool IsInScene(const float position[3]) {
+    return fabsf(position[0]) < CHRT_OFF_SCENE && fabsf(position[1]) < CHRT_OFF_SCENE && fabsf(position[2]) < CHRT_OFF_SCENE;
+}
+
+// Reads the Position and Angle commands of a block. Returns true if it has a Position
+static bool ReadPlacement(const CHRT_Script* script, uint32_t block, CHRT_Character* character) {
+    bool hasPosition = false;
+    for (uint32_t c = block + 1; c < script->commandCount && script->commands[c].depth > script->commands[block].depth; c++) {
+        const CHRT_Command* command = &script->commands[c];
+        if (command->parent != (int32_t)block || command->argCount == 0 || command->args[0].type != CHRT_ARG_FLOAT)
+            continue;
+        if (CHRT_IsCommand(command, "Position") && command->argCount == 3) {
+            hasPosition = true;
+            for (int i = 0; i < 3; i++)
+                character->position[i] = command->args[i].f;
+        }
+        else if (CHRT_IsCommand(command, "Angle") && command->argCount == 1) // Only the rotation around the vertical axis
+            character->angle[1] = command->args[0].f;
+        else if (CHRT_IsCommand(command, "Angle") && command->argCount == 3) {
+            for (int i = 0; i < 3; i++)
+                character->angle[i] = command->args[i].f;
+        }
+    }
+    return hasPosition;
+}
+
+void CHRT_ReadCharacter(const CHRT_Script* script, uint32_t index, CHRT_Character* character) {
+    memset(character, 0, sizeof(*character));
+    const CHRT_Command* command = &script->commands[index];
+    snprintf(character->id, sizeof(character->id), "%s", command->argCount > 0 && command->args[0].type == CHRT_ARG_LITERAL ? command->args[0].literal : "?");
+    int32_t entry = -1;
+    for (uint32_t c = index + 1; c < script->commandCount && script->commands[c].depth > command->depth; c++) {
+        const CHRT_Command* child = &script->commands[c];
+        if (child->parent != (int32_t)index)
+            continue;
+        if (CHRT_IsCommand(child, "Image") && character->image == NULL && child->argCount > 0 && child->args[0].type == CHRT_ARG_STRING)
+            character->image = child->args[0].string;
+        else if (CHRT_IsCommand(child, "Entry") && entry < 0)
+            entry = (int32_t)c;
+        else if (CHRT_IsCommand(child, "Flags")) {
+            for (uint32_t i = 0; i < child->argCount; i++)
+                character->sleep |= child->args[i].type == CHRT_ARG_STRING && CHRT_EqualsIgnoreCase(child->args[i].string, "SLEEP");
+        }
+    }
+
+    // The Entry blocks are only read when the character isn't placed in the scene by its own commands
+    character->hasPosition = ReadPlacement(script, index, character);
+    character->positioned = character->hasPosition && IsInScene(character->position);
+    if (!character->positioned && entry >= 0) {
+        character->hasPosition |= ReadPlacement(script, (uint32_t)entry, character);
+        character->positioned = character->hasPosition && IsInScene(character->position);
+    }
 }
 
 static bool IsBlockCommand(const CHRT_Command* command) {

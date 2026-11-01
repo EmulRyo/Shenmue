@@ -83,6 +83,14 @@ static void SetDistance(FreeCamera* camera, float distance) {
     camera->target = Vector3Subtract(position, Vector3Scale(Direction(camera), distance));
 }
 
+void FreeCamera_LookFrom(FreeCamera* camera, Camera3D view) {
+    Vector3 direction = Vector3Normalize(Vector3Subtract(view.position, view.target));
+    camera->yaw = atan2f(direction.x, direction.z);
+    camera->pitch = Clamp(asinf(direction.y), -1.55f, 1.55f);
+    camera->target = view.target;
+    camera->distance = Vector3Distance(view.position, view.target);
+}
+
 void FreeCamera_SetFly(FreeCamera* camera, bool fly) {
     // The target is where the orbit goes back to
     if (fly)
@@ -191,6 +199,17 @@ void FreeCamera_Viewport(Rectangle area) {
     rlViewport(x, GetRenderHeight() - (y + height), width, height);
 }
 
+void FreeCamera_BeginCamera3D(Camera3D camera, Rectangle area, double nearPlane, double farPlane) {
+    BeginMode3D(camera);
+    FreeCamera_Viewport(area);
+    rlMatrixMode(RL_PROJECTION);
+    rlLoadIdentity();
+    double top = nearPlane * tan(camera.fovy * 0.5 * DEG2RAD);
+    double right = top * area.width / area.height;
+    rlFrustum(-right, right, -top, top, nearPlane, farPlane);
+    rlMatrixMode(RL_MODELVIEW);
+}
+
 Camera3D FreeCamera_Begin3D(const FreeCamera* camera, Rectangle area) {
     double nearPlane = camera->distance * 0.01;
     double farPlane = camera->distance + camera->radius * 4.0;
@@ -200,14 +219,7 @@ Camera3D FreeCamera_Begin3D(const FreeCamera* camera, Rectangle area) {
         farPlane = Vector3Distance(FreeCamera_Position(camera), camera->center) + camera->radius * 2.0;
     }
     Camera3D camera3D = FreeCamera_Camera3D(camera);
-    BeginMode3D(camera3D);
-    FreeCamera_Viewport(area);
-    rlMatrixMode(RL_PROJECTION);
-    rlLoadIdentity();
-    double top = nearPlane * tan(camera->fovy * 0.5 * DEG2RAD);
-    double right = top * area.width / area.height;
-    rlFrustum(-right, right, -top, top, nearPlane, farPlane);
-    rlMatrixMode(RL_MODELVIEW);
+    FreeCamera_BeginCamera3D(camera3D, area, nearPlane, farPlane);
     return camera3D;
 }
 

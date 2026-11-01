@@ -89,6 +89,8 @@ set(SRC
     src/views/mt5Render.h
     src/views/mt5View.c
     src/views/mt5View.h
+    src/views/scene3D.c
+    src/views/scene3D.h
     src/views/sndView.c
     src/views/sndView.h
     src/views/views.c

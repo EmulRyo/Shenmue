@@ -12,12 +12,12 @@
 #include "views/mt5Render.h"
 #include "views/freeCamera.h"
 #include "views/listView.h"
+#include "views/scene3D.h"
 #include "views/chrtView.h"
 
 #define CHRTVIEW_FOVY 45.0f
 #define CHRTVIEW_FRAME_RATE 15.0f
 #define CHRTVIEW_PATH_SIZE 1024
-#define CHRTVIEW_OFF_SCENE 999.0f // Coordinate of the positions off the scene
 #define CHRTVIEW_LABEL_SIZE 128
 #define CHRTVIEW_LIST_WIDTH 360.0f
 
@@ -28,14 +28,9 @@ typedef struct {
 } CHRTView_Model;
 
 typedef struct {
-    char            id[5];
-    const char*     image;  // Name given by the Image command, NULL if none
+    CHRT_Character  info;   // The characters not positioned in the scene are arranged in rows (see ArrangeUnpositioned)
     int32_t         model;  // Index in the model list, -1 if the model can't be loaded
     const char*     error;  // Why the model can't be loaded, NULL if it is
-    bool            sleep;  // SLEEP flag
-    bool            positioned; // Has a Position in the scene, the others are arranged in rows (see ArrangeUnpositioned)
-    Vector3         position;   // From the script, (0, 0, 0) if none
-    Vector3         angle;
     Matrix          transform;
     Vector3         center; // Bounding sphere of the model in the scene
     float           radius;
@@ -50,6 +45,7 @@ typedef struct {
     CHRTView_Model*     models;
     uint32_t            characterCount;
     CHRTView_Character* characters;
+    MT5Render_Instance* visible;     // The visible characters, filled before drawing them
     uint32_t            modelledCount;     // Characters with a model
     uint32_t            unpositionedCount; // Characters with a model and without a Position command
     char                (*labels)[CHRTVIEW_LABEL_SIZE];
@@ -113,87 +109,34 @@ static int32_t LoadCharacterModel(const char* path) {
     return model->loaded ? (int32_t)(model - g_view.models) : -1;
 }
 
-// Reads the Position and Angle commands of a block. Returns true if it has a Position in the scene: positions with a
-// coordinate of 1000 or more, e.g. (0, 0, -1000) or (-1300, 0, 1000), are off the scene, where the characters wait to
-// be placed by other scripts
-static bool ReadPlacement(uint32_t block, float position[3], float angle[3]) {
-    const CHRT_Script* script = &g_view.script;
-    bool hasPosition = false;
-    for (uint32_t c = block + 1; c < script->commandCount && script->commands[c].depth > script->commands[block].depth; c++) {
-        const CHRT_Command* command = &script->commands[c];
-        if (command->parent != (int32_t)block || command->argCount == 0 || command->args[0].type != CHRT_ARG_FLOAT)
-            continue;
-        if (CHRT_IsCommand(command, "Position") && command->argCount == 3) {
-            hasPosition = true;
-            for (int i = 0; i < 3; i++) {
-                position[i] = command->args[i].f;
-                hasPosition &= fabsf(position[i]) < CHRTVIEW_OFF_SCENE;
-            }
-        }
-        else if (CHRT_IsCommand(command, "Angle") && command->argCount == 1) // Only the rotation around the vertical axis
-            angle[1] = command->args[0].f;
-        else if (CHRT_IsCommand(command, "Angle") && command->argCount == 3) {
-            for (int i = 0; i < 3; i++)
-                angle[i] = command->args[i].f;
-        }
-    }
-    return hasPosition;
-}
-
-// Position and angle of a character: its last Position and Angle commands (the first Position is usually off the
-// scene), or those of its first Entry if it has none
-static void PlaceCharacter(uint32_t index, CHRTView_Character* character) {
-    const CHRT_Script* script = &g_view.script;
-    float position[3] = { 0 }, angle[3] = { 0 };
-    character->positioned = ReadPlacement(index, position, angle);
-    for (uint32_t c = index + 1; !character->positioned && c < script->commandCount && script->commands[c].depth > script->commands[index].depth; c++) {
-        if (script->commands[c].parent == (int32_t)index && CHRT_IsCommand(&script->commands[c], "Entry")) {
-            character->positioned = ReadPlacement(c, position, angle);
-            break;
-        }
-    }
-    character->position = (Vector3) { position[0], position[1], position[2] };
-    character->angle = (Vector3) { angle[0], angle[1], angle[2] };
-    if (!character->positioned)
-        position[0] = position[1] = position[2] = 0.0f;
-
-    // As the nodes of the models: rotation around X, Y and Z, and translation
+// As the nodes of the models: rotation around X, Y and Z, and translation. The characters not positioned in the scene
+// are placed at the origin
+static Matrix CharacterTransform(const CHRT_Character* character) {
+    const float* angle = character->angle;
+    const float* position = character->position;
     Matrix matrix = MatrixRotateX(angle[0] * DEG2RAD);
     matrix = MatrixMultiply(matrix, MatrixRotateY(angle[1] * DEG2RAD));
     matrix = MatrixMultiply(matrix, MatrixRotateZ(angle[2] * DEG2RAD));
-    character->transform = MatrixMultiply(matrix, MatrixTranslate(position[0], position[1], position[2]));
+    if (!character->positioned)
+        return matrix;
+    return MatrixMultiply(matrix, MatrixTranslate(position[0], position[1], position[2]));
 }
 
 static void LoadCharacter(uint32_t index, const char* folder) {
-    const CHRT_Script* script = &g_view.script;
     CHRTView_Character* character = &g_view.characters[g_view.characterCount++];
-    const CHRT_Command* command = &script->commands[index];
-    snprintf(character->id, sizeof(character->id), "%s", command->argCount > 0 && command->args[0].type == CHRT_ARG_LITERAL ? command->args[0].literal : "?");
+    CHRT_ReadCharacter(&g_view.script, index, &character->info);
     character->model = -1;
+    character->transform = CharacterTransform(&character->info);
 
-    for (uint32_t c = index + 1; c < script->commandCount && script->commands[c].parent == (int32_t)index; c++) {
-        // Children of the blocks of the character (Entry, animated Image) are skipped
-        const CHRT_Command* child = &script->commands[c];
-        if (CHRT_IsCommand(child, "Image") && character->image == NULL && child->argCount > 0 && child->args[0].type == CHRT_ARG_STRING)
-            character->image = child->args[0].string;
-        else if (CHRT_IsCommand(child, "Flags")) {
-            for (uint32_t i = 0; i < child->argCount; i++)
-                character->sleep |= child->args[i].type == CHRT_ARG_STRING && CHRT_EqualsIgnoreCase(child->args[i].string, "SLEEP");
-        }
-        while (c + 1 < script->commandCount && script->commands[c + 1].depth > child->depth)
-            c++;
-    }
-
-    PlaceCharacter(index, character);
     char path[CHRTVIEW_PATH_SIZE];
-    if (character->image == NULL)
+    if (character->info.image == NULL)
         character->error = "no image";
-    else if (!ModelPath(folder, ImageFile(character->image), path, sizeof(path)))
+    else if (!ModelPath(folder, ImageFile(character->info.image), path, sizeof(path)))
         character->error = "no model file";
     else if ((character->model = LoadCharacterModel(path)) < 0)
         character->error = "invalid model file";
     if (character->model < 0) {
-        printf("[CHRTView_Open]: No model for %s (%s, %s)\n", character->id, character->image != NULL ? character->image : "no image",
+        printf("[CHRTView_Open]: No model for %s (%s, %s)\n", character->info.id, character->info.image != NULL ? character->info.image : "no image",
             character->error);
         return;
     }
@@ -202,7 +145,7 @@ static void LoadCharacter(uint32_t index, const char* folder) {
     character->center = Vector3Transform(mesh->center, character->transform);
     character->radius = mesh->radius;
     g_view.modelledCount++;
-    g_view.unpositionedCount += !character->positioned;
+    g_view.unpositionedCount += !character->info.positioned;
 }
 
 // The models of the characters without a Position are at the origin (e.g. the shutters and the counters of the shops
@@ -215,7 +158,7 @@ static void ArrangeUnpositioned(void) {
         const CHRTView_Character* character = &g_view.characters[i];
         if (character->model < 0)
             continue;
-        if (character->positioned) {
+        if (character->info.positioned) {
             Vector3 extent = { character->radius, character->radius, character->radius };
             min = Vector3Min(min, Vector3Subtract(character->center, extent));
             max = Vector3Max(max, Vector3Add(character->center, extent));
@@ -231,7 +174,7 @@ static void ArrangeUnpositioned(void) {
     float x = 0.0f, z = 0.0f, rowDepth = 0.0f;
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
         CHRTView_Character* character = &g_view.characters[i];
-        if (character->model < 0 || character->positioned)
+        if (character->model < 0 || character->info.positioned)
             continue;
         float size = 2.0f * character->radius;
         if (x > 0.0f && x + size > rowWidth) {
@@ -278,11 +221,11 @@ static bool CreateLabels(void) {
         const CHRTView_Character* character = &g_view.characters[i];
         g_view.failed[i] = character->model < 0;
         if (character->model < 0)
-            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, LISTVIEW_FAILED "%s  %s%s%s", character->id,
-                character->image != NULL ? character->image : "", character->image != NULL ? "  " : "", character->error);
+            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, LISTVIEW_FAILED "%s  %s%s%s", character->info.id,
+                character->info.image != NULL ? character->info.image : "", character->info.image != NULL ? "  " : "", character->error);
         else
-            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s  %s%s%s", character->id, GetFileName(g_view.models[character->model].path),
-                character->positioned ? "" : "  no position", character->sleep ? "  sleep" : "");
+            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s  %s%s%s", character->info.id, GetFileName(g_view.models[character->model].path),
+                character->info.positioned ? "" : "  no position", character->info.sleep ? "  sleep" : "");
         g_view.labelPointers[i] = g_view.labels[i];
     }
     return true;
@@ -313,6 +256,7 @@ void CHRTView_Close(void) {
     }
     free(g_view.models);
     free(g_view.characters);
+    free(g_view.visible);
     free(g_view.labels);
     free(g_view.labelPointers);
     free(g_view.failed);
@@ -334,7 +278,8 @@ bool CHRTView_Open(const char* filepath) {
         count += script.commands[c].parent == -1 && CHRT_IsCommand(&script.commands[c], "Character");
     g_view.characters = calloc(count + 1, sizeof(CHRTView_Character));
     g_view.models = calloc(count + 1, sizeof(CHRTView_Model));
-    if (g_view.characters == NULL || g_view.models == NULL) {
+    g_view.visible = calloc(count + 1, sizeof(MT5Render_Instance));
+    if (g_view.characters == NULL || g_view.models == NULL || g_view.visible == NULL) {
         fputs("[CHRTView_Open]: Memory error\n", stderr);
         CHRTView_Close();
         return false;
@@ -369,7 +314,7 @@ bool CHRTView_IsOpen(void) {
 }
 
 static bool IsVisible(const CHRTView_Character* character) {
-    return character->model >= 0 && !(g_options.hideSleeping && character->sleep);
+    return character->model >= 0 && !(g_options.hideSleeping && character->info.sleep);
 }
 
 // Selects the next or previous visible character
@@ -385,23 +330,27 @@ static void SelectNext(int direction) {
     }
 }
 
-// Fits the camera to the visible models
-static void FitCamera(Rectangle area) {
-    g_view.fit = false;
-    uint32_t total = 0;
-    for (uint32_t i = 0; i < g_view.characterCount; i++) {
-        if (IsVisible(&g_view.characters[i]))
-            total += g_view.models[g_view.characters[i].model].model.mesh.triangleCount * 3;
-    }
-    Vector3* points = malloc((total + 1) * sizeof(Vector3));
-    if (points == NULL)
-        return;
+// Fills the instances of the visible characters, with the current frame of the animated models. Returns their count
+static uint32_t VisibleInstances(void) {
     uint32_t count = 0;
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
         const CHRTView_Character* character = &g_view.characters[i];
-        if (IsVisible(character))
-            count += MT5Render_Vertices(&g_view.models[character->model].model, character->transform, points + count);
+        if (!IsVisible(character))
+            continue;
+        MT5Render_Model* model = &g_view.models[character->model].model;
+        uint32_t frame = model->mesh.frameCount > 0 ? g_view.frame % model->mesh.frameCount : 0;
+        g_view.visible[count++] = (MT5Render_Instance) { model, character->transform, character->center, frame };
     }
+    return count;
+}
+
+// Fits the camera to the visible models
+static void FitCamera(Rectangle area) {
+    g_view.fit = false;
+    uint32_t count;
+    Vector3* points = MT5Render_InstanceVertices(g_view.visible, VisibleInstances(), 0, &count);
+    if (points == NULL)
+        return;
     FreeCamera_Fit(&g_view.camera, points, count, area.width / area.height);
     free(points);
 }
@@ -424,72 +373,24 @@ static void UpdateInput(Rectangle area) {
     if (IsKeyPressed(KEY_C))
         g_options.noCulling = !g_options.noCulling;
 
-    g_view.frameTime += fminf(GetFrameTime(), 0.25f); // Without skipping frames after a long one (loading)
+    g_view.frameTime += Scene3D_FrameTime();
     for (; g_view.frameTime >= 1.0f / CHRTVIEW_FRAME_RATE; g_view.frameTime -= 1.0f / CHRTVIEW_FRAME_RATE)
         g_view.frame++;
 }
 
-static uint32_t ModelFrame(const MT5Render_Model* model) {
-    return model->mesh.frameCount > 0 ? g_view.frame % model->mesh.frameCount : 0;
-}
-
-static Camera3D g_sortCamera;
-
-static int CompareDistance(const void* a, const void* b) {
-    const CHRTView_Character* characterA = &g_view.characters[*(const uint32_t*)a];
-    const CHRTView_Character* characterB = &g_view.characters[*(const uint32_t*)b];
-    float distanceA = Vector3DistanceSqr(characterA->center, g_sortCamera.position);
-    float distanceB = Vector3DistanceSqr(characterB->center, g_sortCamera.position);
-    return distanceA < distanceB ? 1 : distanceA > distanceB ? -1 : 0; // Farthest first
-}
-
-// The opaque part of all the models, then the translucent part from the farthest model to the nearest one
-static void DrawCharacters(Camera3D camera) {
-    uint32_t* order = malloc((g_view.characterCount + 1) * sizeof(uint32_t));
-    if (order == NULL)
-        return;
-    uint32_t count = 0;
-    for (uint32_t i = 0; i < g_view.characterCount; i++) {
-        const CHRTView_Character* character = &g_view.characters[i];
-        if (!IsVisible(character))
-            continue;
-        MT5Render_Model* model = &g_view.models[character->model].model;
-        MT5Render_DrawOpaque(&g_view.render, model, character->transform, ModelFrame(model));
-        order[count++] = i;
-    }
-
-    g_sortCamera = camera;
-    qsort(order, count, sizeof(uint32_t), CompareDistance);
-    for (uint32_t i = 0; i < count; i++) {
-        const CHRTView_Character* character = &g_view.characters[order[i]];
-        MT5Render_Model* model = &g_view.models[character->model].model;
-        MT5Render_DrawTranslucent(&g_view.render, model, character->transform, ModelFrame(model), camera);
-    }
-    free(order);
-}
-
 // ID of the characters, over the top of their model. A click on a label selects the character
 static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSize) {
-    Vector3 forward = Vector3Subtract(camera.target, camera.position);
     int32_t clicked = -1;
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
         const CHRTView_Character* character = &g_view.characters[i];
-        if (!IsVisible(character))
-            continue;
-        Vector3 top = Vector3Add(character->center, (Vector3) { 0.0f, character->radius, 0.0f });
-        if (Vector3DotProduct(Vector3Subtract(top, camera.position), forward) <= 0.0f)
-            continue;
-        Vector2 point = GetWorldToScreenEx(top, camera, (int)area.width, (int)area.height);
-        point = (Vector2) { area.x + point.x, area.y + point.y };
-        if (!CheckCollisionPointRec(point, area))
+        Vector2 point;
+        if (!IsVisible(character) ||
+            !Scene3D_ScreenPoint(camera, area, Vector3Add(character->center, (Vector3) { 0.0f, character->radius, 0.0f }), &point))
             continue;
 
-        const char* text = character->sleep ? TextFormat("%s (sleep)", character->id) : character->id;
-        Vector2 size = MeasureTextEx(font, text, fontSize, 1.0f);
-        Rectangle box = { point.x - size.x * 0.5f - 3.0f, point.y - fontSize - 1.0f, size.x + 6.0f, fontSize + 2.0f };
-        DrawRectangleRec(box, Fade(BLACK, 0.6f));
-        Color color = (int32_t)i == g_view.selected ? YELLOW : character->sleep ? GRAY : LIGHTGRAY;
-        DrawTextEx(font, text, (Vector2) { box.x + 3.0f, box.y + 1.0f }, fontSize, 1.0f, color);
+        const char* text = character->info.sleep ? TextFormat("%s (sleep)", character->info.id) : character->info.id;
+        Color color = (int32_t)i == g_view.selected ? YELLOW : character->info.sleep ? GRAY : LIGHTGRAY;
+        Rectangle box = Scene3D_DrawLabel(point, text, font, fontSize, color);
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(GetMousePosition(), box))
             clicked = (int32_t)i; // The last one drawn, on top of the others
     }
@@ -500,16 +401,15 @@ static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSiz
 // Image, model file (or why it has none), position and angle of the selected character
 static const char* SelectedText(void) {
     const CHRTView_Character* character = &g_view.characters[g_view.selected];
-    const char* position = character->positioned ?
-        TextFormat("position (%g, %g, %g)", character->position.x, character->position.y, character->position.z) :
-        Vector3Equals(character->position, Vector3Zero()) ? "no position" :
-        TextFormat("off the scene (%g, %g, %g)", character->position.x, character->position.y, character->position.z);
+    const float* p = character->info.position;
+    const char* position = character->info.positioned ? TextFormat("position (%g, %g, %g)", p[0], p[1], p[2]) :
+        !character->info.hasPosition ? "no position" : TextFormat("off the scene (%g, %g, %g)", p[0], p[1], p[2]);
     char image[CHRTVIEW_LABEL_SIZE] = "no image";
-    if (character->image != NULL)
-        snprintf(image, sizeof(image), "image \"%s\" (%s)", character->image,
+    if (character->info.image != NULL)
+        snprintf(image, sizeof(image), "image \"%s\" (%s)", character->info.image,
             character->model >= 0 ? GetFileName(g_view.models[character->model].path) : character->error);
-    return TextFormat("%s: %s, %s, angle (%g, %g, %g)%s", character->id, image, position, character->angle.x, character->angle.y,
-        character->angle.z, character->sleep ? ", sleep" : "");
+    return TextFormat("%s: %s, %s, angle (%g, %g, %g)%s", character->info.id, image, position, character->info.angle[0],
+        character->info.angle[1], character->info.angle[2], character->info.sleep ? ", sleep" : "");
 }
 
 void CHRTView_Draw(Rectangle area) {
@@ -543,13 +443,12 @@ void CHRTView_Draw(Rectangle area) {
     }
 
     Camera3D camera = FreeCamera_Begin3D(&g_view.camera, scene);
-    MT5Render_SetCamera(&g_view.render, camera);
     // The models have explicit back faces where both sides are seen (see MT5View_Draw)
     if (g_options.noCulling)
         rlDisableBackfaceCulling();
     if (g_options.wireframe)
         rlEnableWireMode();
-    DrawCharacters(camera);
+    MT5Render_DrawInstances(&g_view.render, g_view.visible, VisibleInstances(), camera);
     rlDisableWireMode();
     rlEnableBackfaceCulling();
     FreeCamera_End3D();

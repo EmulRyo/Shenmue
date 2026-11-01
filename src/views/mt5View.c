@@ -3,13 +3,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
 #include "raygui.h"
 #include "views/mt5Render.h"
 #include "views/freeCamera.h"
+#include "views/scene3D.h"
 #include "views/mt5View.h"
 
 #define MT5VIEW_FOVY 45.0f
@@ -44,10 +44,11 @@ static void ResetCamera(void) {
 
 static void FitCamera(Rectangle area) {
     g_view.fit = false;
-    Vector3* points = malloc((g_view.model.mesh.triangleCount * 3 + 1) * sizeof(Vector3));
+    MT5Render_Instance instance = { &g_view.model, MatrixIdentity(), g_view.model.mesh.center, 0 };
+    uint32_t count;
+    Vector3* points = MT5Render_InstanceVertices(&instance, 1, 0, &count);
     if (points == NULL)
         return;
-    uint32_t count = MT5Render_Vertices(&g_view.model, MatrixIdentity(), points);
     FreeCamera_Fit(&g_view.camera, points, count, area.width / area.height);
     free(points);
 }
@@ -110,7 +111,7 @@ static void UpdateInput(Rectangle area) {
             g_view.frame = (g_view.frame + frameCount - 1) % frameCount;
         }
         if (!g_view.paused) {
-            g_view.frameTime += fminf(GetFrameTime(), 0.25f); // Without skipping frames after a long one (loading)
+            g_view.frameTime += Scene3D_FrameTime();
             for (; g_view.frameTime >= 1.0f / MT5VIEW_FRAME_RATE; g_view.frameTime -= 1.0f / MT5VIEW_FRAME_RATE)
                 g_view.frame = (g_view.frame + 1) % frameCount;
         }
@@ -127,15 +128,14 @@ void MT5View_Draw(Rectangle area) {
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     Camera3D camera = FreeCamera_Begin3D(&g_view.camera, area);
 
-    MT5Render_SetCamera(&g_view.render, camera);
     // The faces are counter-clockwise, and the models have explicit back faces where both sides are seen (e.g. the
     // posters): the culling mode of the polygon parameters is always "small polygons", so the game culls them itself
     if (g_options.noCulling)
         rlDisableBackfaceCulling();
     if (g_options.wireframe)
         rlEnableWireMode();
-    MT5Render_DrawOpaque(&g_view.render, &g_view.model, MatrixIdentity(), g_view.frame);
-    MT5Render_DrawTranslucent(&g_view.render, &g_view.model, MatrixIdentity(), g_view.frame, camera);
+    MT5Render_Instance instance = { &g_view.model, MatrixIdentity(), g_view.model.mesh.center, g_view.frame };
+    MT5Render_DrawInstances(&g_view.render, &instance, 1, camera);
     rlDisableWireMode();
     rlEnableBackfaceCulling();
 

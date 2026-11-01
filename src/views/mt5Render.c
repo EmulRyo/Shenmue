@@ -16,7 +16,7 @@
 
 typedef struct {
     float       depth;
-    uint32_t    triangle;
+    uint32_t    index;  // Of the triangle or the instance
 } MT5Render_SortEntry;
 
 // Default raylib attributes; lit from the camera, with both faces lit for when the back faces are drawn
@@ -225,6 +225,19 @@ uint32_t MT5Render_Vertices(const MT5Render_Model* model, Matrix transform, Vect
     return count;
 }
 
+Vector3* MT5Render_InstanceVertices(const MT5Render_Instance* instances, uint32_t count, uint32_t extra, uint32_t* vertexCount) {
+    uint32_t total = extra;
+    for (uint32_t i = 0; i < count; i++)
+        total += instances[i].model->mesh.triangleCount * 3;
+    Vector3* points = malloc((total + 1) * sizeof(Vector3));
+    if (points == NULL)
+        return NULL;
+    *vertexCount = 0;
+    for (uint32_t i = 0; i < count; i++)
+        *vertexCount += MT5Render_Vertices(instances[i].model, instances[i].transform, points + *vertexCount);
+    return points;
+}
+
 void MT5Render_SetCamera(MT5Render* render, Camera3D camera) {
     Vector3 lightDir = Vector3Normalize(Vector3Subtract(camera.position, camera.target));
     SetShaderValue(render->shader, render->lightDirLoc, &lightDir, SHADER_UNIFORM_VEC3);
@@ -246,7 +259,7 @@ static int CompareDepth(const void* a, const void* b) {
 // Reorders the data of the triangles of a mesh attribute
 static void PermuteTriangles(void* data, size_t triangleSize, const MT5Render_SortEntry* entries, uint32_t count, uint8_t* temp) {
     for (uint32_t i = 0; i < count; i++)
-        memcpy(temp + i * triangleSize, (const uint8_t*)data + entries[i].triangle * triangleSize, triangleSize);
+        memcpy(temp + i * triangleSize, (const uint8_t*)data + entries[i].index * triangleSize, triangleSize);
     memcpy(data, temp, count * triangleSize);
 }
 
@@ -361,4 +374,21 @@ void MT5Render_DrawTranslucent(MT5Render* render, MT5Render_Model* model, Matrix
         lastGroup = next;
     }
     rlEnableDepthMask();
+}
+
+void MT5Render_DrawInstances(MT5Render* render, const MT5Render_Instance* instances, uint32_t count, Camera3D camera) {
+    MT5Render_SortEntry* order = malloc((count + 1) * sizeof(MT5Render_SortEntry));
+    if (order == NULL)
+        return;
+    MT5Render_SetCamera(render, camera);
+    for (uint32_t i = 0; i < count; i++) {
+        MT5Render_DrawOpaque(render, instances[i].model, instances[i].transform, instances[i].frame);
+        order[i] = (MT5Render_SortEntry) { Vector3DistanceSqr(instances[i].center, camera.position), i };
+    }
+    qsort(order, count, sizeof(MT5Render_SortEntry), CompareDepth);
+    for (uint32_t i = 0; i < count; i++) {
+        const MT5Render_Instance* instance = &instances[order[i].index];
+        MT5Render_DrawTranslucent(render, instance->model, instance->transform, instance->frame, camera);
+    }
+    free(order);
 }

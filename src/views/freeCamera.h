@@ -29,6 +29,8 @@ void        FreeCamera_Reset(FreeCamera* camera, Vector3 center, Vector3 front, 
 void        FreeCamera_Fit(FreeCamera* camera, const Vector3* points, uint32_t count, float aspect);
 Vector3     FreeCamera_Position(const FreeCamera* camera);
 Camera3D    FreeCamera_Camera3D(const FreeCamera* camera);
+// Orbits around the target of view from its position, e.g. to fly from a camera of the scene
+void        FreeCamera_LookFrom(FreeCamera* camera, Camera3D view);
 // Starts flying from the current position, or orbits again around a point in front of it
 void        FreeCamera_SetFly(FreeCamera* camera, bool fly);
 // Handles the mouse inside area, and the keys while it flies. The zoom doesn't get nearer than minDistance
@@ -37,6 +39,8 @@ void        FreeCamera_Update(FreeCamera* camera, Rectangle area, float minDista
 const char* FreeCamera_Help(const FreeCamera* camera);
 // Draws only inside area, given in pixels of the screen
 void        FreeCamera_Viewport(Rectangle area);
+// Begins drawing in 3D from another camera only inside area, with its aspect ratio and the given clipping planes
+void        FreeCamera_BeginCamera3D(Camera3D camera, Rectangle area, double nearPlane, double farPlane);
 // Begins drawing in 3D only inside area, with its aspect ratio and clipping planes around the scene. Returns the camera
 Camera3D    FreeCamera_Begin3D(const FreeCamera* camera, Rectangle area);
 void        FreeCamera_End3D(void);
