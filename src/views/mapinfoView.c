@@ -31,6 +31,7 @@
 #define MAPINFOVIEW_JUKEBOX_ID   "JBOX"  // Character of the jukebox of the bars, in the CHARA script of a package of the map
 #define MAPINFOVIEW_PACKAGE      "mpk00" // Base package of the map (PKF/PKS files or their extracted folder)
 #define MAPINFOVIEW_PACKAGE_SCRIPT "CHARA" // CHRT script of the base package with the characters of the map
+#define MAPINFOVIEW_SCENE_MODELS "model/chara" // Models of the characters in the folder of the scene, for the maps without them
 
 typedef enum {
     ITEM_INFO,
@@ -69,8 +70,8 @@ static const Color g_cameraColor = { 220, 220, 220, 255 };
 static const Color g_selectedColor = { 255, 230, 60, 255 };
 static const Color g_characterColor = { 90, 170, 255, 255 };
 
-// A character of the CHRD chunk or of a CHRT script of the map. The displayed ones (positioned in the scene, not
-// sleeping, not an arm of Ryo, with an image) that are in the map are drawn with their model
+// A character of the CHRD chunk or of a CHRT script of the map. The displayed ones (positioned in the scene, not an arm
+// of Ryo, with an image) that are in the map are drawn with their model, sleeping or not
 typedef struct {
     CHRT_Character      info;           // Its image points into the buffer of its script
     uint32_t            script;         // In g_view.scripts
@@ -241,10 +242,11 @@ static Vector3 CharacterPosition(const CHRT_Character* character) {
     return (Vector3) { character->position[0], character->position[1], character->position[2] };
 }
 
-// Drawn with its model: in the scene, not sleeping, with an image. The arms of Ryo for the close-ups aren't: they are
-// 10 times bigger than the map and wait at the origin of the map or at the place of the close-up
+// Drawn with its model: in the scene, with an image, also the sleeping ones (e.g. the taxi TAXI of scene/01/jd99). The
+// arms of Ryo for the close-ups aren't: they are 10 times bigger than the map and wait at the origin of the map or at
+// the place of the close-up
 static bool IsDisplayed(const CHRT_Character* character) {
-    return character->positioned && !character->sleep && !character->arm && character->image != NULL;
+    return character->positioned && !character->arm && character->image != NULL;
 }
 
 // As the nodes of the models: rotation around X, Y and Z, and translation. The models of the persons have their origin
@@ -287,16 +289,20 @@ static bool LoadMapScript(const MapFile* file, CHRT_Script* script) {
     return file->packed != NULL ? CHRT_LoadFromMemory(file->packed->data, file->packed->size, file->name, script) : CHRT_Load(file->path, script);
 }
 
-// Model file (MT5 or CHRM) of a model name, without the $ and @ prefixes and the extension of the names of the CHRT
-// scripts (e.g. "$DR01_009.MT5"). Returns -1 if there is none
-static int ModelFile(const MapFile* files, uint32_t count, const char* name) {
-    char base[64];
+// A model name of the CHRT scripts without the $ and @ prefixes and the extension (e.g. "DR01_009" for "$DR01_009.MT5")
+static void ModelBaseName(const char* name, char* base, size_t size) {
     while (*name == '$' || *name == '@')
         name++;
-    snprintf(base, sizeof(base), "%s", name);
+    snprintf(base, size, "%s", name);
     char* dot = strchr(base, '.');
     if (dot != NULL)
         *dot = '\0';
+}
+
+// Model file (MT5 or CHRM) of a model name of the CHRT scripts. Returns -1 if there is none
+static int ModelFile(const MapFile* files, uint32_t count, const char* name) {
+    char base[64];
+    ModelBaseName(name, base, sizeof(base));
     for (uint32_t i = 0; i < count; i++) {
         if (!IsFileExtension(files[i].name, ".chrt") && CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files[i].name), base))
             return (int)i;
@@ -316,15 +322,15 @@ static int DoorModelFile(const MapFile* files, uint32_t count, const char* name)
     return file;
 }
 
-// Model file of the image of a character: the file of the DefImage with its name in its script or in the other scripts
+// Model name of the image of a character: the file of the DefImage with its name in its script or in the other scripts
 // of the map, or the name itself (some names are defined in other files, and they are usually the name of the model
-// file). Returns -1 if there is none
-static int CharacterModelFile(const MapFile* files, uint32_t count, const MapCharacter* character) {
+// file)
+static const char* CharacterModelName(const MapCharacter* character) {
     const char* name = character->info.image;
     const char* image = CHRT_ImageFile(&g_view.scripts[character->script], name);
     for (uint32_t i = 0; image == NULL && i < g_view.scriptCount; i++)
         image = CHRT_ImageFile(&g_view.scripts[i], name);
-    return ModelFile(files, count, image != NULL ? image : name);
+    return image != NULL ? image : name;
 }
 
 // The files of the PKF and PKS files of the folder that aren't extracted (no folder named as the file next to it), and the
@@ -378,8 +384,33 @@ static bool InMapModels(Vector3 position) {
     return g_view.mapModelCount == 0;
 }
 
-// The instances of the models of the map, of the doors at their placements and of the displayed characters in the map
-static void PlaceModels(const MapFile* files, uint32_t count, int* fileModels, const IPAC_FileList* packed) {
+// A model of the folder of the scene, loaded or not
+typedef struct {
+    char    name[64];   // Without prefixes and extension
+    int     model;      // -1 if it can't be loaded
+} SceneModel;
+
+// Model of a model name in the folder of the scene of the map (e.g. scene/01/model/chara/ykb_m.mt5, Ryo, for
+// scene/01/d000, and scene/01/model/chara/c85n310g.mt5, the taxi, for scene/01/jd99), loaded the first time, for the
+// characters whose model isn't in the map. Returns -1 if there is none or it can't be loaded
+static int FolderSceneModel(const char* folder, const char* name, SceneModel* sceneModels, uint32_t* sceneModelCount) {
+    char base[64];
+    ModelBaseName(name, base, sizeof(base));
+    for (uint32_t i = 0; i < *sceneModelCount; i++) {
+        if (CHRT_EqualsIgnoreCase(sceneModels[i].name, base))
+            return sceneModels[i].model;
+    }
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s/%s.mt5", GetPrevDirectoryPath(folder), MAPINFOVIEW_SCENE_MODELS, TextToLower(base));
+    SceneModel* added = &sceneModels[(*sceneModelCount)++];
+    snprintf(added->name, sizeof(added->name), "%s", base);
+    added->model = FileExists(path) && MT5Render_LoadModel(path, &g_view.models[g_view.modelCount]) ? (int)g_view.modelCount++ : -1;
+    return added->model;
+}
+
+// The instances of the models of the map, of the doors at their placements and of the displayed characters in the map.
+// The characters whose model isn't in the map are drawn with the model of the folder of the scene
+static void PlaceModels(const char* folder, const MapFile* files, uint32_t count, int* fileModels, const IPAC_FileList* packed) {
     const MAPINFO_File* file = &g_view.file;
     for (uint32_t i = 0; i < count; i++) {
         if (IsFileExtension(files[i].name, ".mt5") && IsMapModel(files[i].name) && FileModel(files, (int)i, fileModels, packed) >= 0)
@@ -406,20 +437,24 @@ static void PlaceModels(const MapFile* files, uint32_t count, int* fileModels, c
     }
 
     g_view.characterInstances = g_view.instanceCount;
-    for (uint32_t i = 0; i < g_view.characterCount; i++) {
+    SceneModel* sceneModels = calloc(g_view.characterCount + 1, sizeof(SceneModel));
+    uint32_t sceneModelCount = 0;
+    for (uint32_t i = 0; i < g_view.characterCount && sceneModels != NULL; i++) {
         MapCharacter* character = &g_view.characters[i];
         if (!IsDisplayed(&character->info) || !InMapModels(CharacterPosition(&character->info)))
             continue;
-        int f = CharacterModelFile(files, count, character);
-        if (f < 0)
-            character->error = "no model file";
-        else if (FileModel(files, f, fileModels, packed) < 0)
-            character->error = "invalid model file";
+        const char* name = CharacterModelName(character);
+        int f = ModelFile(files, count, name);
+        int model = f >= 0 ? FileModel(files, f, fileModels, packed) : FolderSceneModel(folder, name, sceneModels, &sceneModelCount);
+        if (model < 0)
+            character->error = f < 0 ? "no model file" : "invalid model file";
         else {
-            AddInstance((uint32_t)fileModels[f], CharacterTransform(&character->info, &g_view.models[fileModels[f]]));
+            AddInstance((uint32_t)model, CharacterTransform(&character->info, &g_view.models[model]));
             character->modelled = true;
             g_view.modelledCharacters++;
-        }    }
+        }
+    }
+    free(sceneModels);
 }
 
 // The scripts of the map: the CHRD chunk and the CHRT files. The characters are those of the CHRD chunk, of the script
@@ -455,10 +490,8 @@ static void LoadModels(const char* folder) {
     uint32_t count = 0;
     int* fileModels = malloc((capacity + 1) * sizeof(int)); // Model of each file, -1 if not loaded
     g_view.scripts = calloc(capacity + 2, sizeof(CHRT_Script));
-    g_view.models = calloc(capacity + 1, sizeof(MT5Render_Model));
     g_view.doorErrors = calloc(file->doorCount + 1, sizeof(const char*));
-    if (packsLoaded && files != NULL && fileModels != NULL && g_view.scripts != NULL && g_view.models != NULL &&
-        g_view.doorErrors != NULL) {
+    if (packsLoaded && files != NULL && fileModels != NULL && g_view.scripts != NULL && g_view.doorErrors != NULL) {
         for (unsigned int i = 0; i < paths.count; i++) {
             const char* relative = paths.paths[i] + strlen(folder);
             int separators = 0;
@@ -490,9 +523,11 @@ static void LoadModels(const char* folder) {
             fileModels[i] = -1;
 
         LoadScripts(files, count);
+        // The models of the files, and of the folder of the scene for the characters
+        g_view.models = calloc(count + g_view.characterCount + 1, sizeof(MT5Render_Model));
         g_view.instances = calloc(count + file->doorCount + g_view.characterCount + 1, sizeof(MT5Render_Instance));
-        if (g_view.instances != NULL)
-            PlaceModels(files, count, fileModels, &packed);
+        if (g_view.models != NULL && g_view.instances != NULL)
+            PlaceModels(folder, files, count, fileModels, &packed);
     }
     free(packages);
     free(files);

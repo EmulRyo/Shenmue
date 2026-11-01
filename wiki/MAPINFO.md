@@ -158,9 +158,13 @@ Most map folders have a package named `mpk00` (`mpk00.pkf` and `mpk00.pks`, 96 o
 
 The positions are in the coordinates of the map models and of the cameras, as those of the `CHRD` chunk. In `scene/01/dslt` (a slot machine hall), the `CHRD` chunk is the empty script and the `CHARA` script has the 38 characters of the map: `AKIR`, the slot machines `SLT1` to `SLTG` (all with the model `$SLT02LWX.MT5`) placed in rows along the walls (e.g. `SLT1` to `SLT4` at x = 0 and z from -6.9 to -4.65, at angle 90, and `SLT5` to `SLT8` at x = 5.7, at angle -90), the ceiling fans `FAN1` to `FAN4`, `DRAM` (`$DRM02S2G.MT5`, a set of reels), `RMP1` to `RMP3`, `RMPY`, `RMPR` and `RMPG` (`RAMP`, *probably* lamps), and others. `SLTM` (`$SLT02HXG.MT5`) is placed at (0, -10, 0), under the floor.
 
+Ryo (`AKIR`) has the image `YKB_M`, his body, but only 3 of the 136 map folders have its model: `YKB_M.chrm` in the `mpk00` of `dgct`, `dhqb` and `dkpa` of `scene/01`, with the other parts of Ryo (`YKB_B`, `YKB_F`, the hands `YKB_TL` and `YKB_TR`, the arms `YKB_UL` and `YKB_UR`). The other maps reference `YKB_M` without the model, e.g. `scene/01/daza`, whose `mpk00` only has the arms. The model of the body is in the model folder of each scene, `scene/01/model/chara/ykb_m.mt5` (also in `scene/02` and `scene/03`), and in `misc/coldinit/YKB_M.chrm`.
+
+Other characters also reference models that are only in that folder. In `scene/01/jd99`, which has no packages, the `CHRD` chunk has `AKIR` and `TAXI`, an `Object` with the image `@C85N310G.MT5`, *probably* the taxi: the map folder only has the map models, and the model is `scene/01/model/chara/c85n310g.mt5`.
+
 Not every character of the script is in the map when it is loaded:
 
-- Many have the flag `SLEEP` and no position, e.g. the 6 objects of `scene/01/dbhb` (`SHAKER`, `GLASS`, `SAKE_SET`...).
+- Many have the flag `SLEEP` and no position, e.g. the 6 objects of `scene/01/dbhb` (`SHAKER`, `GLASS`, `SAKE_SET`...). Others have `SLEEP` and a position in the map, e.g. `TAXI` of `scene/01/jd99` at (10.9, -0.1, -2.6).
 - Many wait off the scene, e.g. most characters of `scene/01/dcbn`, at (0, 0, -1000). Some wait at positions below 1000, outside the map models: `ZASI` of `scene/01/daza` has a single `Position(300, 0, 0)`.
 
 Other packages of the folder have their own `CHARA` script, with the characters of other situations of the map: `scene/01/d000` has 17 more (`yoru`, `omg`, `yq14`, `buss`, `auth`...), `scene/01/dcbn` has `dcb0` to `dcb4`, and some bars have the [jukebox](#jukebox) in another package (`jukebox`, `alp_juke`). *Probably* the [scene program](#scn3--scene-program) loads them when needed.
