@@ -12,6 +12,8 @@
 // data, the cutscenes (SCEX) and the chunks of a single value. See the MAPINFO page of the wiki
 
 #define MAPINFO_ID_SIZE 5
+#define MAPINFO_CAMERA_FROM_CURRENT 0x400000 // Flag of the cameras whose keys at time 0 are a placeholder (all zero) of the
+                                             // camera at the start: a transition from the current camera
 
 typedef struct {
     char        id[MAPINFO_ID_SIZE]; // e.g. "ECAM", "FOG "
@@ -23,7 +25,8 @@ typedef struct {
 // optional (count 0 if missing)
 typedef struct {
     char        id[MAPINFO_ID_SIZE]; // e.g. "0101"
-    uint32_t    flags;               // 0x20: roll curve, 0x40: field of view curve, the rest unknown
+    uint32_t    flags;               // 0x20: roll curve, 0x40: field of view curve, MAPINFO_CAMERA_FROM_CURRENT, the rest
+                                     // unknown
     AUTH_Curve  curves[AUTH_CAMERA_CURVES]; // AUTH_CameraCurve order
 } MAPINFO_Camera;
 

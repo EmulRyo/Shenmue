@@ -91,6 +91,8 @@ typedef struct {
     int                 selected;       // Item, -1 if none
     bool                mapCamera;      // Show the map from the selected camera
     float               time;           // Seconds, for the animated cameras
+    float               start[AUTH_CAMERA_CURVES]; // Active camera when the selected one started, for the transitions
+                                                   // from the current camera (AUTH_CameraCurve order)
     FreeCamera         camera;
     bool                fit;            // The camera is fitted to the map in the next draw, when the size of the view is known
     Vector3             min, max;       // Box around the map
@@ -129,17 +131,68 @@ static uint32_t CameraKeys(const MAPINFO_Camera* camera) {
     return keys;
 }
 
-// The camera at the current time: the animated cameras are played in a loop
-static Camera3D MapCamera(const MAPINFO_Camera* source) {
-    float duration = CameraDuration(source);
-    float time = duration > 0.0f ? fmodf(g_view.time, duration) : 0.0f;
-    return Scene3D_CurveCamera(source->curves, time, MAPINFOVIEW_CAMERA_FOVY);
-}
-
 static const MAPINFO_Camera* SelectedCamera(void) {
     if (g_view.selected < 0 || g_view.items[g_view.selected].kind != ITEM_CAMERA)
         return NULL;
     return &g_view.file.cameras[g_view.items[g_view.selected].index];
+}
+
+// Values of the curves of a camera at a time. The transitions from the current camera go from g_view.start to their
+// first keys after time 0 (the keys at time 0 are a placeholder); the curves without such a key keep the start value
+static void CameraValues(const MAPINFO_Camera* camera, float time, float values[AUTH_CAMERA_CURVES]) {
+    for (int c = 0; c < AUTH_CAMERA_CURVES; c++) {
+        const AUTH_Curve* curve = &camera->curves[c];
+        float fallback = c == AUTH_CAMERA_FOV ? MAPINFOVIEW_CAMERA_FOVY : 0.0f;
+        if (camera->flags & MAPINFO_CAMERA_FROM_CURRENT) {
+            uint32_t key = 0;
+            while (key < curve->count && curve->times[key] <= 0.0f)
+                key++;
+            if (key == curve->count) {
+                values[c] = g_view.start[c];
+                continue;
+            }
+            if (time < curve->times[key]) {
+                values[c] = Lerp(g_view.start[c], curve->values[key], time / curve->times[key]);
+                continue;
+            }
+        }
+        values[c] = AUTH_CurveValue(curve, time, fallback);
+    }
+}
+
+// The values of the camera at the current time: the animated cameras are played in a loop. The transitions from the
+// current camera that aren't selected are at their end
+static void MapCameraValues(const MAPINFO_Camera* source, float values[AUTH_CAMERA_CURVES]) {
+    float duration = CameraDuration(source);
+    float time = duration > 0.0f ? fmodf(g_view.time, duration) : 0.0f;
+    if ((source->flags & MAPINFO_CAMERA_FROM_CURRENT) && source != SelectedCamera())
+        time = duration;
+    CameraValues(source, time, values);
+}
+
+static Camera3D MapCamera(const MAPINFO_Camera* source) {
+    float values[AUTH_CAMERA_CURVES];
+    MapCameraValues(source, values);
+    static const float zero = 0.0f;
+    AUTH_Curve curves[AUTH_CAMERA_CURVES];
+    for (int c = 0; c < AUTH_CAMERA_CURVES; c++)
+        curves[c] = (AUTH_Curve) { 1, &zero, &values[c], &zero };
+    return Scene3D_CurveCamera(curves, 0.0f, MAPINFOVIEW_CAMERA_FOVY);
+}
+
+// The active camera becomes the start of the transitions from the current camera: the camera of the map, or the free one
+static void SetStart(void) {
+    const MAPINFO_Camera* camera = g_view.mapCamera ? SelectedCamera() : NULL;
+    float values[AUTH_CAMERA_CURVES];
+    if (camera != NULL)
+        MapCameraValues(camera, values);
+    else {
+        Camera3D view = FreeCamera_Camera3D(&g_view.camera);
+        float free[AUTH_CAMERA_CURVES] = { view.position.x, view.position.y, view.position.z, view.target.x, view.target.y,
+            view.target.z, 0.0f, view.fovy };
+        memcpy(values, free, sizeof(values));
+    }
+    memcpy(g_view.start, values, sizeof(values));
 }
 
 // The characters of the CHRD chunk
@@ -453,7 +506,10 @@ static bool CreateItems(void) {
         const MAPINFO_Camera* camera = &file->cameras[i];
         uint32_t keys = CameraKeys(camera);
         Camera3D view = MapCamera(camera);
-        AddItem(ITEM_CAMERA, i, keys > 1 ?
+        AddItem(ITEM_CAMERA, i, (camera->flags & MAPINFO_CAMERA_FROM_CURRENT) ?
+            TextFormat("Camera %s  from the current one in %.2f s to (%.2f, %.2f, %.2f)  flags 0x%X", camera->id,
+                CameraDuration(camera), view.position.x, view.position.y, view.position.z, camera->flags) :
+            keys > 1 ?
             TextFormat("Camera %s  %u keys, %.2f s  flags 0x%X", camera->id, keys, CameraDuration(camera), camera->flags) :
             TextFormat("Camera %s  (%.2f, %.2f, %.2f)  flags 0x%X", camera->id, view.position.x, view.position.y, view.position.z, camera->flags), false);
     }
@@ -536,7 +592,9 @@ bool MAPINFOView_IsOpen(void) {
 
 // A camera of the list shows the map from it; a light or a character is looked at with the free camera
 static void Select(int item) {
+    SetStart();
     g_view.selected = item;
+    g_view.mapCamera = false;
     if (item < 0)
         return;
     const Item* selected = &g_view.items[item];
@@ -556,14 +614,19 @@ static void Select(int item) {
     }
     else
         return;
-    g_view.mapCamera = false;
     g_view.camera.target = target;
     g_view.camera.distance = 6.0f;
 }
 
 static void UpdateInput(Rectangle scene) {
-    if (IsKeyPressed(KEY_V) && SelectedCamera() != NULL)
+    if (IsKeyPressed(KEY_V) && SelectedCamera() != NULL) {
+        // A transition from the current camera starts again from the free camera
+        if (!g_view.mapCamera && (SelectedCamera()->flags & MAPINFO_CAMERA_FROM_CURRENT)) {
+            SetStart();
+            g_view.time = 0.0f;
+        }
         g_view.mapCamera = !g_view.mapCamera;
+    }
     if (IsKeyPressed(KEY_F)) {
         // Flies from the position of the camera of the map, or of the free camera, looking around it
         const MAPINFO_Camera* source = g_view.mapCamera ? SelectedCamera() : NULL;

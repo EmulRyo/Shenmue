@@ -146,7 +146,7 @@ A list of fixed or animated cameras, each one with a 4-digit ID. The game files 
 |-------:|-----:|---------|---------|-------------|
 | 0x00   | 4    | char[4] | `id`    | Camera ID: 4 ASCII digits (`0000`, `0101`, `5010`...) |
 | 0x04   | 4    | uint32  | `size`  | Size of the camera in bytes, from `id`. The next camera starts at `offset + size` |
-| 0x08   | 4    | uint32  | `flags` | Bit `0x20`: there is a roll curve. Bit `0x40`: there is a field of view curve. The rest of the bits (`0x80` and the higher bits: values such as `0x197660`) are unknown. The usual values of the low byte are `0x60` (4381 cameras), `0x40` (409) and `0x00` (134) |
+| 0x08   | 4    | uint32  | `flags` | Bit `0x20`: there is a roll curve. Bit `0x40`: there is a field of view curve. Bit `0x400000`: [transition from the current camera](#transitions-from-the-current-camera). The rest of the bits (`0x80` and the higher bits: values such as `0x197660`) are unknown. The usual values of the low byte are `0x60` (4381 cameras), `0x40` (409) and `0x00` (134) |
 | 0x0C   | —    | —       | curves  | 6 to 8 curves, with the same format as the [curves of AUTH](AUTH#animation-curves): `uint32 count`, `float times[count]`, `float values[count]`, `float tangents[count]` (`4 + 12 × count` bytes) |
 
 | Curve | Present          | Description |
@@ -157,6 +157,14 @@ A list of fixed or animated cameras, each one with a 4-digit ID. The game files 
 | next  | If `flags & 0x40` | Field of view in degrees (usually 60) |
 
 Most cameras have curves of one key (a fixed camera). The camera of the `ACAM` chunk of [AUTH](AUTH) has the same curves, with the value `0x61` in the place of `flags`.
+
+### Transitions from the current camera
+
+Bit `0x400000` of `flags` is set in 362 cameras, always together with bit `0x200000` (neither appears without the other). In all of them every key at time 0 has the value 0, even in the field of view curve: the keys at time 0 are *probably* a placeholder of the camera at the start, and the camera is a transition from the current one to the values of the last keys. The roll and field of view curves often have no key at time 0, only one key at the end (for example cameras `0150` and `0151` of the shops `dbhb`, `dgct`, `dsli`, `mfsy` and `mkyu`: one key at 1 s with a roll of 5 and a field of view of 15). A few curves have only the placeholder key (the target of camera `7211` of `dgct` and `mkyu`, all the curves of cameras `1100` and `1200` of `scene/02/d000`).
+
+### Cameras near the origin
+
+Bit `0x200` (almost always together with bit `0x2000`) is set in many cameras whose values stay near the origin, even in maps whose other cameras are 100 or more units away. In the maps with a camera beyond 30 units, 985 of the 1200 cameras with bit `0x200` stay within 5 units of the origin, against 24 of the 1087 cameras without it. Those positions are *probably* relative to a character or an object, not to the map. Cameras `0150` to `0152` of the shops are an example: their targets are about 0.25 units from the origin, with a field of view of 15 (a close-up). The 13 files that have them (`dbhb`, `dgct`, `dsli`, `mfsy` and `mkyu`) are the bars with a jukebox, and their [scene program](#scn3--scene-program) contains the strings `JBOX` and `JCNT`: they are *probably* the cameras of the jukebox, relative to it. Its position isn't in the chunks of the file (only `scene/03/m3fb` and `scene/03/ma00` also contain `JBOX`, without these cameras).
 
 ## LGHT — Lights
 
