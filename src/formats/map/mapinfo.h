@@ -14,6 +14,7 @@
 #define MAPINFO_ID_SIZE 5
 #define MAPINFO_CAMERA_FROM_CURRENT 0x400000 // Flag of the cameras whose keys at time 0 are a placeholder (all zero) of the
                                              // camera at the start: a transition from the current camera
+#define MAPINFO_CAMERA_RELATIVE     0x200    // Flag of the cameras whose positions are probably relative to a character
 
 typedef struct {
     char        id[MAPINFO_ID_SIZE]; // e.g. "ECAM", "FOG "
@@ -25,8 +26,8 @@ typedef struct {
 // optional (count 0 if missing)
 typedef struct {
     char        id[MAPINFO_ID_SIZE]; // e.g. "0101"
-    uint32_t    flags;               // 0x20: roll curve, 0x40: field of view curve, MAPINFO_CAMERA_FROM_CURRENT, the rest
-                                     // unknown
+    uint32_t    flags;               // 0x20: roll curve, 0x40: field of view curve, MAPINFO_CAMERA_FROM_CURRENT,
+                                     // MAPINFO_CAMERA_RELATIVE, the rest unknown
     AUTH_Curve  curves[AUTH_CAMERA_CURVES]; // AUTH_CameraCurve order
 } MAPINFO_Camera;
 

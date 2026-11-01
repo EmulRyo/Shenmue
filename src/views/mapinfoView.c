@@ -152,11 +152,15 @@ static const MAPINFO_Camera* SelectedCamera(void) {
 }
 
 // Values of the curves of a camera at a time. The transitions from the current camera go from g_view.start to their
-// first keys after time 0 (the keys at time 0 are a placeholder); the curves without such a key keep the start value
+// first keys after time 0 (the keys at time 0 are a placeholder); the curves without such a key keep the start value.
+// The relative ones are relative to a character that isn't known, so their position and target are moved from the start
+// by their values, without rotation: not where the game shows them, but always along the same path
 static void CameraValues(const MAPINFO_Camera* camera, float time, float values[AUTH_CAMERA_CURVES]) {
+    bool relative = (camera->flags & MAPINFO_CAMERA_FROM_CURRENT) && (camera->flags & MAPINFO_CAMERA_RELATIVE);
     for (int c = 0; c < AUTH_CAMERA_CURVES; c++) {
         const AUTH_Curve* curve = &camera->curves[c];
         float fallback = c == AUTH_CAMERA_FOV ? MAPINFOVIEW_CAMERA_FOVY : 0.0f;
+        float origin = relative && c <= AUTH_CAMERA_TARGET_Z ? g_view.start[c] : 0.0f;
         if (camera->flags & MAPINFO_CAMERA_FROM_CURRENT) {
             uint32_t key = 0;
             while (key < curve->count && curve->times[key] <= 0.0f)
@@ -166,11 +170,11 @@ static void CameraValues(const MAPINFO_Camera* camera, float time, float values[
                 continue;
             }
             if (time < curve->times[key]) {
-                values[c] = Lerp(g_view.start[c], curve->values[key], time / curve->times[key]);
+                values[c] = Lerp(g_view.start[c], origin + curve->values[key], time / curve->times[key]);
                 continue;
             }
         }
-        values[c] = AUTH_CurveValue(curve, time, fallback);
+        values[c] = origin + AUTH_CurveValue(curve, time, fallback);
     }
 }
 
