@@ -48,6 +48,9 @@ static float FitDistance(const FreeCamera* camera, const Vector3* points, uint32
 void FreeCamera_Fit(FreeCamera* camera, const Vector3* points, uint32_t count, float aspect) {
     if (count == 0)
         return;
+    // Flying, the target is near the position and the points can be in front of the fitted position: from the center
+    if (camera->fly)
+        camera->target = camera->center;
     Vector3 forward = Vector3Negate(Direction(camera));
     Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, (Vector3) { 0.0f, 1.0f, 0.0f }));
     Vector3 up = Vector3CrossProduct(right, forward);
