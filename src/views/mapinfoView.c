@@ -17,6 +17,7 @@
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
+#include "ui/properties.h"
 #include "ui/toolbar.h"
 #include "ui/tree.h"
 #include "views/mapinfoView.h"
@@ -133,6 +134,7 @@ typedef struct {
     bool*               failedItems;    // Doors and characters without their model
     bool*               visibleItems;   // Their eye in the tree
     Tree                tree;
+    Properties          properties;     // Of the selected item
     bool                mapExpanded;    // The characters of the CHRD chunk in the tree
     int                 selected;       // Item, -1 if none
     bool                mapCamera;      // Show the map from the selected camera
@@ -749,14 +751,6 @@ static const char* PackageText(const MapPackage* package) {
     return package->variantOf >= 0 ? TextFormat("%s, variant of %s", package->name, g_view.packages[package->variantOf].name) : package->name;
 }
 
-static const char* CharacterText(const MapCharacter* character) {
-    const CHRT_Character* info = &character->info;
-    const char* position = info->positioned ?
-        TextFormat("(%.2f, %.2f, %.2f)", info->position[0], info->position[1], info->position[2]) : "no position";
-    return TextFormat("%s  %s%s%s%s%s", info->id, position, info->sleep ? "  sleep" : "", info->arm ? "  arm" : "",
-        character->error != NULL ? "  " : "", character->error != NULL ? character->error : "");
-}
-
 // The center of the points of a shape (see DrawShape)
 static Vector3 ShapeCenter(const MAPINFO_Shape* shape) {
     const float* v = shape->values;
@@ -771,11 +765,8 @@ static Vector3 ShapeCenter(const MAPINFO_Shape* shape) {
     return count > 0 ? Vector3Scale(sum, 1.0f / count) : sum;
 }
 
-static const char* ShapeText(uint32_t index) {
-    const MAPINFO_Shape* shape = &g_view.file.shapes[index];
-    Vector3 center = ShapeCenter(shape);
-    const char* type = shape->type < sizeof(g_shapeTypes) / sizeof(g_shapeTypes[0]) ? g_shapeTypes[shape->type] : "unknown";
-    return TextFormat("%u  %s  (%.2f, %.2f)", index, type, center.x, -center.z);
+static const char* ShapeType(const MAPINFO_Shape* shape) {
+    return shape->type < sizeof(g_shapeTypes) / sizeof(g_shapeTypes[0]) ? g_shapeTypes[shape->type] : "unknown";
 }
 
 static const char* ScnText(uint32_t version) {
@@ -838,34 +829,22 @@ static bool CreateItems(void) {
     for (uint32_t i = 0; i < file->doorCount; i++) {
         const MAPINFO_Door* door = &file->doors[i];
         const char* error = g_view.doorErrors != NULL ? g_view.doorErrors[i] : NULL;
-        AddItem(ITEM_DOOR, i, TextFormat("%s  %s  (%.2f, %.2f, %.2f)  %.1f deg%s%s", door->model, door->type == MAPINFO_DOOR_DOOR ? "door" : "model",
-            door->position[0], door->position[1], door->position[2], door->angle, error != NULL ? "  " : "",
-            error != NULL ? error : ""), error != NULL);
+        AddItem(ITEM_DOOR, i, door->model, error != NULL);
     }
     g_view.firstItems[ITEM_CAMERA] = g_view.itemCount;
     for (uint32_t i = 0; i < file->cameraCount; i++) {
-        const MAPINFO_Camera* camera = &file->cameras[i];
-        uint32_t keys = CameraKeys(camera);
-        Camera3D view = MapCamera(camera);
-        AddItem(ITEM_CAMERA, i, (camera->flags & MAPINFO_CAMERA_FROM_CURRENT) ?
-            TextFormat("%s  from the current one in %.2f s to (%.2f, %.2f, %.2f)  flags 0x%X", camera->id,
-                CameraDuration(camera), view.position.x, view.position.y, view.position.z, camera->flags) :
-            keys > 1 ?
-            TextFormat("%s  %u keys, %.2f s  flags 0x%X", camera->id, keys, CameraDuration(camera), camera->flags) :
-            TextFormat("%s  (%.2f, %.2f, %.2f)  flags 0x%X", camera->id, view.position.x, view.position.y, view.position.z, camera->flags), false);
+        AddItem(ITEM_CAMERA, i, file->cameras[i].id, false);
     }
     g_view.firstItems[ITEM_LIGHT] = g_view.itemCount;
     for (uint32_t i = 0; i < file->lightCount; i++) {
-        const MAPINFO_Light* light = &file->lights[i];
-        AddItem(ITEM_LIGHT, i, TextFormat("%u.%u  (%.2f, %.2f, %.2f)  color (%.2f, %.2f, %.2f)", light->group, light->id,
-            light->position[0], light->position[1], light->position[2], light->color[0], light->color[1], light->color[2]), false);
+        AddItem(ITEM_LIGHT, i, TextFormat("%u.%u", file->lights[i].group, file->lights[i].id), false);
     }
     g_view.firstItems[ITEM_SHAPE] = g_view.itemCount;
     for (uint32_t i = 0; i < file->shapeCount; i++)
-        AddItem(ITEM_SHAPE, i, ShapeText(i), false);
+        AddItem(ITEM_SHAPE, i, TextFormat("%u  %s", i, ShapeType(&file->shapes[i])), false);
     g_view.firstItems[ITEM_CHARACTER] = g_view.itemCount;
     for (uint32_t i = 0; i < g_view.characterCount; i++)
-        AddItem(ITEM_CHARACTER, i, CharacterText(&g_view.characters[i]), g_view.characters[i].error != NULL);
+        AddItem(ITEM_CHARACTER, i, g_view.characters[i].info.id, g_view.characters[i].error != NULL);
     return true;
 }
 
@@ -1242,6 +1221,167 @@ static void DrawTree(Rectangle bounds) {
         Select(clicked == g_view.selected ? -1 : clicked);
 }
 
+static const char* g_cameraCurves[AUTH_CAMERA_CURVES] = { "X", "Y", "Z", "Target X", "Target Y", "Target Z", "Roll", "Field of view" };
+
+// The chunks of the file, when nothing is selected
+static void FileProperties(Properties* properties) {
+    const MAPINFO_File* file = &g_view.file;
+    Properties_Note(properties, "Select an item of the tree");
+    Properties_Section(properties, TextFormat("%u chunks", file->chunkCount));
+    for (uint32_t i = 0; i < file->chunkCount; i++)
+        Properties_Text(properties, file->chunks[i].id, TextFormat("0x%X bytes at 0x%X", file->chunks[i].size, file->chunks[i].offset));
+}
+
+static void CameraProperties(Properties* properties, uint32_t index) {
+    const MAPINFO_Camera* camera = &g_view.file.cameras[index];
+    float values[AUTH_CAMERA_CURVES];
+    MapCameraValues(camera, values);
+    Properties_Text(properties, "ID", camera->id);
+    Properties_Hex(properties, "Flags", camera->flags);
+    Properties_Bool(properties, "From the current camera", (camera->flags & MAPINFO_CAMERA_FROM_CURRENT) != 0);
+    Properties_Bool(properties, "Relative", (camera->flags & MAPINFO_CAMERA_RELATIVE) != 0);
+    Properties_Int(properties, "Keys", CameraKeys(camera));
+    Properties_Text(properties, "Duration", TextFormat("%.2f s", CameraDuration(camera)));
+    Properties_Section(properties, "Now");
+    Properties_Vector(properties, "Position", &values[AUTH_CAMERA_X], 3);
+    Properties_Vector(properties, "Target", &values[AUTH_CAMERA_TARGET_X], 3);
+    Properties_Float(properties, "Roll", values[AUTH_CAMERA_ROLL]);
+    Properties_Float(properties, "Field of view", values[AUTH_CAMERA_FOV]);
+    Properties_Section(properties, "Keys of the curves");
+    for (int c = 0; c < AUTH_CAMERA_CURVES; c++)
+        Properties_Int(properties, g_cameraCurves[c], camera->curves[c].count);
+}
+
+static void LightProperties(Properties* properties, uint32_t index) {
+    const MAPINFO_Light* light = &g_view.file.lights[index];
+    Properties_Int(properties, "Group", light->group);
+    Properties_Int(properties, "ID", light->id);
+    Properties_Hex(properties, "Flags", light->flags);
+    Properties_Int(properties, "Unknown", light->unknown);
+    Properties_Vector(properties, "Color", light->color, 3);
+    Properties_Float(properties, "Intensity", light->intensity);
+    Properties_Vector(properties, "Position", light->position, 3);
+    Properties_Vector(properties, "Direction", light->direction, 3);
+    Properties_Float(properties, "Angle", light->angle);
+}
+
+// The fields of the prefix that the group of the shape has, then its points
+static void ShapeProperties(Properties* properties, uint32_t index) {
+    const MAPINFO_Shape* shape = &g_view.file.shapes[index];
+    Properties_Text(properties, "Group", g_layerNames[LAYER_GROUPS + shape->group]);
+    Properties_Text(properties, "Type", ShapeType(shape));
+    Properties_Int(properties, "Block", shape->block);
+    if (shape->group == MAPINFO_GROUP_COLI)
+        Properties_Int(properties, "COLI type", shape->value);
+    else if (shape->group == MAPINFO_GROUP_EVNT || shape->group == MAPINFO_GROUP_SOND)
+        Properties_Int(properties, "Value", shape->value);
+    else if (shape->group == MAPINFO_GROUP_PROP) {
+        Properties_Text(properties, "Property", shape->property);
+        Properties_Hex(properties, "First word", shape->value);
+    }
+    if (shape->group == MAPINFO_GROUP_HGHT)
+        Properties_Float(properties, "Height", shape->height);
+    if (shape->group == MAPINFO_GROUP_UNDU)
+        Properties_Vector(properties, "Heights", shape->heights, 4);
+    Vector3 center = ShapeCenter(shape);
+    Properties_Vector(properties, "Center", (const float[]) { center.x, center.y, center.z }, 3);
+    Properties_Section(properties, TextFormat("%u values", shape->valueCount));
+    // Circles: radius, x, z; rectangles: x, z of the center and the half axes; the others: x, z of each point
+    for (uint32_t v = 0; v < shape->valueCount; v++)
+        Properties_Float(properties, TextFormat("%u", v), shape->values[v]);
+}
+
+static void DoorProperties(Properties* properties, uint32_t index) {
+    const MAPINFO_Door* door = &g_view.file.doors[index];
+    const char* error = g_view.doorErrors != NULL ? g_view.doorErrors[index] : NULL;
+    Properties_Text(properties, "Model", door->model);
+    Properties_Text(properties, "Type", door->type == MAPINFO_DOOR_DOOR ? "door" : door->type == MAPINFO_DOOR_MODEL ? "model" :
+        TextFormat("%u", door->type));
+    Properties_Vector(properties, "Position", door->position, 3);
+    Properties_Float(properties, "Angle", door->angle);
+    Properties_Vector(properties, "Scale", door->scale, 3);
+    Properties_Text(properties, "Model file", error != NULL ? error : "loaded");
+}
+
+static void ModelProperties(Properties* properties, const MT5Render_Model* model) {
+    Properties_Int(properties, "Nodes", model->nodeCount);
+    Properties_Int(properties, "Triangles", model->mesh.triangleCount);
+    if (model->mesh.skippedTriangles > 0)
+        Properties_Int(properties, "Skipped triangles", model->mesh.skippedTriangles);
+    Properties_Text(properties, "Textures", TextFormat("%u/%u", model->loadedTextures, model->textureCount));
+    Properties_Int(properties, "Animation frames", model->mesh.frameCount);
+    Properties_Vector(properties, "Center", (const float[]) { model->mesh.center.x, model->mesh.center.y, model->mesh.center.z }, 3);
+    Properties_Float(properties, "Radius", model->mesh.radius);
+}
+
+static void CharacterProperties(Properties* properties, uint32_t index) {
+    const MapCharacter* character = &g_view.characters[index];
+    const CHRT_Character* info = &character->info;
+    const char* package = PackageName(character->package);
+    Properties_Text(properties, "ID", info->id);
+    Properties_Text(properties, "Package", package != NULL ? package : "CHRD chunk");
+    Properties_Text(properties, "Image", info->image != NULL ? info->image : "none");
+    Properties_Text(properties, "Position", info->positioned ? TextFormat("(%.3f, %.3f, %.3f)", info->position[0], info->position[1],
+        info->position[2]) : info->hasPosition ? "off the scene" : "none");
+    Properties_Vector(properties, "Angle", info->angle, 3);
+    Properties_Bool(properties, "Sleep", info->sleep);
+    Properties_Bool(properties, "Human", info->human);
+    Properties_Bool(properties, "Arm of Ryo", info->arm);
+    // A shown package can have it hidden by a character with its ID of a previous package
+    Properties_Text(properties, "Shown", character->shown ? "yes" : character->package >= 0 && !g_view.packages[character->package].shown ?
+        "no, its package is hidden" : "no, another package has its ID");
+    if (character->model >= 0) {
+        Properties_Section(properties, "Model");
+        ModelProperties(properties, &g_view.models[character->model]);
+    }
+    else
+        Properties_Text(properties, "Model", character->error != NULL ? character->error : "none");
+}
+
+// Of the selected item, or the chunks of the file
+static void DrawProperties(Rectangle bounds) {
+    Properties* properties = &g_view.properties;
+    if (g_view.selected < 0) {
+        Properties_Begin(properties, bounds, GetFileName(g_view.filename));
+        FileProperties(properties);
+        Properties_End(properties);
+        return;
+    }
+    const Item* item = &g_view.items[g_view.selected];
+    const MAPINFO_File* file = &g_view.file;
+    switch (item->kind) {
+    case ITEM_CAMERA:
+        Properties_Begin(properties, bounds, TextFormat("Camera %s", file->cameras[item->index].id));
+        CameraProperties(properties, item->index);
+        break;
+    case ITEM_LIGHT:
+        Properties_Begin(properties, bounds, TextFormat("Light %u.%u", file->lights[item->index].group, file->lights[item->index].id));
+        LightProperties(properties, item->index);
+        break;
+    case ITEM_SHAPE:
+        Properties_Begin(properties, bounds, TextFormat("Shape %u", item->index));
+        ShapeProperties(properties, item->index);
+        break;
+    case ITEM_DOOR:
+        Properties_Begin(properties, bounds, TextFormat("Door %u", item->index));
+        DoorProperties(properties, item->index);
+        break;
+    case ITEM_MAP_MODEL:
+        Properties_Begin(properties, bounds, TextFormat("Model %s", g_view.mapModelNames[item->index]));
+        ModelProperties(properties, &g_view.models[item->index]);
+        break;
+    case ITEM_CHARACTER:
+        Properties_Begin(properties, bounds, TextFormat("Character %s", g_view.characters[item->index].info.id));
+        CharacterProperties(properties, item->index);
+        break;
+    default:
+        Properties_Begin(properties, bounds, "Information");
+        Properties_Note(properties, g_view.labels[g_view.selected]);
+        break;
+    }
+    Properties_End(properties);
+}
+
 void MAPINFOView_Draw(Rectangle area) {
     if (!g_view.open || area.width <= 0.0f || area.height <= 0.0f)
         return;
@@ -1250,14 +1390,17 @@ void MAPINFOView_Draw(Rectangle area) {
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
     float margin = 10.0f;
     float top = area.y + margin;
-    Rectangle tree = { area.x + margin, top, MAPINFOVIEW_LIST_WIDTH, area.height - margin * 2.0f };
-    Rectangle scene = { tree.x + tree.width + margin, top, area.width - tree.width - margin * 3.0f, tree.height };
+    Rectangle column = { area.x + margin, top, MAPINFOVIEW_LIST_WIDTH, area.height - margin * 2.0f };
+    Rectangle scene = { column.x + column.width + margin, top, area.width - column.width - margin * 3.0f, column.height };
+    Rectangle tree, properties;
+    Properties_Split(column, &tree, &properties);
     if (tree.height <= 0.0f || scene.width <= 0.0f)
         return;
     UpdateInput(scene);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     DrawTree(tree);
+    DrawProperties(properties);
     DrawScene(scene, font, fontSize);
 }
 

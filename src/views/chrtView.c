@@ -12,6 +12,7 @@
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
+#include "ui/properties.h"
 #include "ui/toolbar.h"
 #include "ui/tree.h"
 #include "views/chrtView.h"
@@ -62,6 +63,7 @@ typedef struct {
     char                (*labels)[CHRTVIEW_LABEL_SIZE];
     bool*               shown;       // Their eye in the tree
     Tree                tree;
+    Properties          properties;  // Of the selected character
     Vector3             center;      // Bounding sphere of the scene
     float               radius;
     FreeCamera         camera;
@@ -227,7 +229,7 @@ static void ComputeBounds(void) {
     g_view.radius = fmaxf(Vector3Distance(min, max) * 0.5f, 0.1f);
 }
 
-// ID, model file and flags of each character; the reason when it has no model
+// The ID of each character
 static bool CreateLabels(void) {
     g_view.labels = malloc((g_view.characterCount + 1) * sizeof(*g_view.labels));
     g_view.shown = malloc((g_view.characterCount + 1) * sizeof(bool));
@@ -236,12 +238,7 @@ static bool CreateLabels(void) {
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
         const CHRTView_Character* character = &g_view.characters[i];
         g_view.shown[i] = true;
-        if (character->model < 0)
-            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s  %s%s%s", character->info.id,
-                character->info.image != NULL ? character->info.image : "", character->info.image != NULL ? "  " : "", character->error);
-        else
-            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s  %s%s", character->info.id, GetFileName(g_view.models[character->model].path),
-                character->info.sleep ? "  sleep" : "");
+        snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s", character->info.id);
     }
     return true;
 }
@@ -425,18 +422,41 @@ static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSiz
     }
 }
 
-// Image, model file (or why it has none), position and angle of the selected character
-static const char* SelectedText(void) {
+// The commands of the selected character, and its model
+static void DrawProperties(Rectangle bounds) {
+    Properties* properties = &g_view.properties;
+    if (g_view.selected < 0) {
+        Properties_Begin(properties, bounds, NULL);
+        Properties_Note(properties, "Select a character of the tree or click its label");
+        Properties_End(properties);
+        return;
+    }
     const CHRTView_Character* character = &g_view.characters[g_view.selected];
-    const float* p = character->info.position;
-    const char* position = character->info.positioned ? TextFormat("position (%g, %g, %g)", p[0], p[1], p[2]) :
-        !character->info.hasPosition ? "no position" : TextFormat("off the scene (%g, %g, %g)", p[0], p[1], p[2]);
-    char image[CHRTVIEW_LABEL_SIZE] = "no image";
-    if (character->info.image != NULL)
-        snprintf(image, sizeof(image), "image \"%s\" (%s)", character->info.image,
-            character->model >= 0 ? GetFileName(g_view.models[character->model].path) : character->error);
-    return TextFormat("%s: %s, %s, angle (%g, %g, %g)%s", character->info.id, image, position, character->info.angle[0],
-        character->info.angle[1], character->info.angle[2], character->info.sleep ? ", sleep" : "");
+    const CHRT_Character* info = &character->info;
+    const float* p = info->position;
+    Properties_Begin(properties, bounds, TextFormat("Character %s", info->id));
+    Properties_Text(properties, "ID", info->id);
+    Properties_Text(properties, "Image", info->image != NULL ? info->image : "none");
+    Properties_Text(properties, "Position", info->positioned ? TextFormat("(%.3f, %.3f, %.3f)", p[0], p[1], p[2]) :
+        !info->hasPosition ? "none" : TextFormat("off the scene (%.3f, %.3f, %.3f)", p[0], p[1], p[2]));
+    Properties_Vector(properties, "Angle", info->angle, 3);
+    Properties_Bool(properties, "Sleep", info->sleep);
+    Properties_Bool(properties, "Human", info->human);
+    Properties_Bool(properties, "Arm of Ryo", info->arm);
+    if (character->model < 0)
+        Properties_Text(properties, "Model", character->error);
+    else {
+        const CHRTView_Model* model = &g_view.models[character->model];
+        const MT5Mesh* mesh = &model->model.mesh;
+        Properties_Section(properties, "Model");
+        Properties_Text(properties, "File", GetFileName(model->path));
+        Properties_Int(properties, "Nodes", model->model.nodeCount);
+        Properties_Int(properties, "Triangles", mesh->triangleCount);
+        Properties_Text(properties, "Textures", TextFormat("%u/%u", model->model.loadedTextures, model->model.textureCount));
+        Properties_Int(properties, "Animation frames", mesh->frameCount);
+        Properties_Float(properties, "Radius", mesh->radius);
+    }
+    Properties_End(properties);
 }
 
 // The characters by group. A click selects a character, or unselects it if it is selected. The sleeping characters are
@@ -473,8 +493,10 @@ void CHRTView_Draw(Rectangle area) {
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
     float margin = 10.0f;
     float top = area.y + margin;
-    Rectangle list = { area.x + margin, top, CHRTVIEW_LIST_WIDTH, area.y + area.height - margin - top };
-    Rectangle scene = { list.x + list.width + margin, top, area.width - list.width - margin * 3.0f, list.height };
+    Rectangle column = { area.x + margin, top, CHRTVIEW_LIST_WIDTH, area.y + area.height - margin - top };
+    Rectangle scene = { column.x + column.width + margin, top, area.width - column.width - margin * 3.0f, column.height };
+    Rectangle list, properties;
+    Properties_Split(column, &list, &properties);
     if (list.height <= 0.0f || scene.width <= 0.0f)
         return;
     UpdateInput(scene);
@@ -483,6 +505,7 @@ void CHRTView_Draw(Rectangle area) {
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     DrawTree(list);
+    DrawProperties(properties);
 
     Camera3D camera = FreeCamera_Begin3D(&g_view.camera, scene);
     // The models have explicit back faces where both sides are seen (see MT5View_Draw)
@@ -501,11 +524,8 @@ void CHRTView_Draw(Rectangle area) {
 
 void CHRTView_Status(ViewStatus* status) {
     snprintf(status->file, sizeof(status->file), "%s", g_view.path);
-    if (g_view.selected >= 0)
-        snprintf(status->info, sizeof(status->info), "%s", SelectedText());
-    else
-        snprintf(status->info, sizeof(status->info), "%u characters, %u without a model, %u not placed, %u models%s",
-            g_view.characterCount, g_view.characterCount - g_view.modelledCount, g_view.unpositionedCount, g_view.modelCount,
-            g_options.hideSleeping ? ", sleeping hidden" : "");
+    snprintf(status->info, sizeof(status->info), "%u characters, %u without a model, %u not placed, %u models%s",
+        g_view.characterCount, g_view.characterCount - g_view.modelledCount, g_view.unpositionedCount, g_view.modelCount,
+        g_options.hideSleeping ? ", sleeping hidden" : "");
     snprintf(status->hint, sizeof(status->hint), "%s, click a label: select", FreeCamera_Help(&g_view.camera));
 }

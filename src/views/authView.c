@@ -11,6 +11,7 @@
 #include "formats/animation/motn.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
+#include "ui/properties.h"
 #include "ui/toolbar.h"
 #include "ui/tree.h"
 #include "views/authView.h"
@@ -47,6 +48,8 @@ typedef struct {
     bool*           shownCharacters; // Their eye in the tree
     Tree            tree;
     int             current;    // Command of the current frame in the tree, to follow it while playing
+    int             selectedCharacter; // -1 if none: the properties are those of the current command
+    Properties      properties;
     float           time;       // Seconds
     bool            playing;
     bool            seeking;    // Dragging on the timeline
@@ -161,6 +164,29 @@ static const char* CommandText(const AUTH_Command* command) {
     }
 }
 
+// What the command does, and to what: its character and its motion or sound, without the other arguments
+static const char* CommandName(const AUTH_Command* command) {
+    const char* id = IDText(Arg(command, 0));
+    switch (command->opcode) {
+    case AUTH_COMMAND_START:
+        return "Start";
+    case AUTH_COMMAND_CHARACTER:
+        return TextFormat("Character %s", id);
+    case AUTH_COMMAND_MOTION: {
+        const char* name = MotionName(Arg(command, 1));
+        return name != NULL ? TextFormat("Motion %s %s", id, name) : TextFormat("Motion %s 0x%X", id, Arg(command, 1));
+    }
+    case AUTH_COMMAND_UNKNOWN:
+        return TextFormat("Unknown %s", id);
+    case AUTH_COMMAND_VOICE:
+        return TextFormat("Voice %s %s", id, SoundName(Arg(command, 1)));
+    case AUTH_COMMAND_SOUND:
+        return TextFormat("Sound %s %s", id, SoundName(Arg(command, 2)));
+    default:
+        return TextFormat("Command %u", command->opcode);
+    }
+}
+
 static void LoadMotionNames(const char* filepath) {
     FilePathList files = LoadDirectoryFilesEx(GetDirectoryPath(filepath), ".motn", false);
     g_view.banks = calloc(files.count + 1, sizeof(MOTN_Bank));
@@ -173,7 +199,7 @@ static void LoadMotionNames(const char* filepath) {
     UnloadDirectoryFiles(files);
 }
 
-// The frame and the text of the commands; the ID and the keys of the characters
+// The frame and the name of the commands; the ID of the characters
 static bool CreateLabels(void) {
     const AUTH_Sequence* sequence = &g_view.sequence;
     g_view.labels = malloc((sequence->commandCount + 1) * sizeof(*g_view.labels));
@@ -183,12 +209,10 @@ static bool CreateLabels(void) {
         return false;
     for (uint32_t i = 0; i < sequence->commandCount; i++) {
         const AUTH_Command* command = &sequence->commands[i];
-        snprintf(g_view.labels[i], AUTHVIEW_LABEL_SIZE, "%5u  %s", command->frame, CommandText(command));
+        snprintf(g_view.labels[i], AUTHVIEW_LABEL_SIZE, "%5u  %s", command->frame, CommandName(command));
     }
     for (uint32_t i = 0; i < sequence->characterCount; i++) {
-        const AUTH_Character* character = &sequence->characters[i];
-        uint32_t keys = character->curves[AUTH_CHARACTER_X].count;
-        snprintf(g_view.characterLabels[i], AUTHVIEW_LABEL_SIZE, keys > 0 ? "%s  %u keys" : "%s  no movement", character->id, keys);
+        snprintf(g_view.characterLabels[i], AUTHVIEW_LABEL_SIZE, "%s", sequence->characters[i].id);
         g_view.shownCharacters[i] = true;
     }
     return true;
@@ -255,6 +279,7 @@ bool AUTHView_Open(const char* filepath) {
     snprintf(g_view.path, sizeof(g_view.path), "%s", filepath);
     g_view.sequence = sequence;
     g_view.current = -1;
+    g_view.selectedCharacter = -1;
     LoadMotionNames(filepath);
     if (!CreateLabels()) {
         fputs("[AUTHView_Open]: Memory error\n", stderr);
@@ -616,9 +641,10 @@ static Group CommandGroup(const AUTH_Command* command) {
     }
 }
 
-// The characters, whose eye shows or hides them in the scene; a click on one looks at it with the free camera. Then the
-// commands by lane of the timeline, with the one of the current frame selected; a click on one goes to its frame. The
-// current command is followed while playing or seeking, without expanding its group
+// The characters, whose eye shows or hides them in the scene; a click on one selects it and looks at it with the free
+// camera, or unselects it. Then the commands by lane of the timeline, with the one of the current frame selected while
+// no character is; a click on one goes to its frame. The current command is followed while playing or seeking, without
+// expanding its group
 static void DrawTree(Rectangle bounds) {
     const AUTH_Sequence* sequence = &g_view.sequence;
     Tree* tree = &g_view.tree;
@@ -632,7 +658,8 @@ static void DrawTree(Rectangle bounds) {
     Tree_BeginGroup(tree, g_groupNames[GROUP_CHARACTERS], &g_options.expanded[GROUP_CHARACTERS], &g_options.charactersShown);
     for (uint32_t i = 0; i < sequence->characterCount; i++) {
         bool moves = HasMovement(&sequence->characters[i]);
-        if (Tree_Item(tree, g_view.characterLabels[i], moves ? 0 : TREE_DIMMED, moves ? &g_view.shownCharacters[i] : NULL) && moves)
+        int flags = ((int)i == g_view.selectedCharacter ? TREE_SELECTED : 0) | (moves ? 0 : TREE_DIMMED);
+        if (Tree_Item(tree, g_view.characterLabels[i], flags, moves ? &g_view.shownCharacters[i] : NULL))
             clickedCharacter = (int)i;
     }
     Tree_EndGroup(tree);
@@ -640,17 +667,24 @@ static void DrawTree(Rectangle bounds) {
         Tree_BeginGroup(tree, g_groupNames[g], &g_options.expanded[g], NULL);
         for (uint32_t i = 0; i < sequence->commandCount; i++) {
             if ((int)CommandGroup(&sequence->commands[i]) == g &&
-                Tree_Item(tree, g_view.labels[i], (int)i == current ? TREE_SELECTED : 0, NULL))
+                Tree_Item(tree, g_view.labels[i], (int)i == current && g_view.selectedCharacter < 0 ? TREE_SELECTED : 0, NULL))
                 clickedCommand = (int)i;
         }
         Tree_EndGroup(tree);
     }
     Tree_End(tree);
 
-    if (clickedCommand >= 0)
+    if (clickedCommand >= 0) {
         SeekFrame(sequence->commands[clickedCommand].frame);
-    if (clickedCharacter >= 0) {
+        g_view.selectedCharacter = -1;
+    }
+    if (clickedCharacter >= 0 && clickedCharacter == g_view.selectedCharacter)
+        g_view.selectedCharacter = -1;
+    else if (clickedCharacter >= 0) {
+        g_view.selectedCharacter = clickedCharacter;
         const AUTH_Character* character = &sequence->characters[clickedCharacter];
+        if (!HasMovement(character))
+            return;
         g_options.cutsceneCamera = false;
         g_view.camera.target = Vector3Add(CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time),
             (Vector3) { 0.0f, AUTHVIEW_HEIGHT * 0.5f, 0.0f });
@@ -663,6 +697,63 @@ static const char* FormatTime(float seconds) {
     return TextFormat("%d:%02d.%02d", centiseconds / 6000, centiseconds / 100 % 60, centiseconds % 100);
 }
 
+static const char* g_characterCurves[AUTH_CHARACTER_CURVES] = { "X", "Y", "Z", "Rotation X", "Rotation Y", "Rotation Z", "Unknown 6",
+    "Unknown 7", "Unknown 8" };
+
+// Its values at the current time, what it does, and the keys of its curves
+static void CharacterProperties(Properties* properties, const AUTH_Character* character) {
+    Properties_Text(properties, "ID", character->id);
+    Properties_Hex(properties, "ID value", character->idValue);
+    if (HasMovement(character)) {
+        Properties_Section(properties, "Now");
+        Vector3 position = CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time);
+        Vector3 rotation = CurvePoint(&character->curves[AUTH_CHARACTER_ROTATION_X], g_view.time);
+        Properties_Vector(properties, "Position", (const float[]) { position.x, position.y, position.z }, 3);
+        Properties_Vector(properties, "Rotation", (const float[]) { rotation.x, rotation.y, rotation.z }, 3);
+        const AUTH_Command* motion = CharacterMotion(character->idValue);
+        const char* name = motion != NULL ? MotionName(Arg(motion, 1)) : NULL;
+        Properties_Text(properties, "Motion", motion == NULL ? "none" : name != NULL ? name : TextFormat("0x%X", Arg(motion, 1)));
+        const char* sound = CharacterSound(character->idValue);
+        Properties_Text(properties, "Sound", sound != NULL ? sound : "none");
+    }
+    Properties_Section(properties, "Keys of the curves");
+    for (int c = 0; c < AUTH_CHARACTER_CURVES; c++)
+        Properties_Int(properties, g_characterCurves[c], character->curves[c].count);
+}
+
+// Its frame, its text and its arguments, as integers and as floats
+static void CommandProperties(Properties* properties, const AUTH_Command* command) {
+    Properties_Int(properties, "Frame", command->frame);
+    Properties_Text(properties, "Time", FormatTime(command->frame / AUTH_FRAME_RATE));
+    Properties_Int(properties, "Opcode", command->opcode);
+    Properties_Text(properties, "Command", CommandText(command));
+    Properties_Section(properties, TextFormat("%u arguments", command->argCount));
+    for (uint32_t i = 0; i < command->argCount; i++)
+        Properties_Text(properties, TextFormat("%u", i), TextFormat("0x%08X  %d  %g", command->args[i], (int32_t)command->args[i],
+            AUTH_ArgFloat(command, i)));
+}
+
+// Of the selected character, or of the command of the current frame
+static void DrawProperties(Rectangle bounds) {
+    Properties* properties = &g_view.properties;
+    const AUTH_Sequence* sequence = &g_view.sequence;
+    int current = CurrentCommand();
+    if (g_view.selectedCharacter >= 0) {
+        const AUTH_Character* character = &sequence->characters[g_view.selectedCharacter];
+        Properties_Begin(properties, bounds, TextFormat("Character %s", character->id));
+        CharacterProperties(properties, character);
+    }
+    else if (current >= 0) {
+        Properties_Begin(properties, bounds, TextFormat("Command %d", current));
+        CommandProperties(properties, &sequence->commands[current]);
+    }
+    else {
+        Properties_Begin(properties, bounds, NULL);
+        Properties_Note(properties, "No command before the current frame");
+    }
+    Properties_End(properties);
+}
+
 void AUTHView_Draw(Rectangle area) {
     if (!g_view.open || area.width <= 0.0f || area.height <= 0.0f)
         return;
@@ -673,9 +764,11 @@ void AUTHView_Draw(Rectangle area) {
     float margin = 10.0f;
     float controlsHeight = 30.0f;
     float top = area.y + margin;
-    Rectangle list = { area.x + margin, top, AUTHVIEW_LIST_WIDTH, area.height - margin * 2.0f };
-    float panelX = list.x + list.width + margin;
-    float panelWidth = area.width - list.width - margin * 3.0f;
+    Rectangle column = { area.x + margin, top, AUTHVIEW_LIST_WIDTH, area.height - margin * 2.0f };
+    Rectangle list, properties;
+    Properties_Split(column, &list, &properties);
+    float panelX = column.x + column.width + margin;
+    float panelWidth = area.width - column.width - margin * 3.0f;
     Rectangle controls = { panelX, area.y + area.height - margin - controlsHeight, panelWidth, controlsHeight };
     Rectangle timeline = { panelX, controls.y - margin - AUTHVIEW_TIMELINE_HEIGHT, panelWidth, AUTHVIEW_TIMELINE_HEIGHT };
     Rectangle scene = { panelX, top, panelWidth, timeline.y - margin - top };
@@ -687,6 +780,7 @@ void AUTHView_Draw(Rectangle area) {
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
 
     DrawTree(list);
+    DrawProperties(properties);
 
     DrawScene(scene, font, fontSize);
     DrawTimeline(timeline, font, fontSize);

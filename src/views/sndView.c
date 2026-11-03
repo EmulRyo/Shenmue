@@ -7,6 +7,7 @@
 #include "raygui.h"
 #include "formats/sound/snd.h"
 #include "audio/sndSynth.h"
+#include "ui/properties.h"
 #include "ui/toolbar.h"
 #include "ui/tree.h"
 #include "ui/waveform.h"
@@ -48,6 +49,7 @@ typedef struct {
     uint32_t        invalidCount;
     Tree            tree;
     bool            expanded[2];
+    Properties      properties; // Of the selected sequence or sample
     int             selected[2];
     int             rateIndex;
     bool            loopEnabled;
@@ -183,21 +185,14 @@ static bool CreateLabels(void) {
     }
     for (uint32_t i = 0; i < g_player.listedSequences; i++) {
         const SND_Sequence* sequence = &bank->sequences[g_player.sequenceIndices[i]];
-        if (sequence->type == SND_SEQUENCE_MUSIC)
-            snprintf(g_player.labels[MODE_SEQUENCES][i], SNDVIEW_LABEL_SIZE, "%u-%u: music, %u:%02u%s", sequence->group,
-                sequence->index, sequence->duration / 60000, sequence->duration / 1000 % 60, sequence->loop ? ", loop" : "");
-        else
-            snprintf(g_player.labels[MODE_SEQUENCES][i], SNDVIEW_LABEL_SIZE, "%u-%u: effect", sequence->group, sequence->index);
+        snprintf(g_player.labels[MODE_SEQUENCES][i], SNDVIEW_LABEL_SIZE, "%u-%u  %s", sequence->group, sequence->index,
+            sequence->type == SND_SEQUENCE_MUSIC ? "music" : "effect");
     }
     for (uint32_t i = 0; i < bank->sampleCount; i++) {
         const SND_Sample* sample = &bank->samples[i];
         g_player.invalidSamples[i] = sample->pcm == NULL;
         g_player.invalidCount += sample->pcm == NULL;
-        if (sample->pcm == NULL)
-            snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, "%u: invalid", i);
-        else
-            snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, "%u: %s, %u frames%s", i,
-                sample->encoding == SND_ENCODING_ADPCM ? "ADPCM" : "PCM", sample->frameCount, sample->loop ? ", loop" : "");
+        snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, "%u", i);
     }
     return true;
 }
@@ -375,23 +370,65 @@ static void DrawTree(Rectangle bounds) {
     }
 }
 
+// Of the selected sequence, or of the selected sample
+static void DrawProperties(Rectangle bounds) {
+    Properties* properties = &g_player.properties;
+    const SND_Bank* bank = &g_player.bank;
+    if (g_player.mode == MODE_SEQUENCES) {
+        const SND_Sequence* sequence = &bank->sequences[g_player.sequenceIndices[g_player.selected[MODE_SEQUENCES]]];
+        Properties_Begin(properties, bounds, TextFormat("Sequence %u-%u", sequence->group, sequence->index));
+        Properties_Int(properties, "Group", sequence->group);
+        Properties_Int(properties, "Index", sequence->index);
+        Properties_Text(properties, "Type", sequence->type == SND_SEQUENCE_MUSIC ? "music" : "effect");
+        Properties_Hex(properties, "Offset", sequence->offset);
+        if (sequence->type == SND_SEQUENCE_MUSIC) {
+            Properties_Text(properties, "Duration", FormatMilliseconds(sequence->duration));
+            Properties_Text(properties, "Then", sequence->loop ? "loops" : "ends");
+        }
+        Properties_End(properties);
+        return;
+    }
+
+    int index = g_player.selected[MODE_SAMPLES];
+    const SND_Sample* sample = SelectedSample();
+    Properties_Begin(properties, bounds, TextFormat("Sample %d", index));
+    if (sample->pcm == NULL)
+        Properties_Note(properties, "Invalid: its data is out of the file");
+    Properties_Text(properties, "Encoding", sample->encoding == SND_ENCODING_ADPCM ? "4-bit ADPCM" : "16-bit PCM");
+    Properties_Hex(properties, "Offset", sample->offset);
+    Properties_Int(properties, "Size", sample->size);
+    Properties_Int(properties, "Frames", sample->frameCount);
+    Properties_Text(properties, "Rate of the split", sample->sampleRate != 0 ? TextFormat("%u Hz", sample->sampleRate) : "no split plays it");
+    Properties_Text(properties, "Duration", FormatMilliseconds((uint32_t)((uint64_t)sample->frameCount * 1000 / SampleRate(index))));
+    Properties_Bool(properties, "Half rate", sample->halfRate);
+    Properties_Section(properties, "Loop");
+    Properties_Bool(properties, "Loop", sample->loop);
+    if (sample->loop) {
+        Properties_Int(properties, "Start", sample->loopStart);
+        Properties_Int(properties, "End", sample->loopEnd);
+        Properties_Bool(properties, "Silent", sample->silentLoop);
+        Properties_Bool(properties, "At the end", sample->tailLoop);
+    }
+    Properties_End(properties);
+}
+
 void SNDView_Draw(Rectangle area) {
     if (!g_player.open || area.width <= 0.0f || area.height <= 0.0f)
         return;
 
     Font font = GuiGetFont();
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
-    float lineHeight = fontSize * 1.2f;
-    const SND_Bank* bank = &g_player.bank;
     float margin = 10.0f;
     float controlsHeight = 30.0f;
     float top = area.y + margin;
-    Rectangle list = { area.x + margin, top, SNDVIEW_LIST_WIDTH, area.height - margin * 2.0f };
+    Rectangle column = { area.x + margin, top, SNDVIEW_LIST_WIDTH, area.height - margin * 2.0f };
+    Rectangle list, properties;
+    Properties_Split(column, &list, &properties);
     Rectangle panel = {
-        list.x + list.width + margin,
-        top + lineHeight + margin,
-        area.width - list.width - margin * 3.0f,
-        area.height - margin * 4.0f - lineHeight - controlsHeight,
+        column.x + column.width + margin,
+        top,
+        area.width - column.width - margin * 3.0f,
+        area.height - margin * 3.0f - controlsHeight,
     };
     if (list.height <= 0.0f || panel.width <= 0.0f || panel.height <= 0.0f)
         return;
@@ -399,17 +436,12 @@ void SNDView_Draw(Rectangle area) {
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     DrawTree(list);
+    DrawProperties(properties);
 
     float controlsY = panel.y + panel.height + margin;
     float x = panel.x;
 
     if (g_player.mode == MODE_SEQUENCES) {
-        const SND_Sequence* sequence = &bank->sequences[g_player.sequenceIndices[g_player.selected[MODE_SEQUENCES]]];
-        const char* info = sequence->type == SND_SEQUENCE_MUSIC ?
-            TextFormat("Sequence %u-%u: music, %s%s", sequence->group, sequence->index, FormatMilliseconds(sequence->duration),
-                sequence->loop ? ", then loops" : "") :
-            TextFormat("Sequence %u-%u: effect", sequence->group, sequence->index);
-        DrawTextEx(font, info, (Vector2) { panel.x, top }, fontSize, 1.0f, LIGHTGRAY);
         DrawChannelMeters(panel, font, fontSize);
         const char* status = TextFormat("%s   %u/%u voices", FormatMilliseconds(g_player.time), g_player.voices, SND_SYNTH_VOICES);
         DrawTextEx(font, status, (Vector2) { x, controlsY + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
@@ -418,12 +450,6 @@ void SNDView_Draw(Rectangle area) {
 
     const SND_Sample* sample = SelectedSample();
     uint32_t rate = SampleRate(g_player.selected[MODE_SAMPLES]);
-    const char* info = sample->pcm == NULL ?
-        TextFormat("Sample %d: invalid, its data is out of the file", g_player.selected[MODE_SAMPLES]) :
-        TextFormat("Sample %d: %s, %u bytes at 0x%X, %u frames, %u Hz%s", g_player.selected[MODE_SAMPLES],
-            sample->encoding == SND_ENCODING_ADPCM ? "4-bit ADPCM" : "16-bit PCM", sample->size, sample->offset, sample->frameCount,
-            rate, sample->loop ? TextFormat(", loop %u-%u", sample->loopStart, sample->loopEnd) : ", no loop");
-    DrawTextEx(font, info, (Vector2) { panel.x, top }, fontSize, 1.0f, LIGHTGRAY);
     DrawWaveform(panel);
 
     // TextFormat uses a rotating buffer, so the two times can be formatted in the same call

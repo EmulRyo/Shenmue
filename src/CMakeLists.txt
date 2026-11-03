@@ -82,6 +82,8 @@ set(SRC
 
     src/ui/input.c
     src/ui/input.h
+    src/ui/properties.c
+    src/ui/properties.h
     src/ui/toolbar.c
     src/ui/toolbar.h
     src/ui/tooltip.c
