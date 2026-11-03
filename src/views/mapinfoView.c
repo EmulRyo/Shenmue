@@ -18,6 +18,7 @@
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
 #include "ui/list.h"
+#include "ui/toolbar.h"
 #include "views/mapinfoView.h"
 
 #define MAPINFOVIEW_LABEL_SIZE   160
@@ -900,27 +901,34 @@ static void Select(int item) {
     g_view.camera.distance = 6.0f;
 }
 
-static void UpdateInput(Rectangle scene) {
-    if (IsKeyPressed(KEY_V) && SelectedCamera() != NULL) {
-        // A transition from the current camera starts again from the free camera
-        if (!g_view.mapCamera && (SelectedCamera()->flags & MAPINFO_CAMERA_FROM_CURRENT)) {
-            SetStart();
-            g_view.time = 0.0f;
-        }
-        g_view.mapCamera = !g_view.mapCamera;
-    }
-    if (IsKeyPressed(KEY_F)) {
-        // Flies from the position of the camera of the map, or of the free camera, looking around it
-        const MAPINFO_Camera* source = g_view.mapCamera ? SelectedCamera() : NULL;
-        if (source != NULL)
-            FreeCamera_LookFrom(&g_view.camera, MapCamera(source));
-        FreeCamera_SetFly(&g_view.camera, g_view.mapCamera || !g_view.camera.fly);
-        g_view.mapCamera = false;
-    }
-    if (IsKeyPressed(KEY_R)) {
+void MAPINFOView_Toolbar(void) {
+    if (Toolbar_Button(ICON_RESTART, "Reset", "Reset the free camera", KEY_R)) {
         ResetCamera();
         g_view.mapCamera = false;
     }
+    bool fly = !g_view.mapCamera && g_view.camera.fly;
+    if (Toolbar_Toggle(ICON_TARGET_MOVE, "Fly", "Fly with the free camera, from the camera of the map if it is shown", KEY_F, &fly)) {
+        // Flies from the position of the camera of the map, or of the free camera, looking around it
+        if (fly && g_view.mapCamera && SelectedCamera() != NULL)
+            FreeCamera_LookFrom(&g_view.camera, MapCamera(SelectedCamera()));
+        FreeCamera_SetFly(&g_view.camera, fly);
+        g_view.mapCamera = false;
+    }
+    if (SelectedCamera() == NULL)
+        GuiDisable();
+    int mode = g_view.mapCamera ? 1 : 0;
+    if (Toolbar_Choice("Free camera;Map camera", "Show the map from the free camera or from the selected camera", KEY_C, &mode)) {
+        // A transition from the current camera starts again from the free camera
+        if (mode == 1 && (SelectedCamera()->flags & MAPINFO_CAMERA_FROM_CURRENT)) {
+            SetStart();
+            g_view.time = 0.0f;
+        }
+        g_view.mapCamera = mode == 1;
+    }
+    GuiEnable();
+}
+
+static void UpdateInput(Rectangle scene) {
     if (g_view.fit)
         FitCamera(scene);
     if (!g_view.mapCamera)
@@ -1126,8 +1134,8 @@ void MAPINFOView_Draw(Rectangle area) {
             g_view.modelledCharacters, g_view.mapModelCount, file->doorCount, g_view.loadedDoors < file->doorCount ?
                 TextFormat(" (%u without their model)", file->doorCount - g_view.loadedDoors) : ""),
         g_view.mapCamera && camera != NULL ?
-            TextFormat("Camera %s   V: free camera   F: fly   R: reset the free camera   Click on the list: select a camera, light, character or door, show or hide a package", camera->id) :
-            TextFormat("%s   R: reset   V: camera of the map   Click on the list: select a camera, light, character or door, show or hide a package",
+            TextFormat("Camera %s   Click on the list: select a camera, light, character or door, show or hide a package", camera->id) :
+            TextFormat("%s   Click on the list: select a camera, light, character or door, show or hide a package",
                 FreeCamera_Help(&g_view.camera)),
     };
 

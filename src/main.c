@@ -11,6 +11,7 @@
 #include "app/filenameDB.h"
 #include "app/style.h"
 #include "app/tadBatch.h"
+#include "ui/toolbar.h"
 
 static HashTable g_filenameDB;
 
@@ -77,18 +78,28 @@ static void DrawStatusBar(Rectangle dst) {
     DrawRectangleRec((Rectangle) { x + 1, y + 1, ratio * (w - 2), h - 2 }, GREEN);
 }
 
-static void Draw() {
-    if (GuiButton((Rectangle) { 10, 10, 200, 30 }, "Extract TAD files")) {
-        TADBatch_Dialog(g_filenameDB);
-    }
-    if (GuiButton((Rectangle) { 220, 10, 200, 30 }, "Open files")) {
+// The actions of the application, then those of the open view
+static void DrawToolbar(Rectangle area) {
+    Toolbar_Begin(area);
+    if (Toolbar_Button(ICON_FOLDER_FILE_OPEN, "Open", "Open files", TOOLBAR_CTRL | KEY_O))
         FileOpen_Dialog();
-    }
-    if (GuiButton((Rectangle) { 430, 10, 200, 30 }, "Save file")) {
+    if (Toolbar_Button(ICON_SUITCASE_ZIP, "Extract TAD", "Extract the files of TAD archives", 0))
+        TADBatch_Dialog(g_filenameDB);
+    if (!ImageView_IsOpen())
+        GuiDisable();
+    if (Toolbar_Button(ICON_FILE_EXPORT, "Export", "Export the image", TOOLBAR_CTRL | KEY_S))
         SaveFileDialog();
-    }
-    Views_Draw((Rectangle) { 0, 50.0f, (float)GetScreenWidth(), (float)GetScreenHeight() - 50.0f - 30.0f });
-    DrawStatusBar((Rectangle) { 0, (float)GetScreenHeight() - 30.0f, (float)GetScreenWidth(), 30.0f });
+    GuiEnable();
+    Views_Toolbar();
+    Toolbar_End();
+}
+
+static void Draw() {
+    float toolbarHeight = 40.0f, statusHeight = 30.0f;
+    DrawToolbar((Rectangle) { 0, 0, (float)GetScreenWidth(), toolbarHeight });
+    Views_Draw((Rectangle) { 0, toolbarHeight, (float)GetScreenWidth(), (float)GetScreenHeight() - toolbarHeight - statusHeight });
+    DrawStatusBar((Rectangle) { 0, (float)GetScreenHeight() - statusHeight, (float)GetScreenWidth(), statusHeight });
+    Toolbar_DrawTooltip();
 }
 
 int main(int argc, char** argv) {

@@ -6,9 +6,9 @@
 #include <raylib.h>
 
 // Free camera of the 3D views, with two modes. It orbits around a target, moved with the mouse: left drag rotates,
-// right/middle drag pans, the wheel zooms. Or it flies: a drag looks around from the position, W/A/S/D or the arrows
-// move, Q/E or Page Up/Down move down and up, Shift moves faster and the wheel changes the speed. The views don't use
-// those keys for anything else while it flies
+// right/middle drag pans, the wheel zooms. Or it flies: a drag looks around from the position, W/A/S/D move, Q/E move
+// down and up, Shift moves faster and the wheel changes the speed. Those keys are reserved for it in all the views (see
+// Toolbar), so that they do the same while it flies or not
 
 typedef struct {
     Vector3     target;

@@ -10,6 +10,7 @@
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
+#include "ui/toolbar.h"
 #include "views/mt5View.h"
 
 #define MT5VIEW_FOVY 45.0f
@@ -85,36 +86,43 @@ bool MT5View_IsOpen(void) {
     return g_view.open;
 }
 
+static void StepFrame(int direction) {
+    uint32_t frameCount = g_view.model.mesh.frameCount;
+    g_view.paused = true;
+    g_view.frame = (g_view.frame + frameCount + direction) % frameCount;
+}
+
+void MT5View_Toolbar(void) {
+    if (Toolbar_Button(ICON_RESTART, "Reset", "Reset the camera", KEY_R))
+        ResetCamera();
+    bool fly = g_view.camera.fly;
+    if (Toolbar_Toggle(ICON_TARGET_MOVE, "Fly", "Fly with the camera", KEY_F, &fly))
+        FreeCamera_SetFly(&g_view.camera, fly);
+    Toolbar_Separator();
+    Toolbar_Toggle(ICON_GRID, "Wireframe", "Draw the edges of the triangles", KEY_Z, &g_options.wireframe);
+    Toolbar_Toggle(ICON_CUBE_FACE_BACK, "Back faces", "Draw the back faces", KEY_B, &g_options.noCulling);
+    if (g_view.model.mesh.frameCount == 0)
+        return;
+    Toolbar_Separator();
+    if (Toolbar_Button(g_view.paused ? ICON_PLAYER_PLAY : ICON_PLAYER_PAUSE, NULL, "Play or pause the animation", KEY_SPACE))
+        g_view.paused = !g_view.paused;
+    if (Toolbar_Button(ICON_PLAYER_PREVIOUS, NULL, "First frame", KEY_HOME)) {
+        g_view.frame = 0;
+        g_view.frameTime = 0.0f;
+    }
+    if (Toolbar_Button(ICON_ARROW_LEFT_FILL, NULL, "Previous frame", TOOLBAR_REPEAT | KEY_LEFT))
+        StepFrame(-1);
+    if (Toolbar_Button(ICON_ARROW_RIGHT_FILL, NULL, "Next frame", TOOLBAR_REPEAT | KEY_RIGHT))
+        StepFrame(1);
+}
+
 static void UpdateInput(Rectangle area) {
     FreeCamera_Update(&g_view.camera, area, g_view.model.mesh.radius * 0.01f);
-    if (IsKeyPressed(KEY_R))
-        ResetCamera();
-    if (IsKeyPressed(KEY_F))
-        FreeCamera_SetFly(&g_view.camera, !g_view.camera.fly);
-    // The keys of the flight move the camera
-    bool fly = g_view.camera.fly;
-    if (IsKeyPressed(KEY_W) && !fly)
-        g_options.wireframe = !g_options.wireframe;
-    if (IsKeyPressed(KEY_C))
-        g_options.noCulling = !g_options.noCulling;
-
     uint32_t frameCount = g_view.model.mesh.frameCount;
-    if (frameCount > 0) {
-        if (IsKeyPressed(KEY_SPACE))
-            g_view.paused = !g_view.paused;
-        if (IsKeyPressed(KEY_RIGHT) && !fly) {
-            g_view.paused = true;
+    if (frameCount > 0 && !g_view.paused) {
+        g_view.frameTime += Scene3D_FrameTime();
+        for (; g_view.frameTime >= 1.0f / MT5VIEW_FRAME_RATE; g_view.frameTime -= 1.0f / MT5VIEW_FRAME_RATE)
             g_view.frame = (g_view.frame + 1) % frameCount;
-        }
-        if (IsKeyPressed(KEY_LEFT) && !fly) {
-            g_view.paused = true;
-            g_view.frame = (g_view.frame + frameCount - 1) % frameCount;
-        }
-        if (!g_view.paused) {
-            g_view.frameTime += Scene3D_FrameTime();
-            for (; g_view.frameTime >= 1.0f / MT5VIEW_FRAME_RATE; g_view.frameTime -= 1.0f / MT5VIEW_FRAME_RATE)
-                g_view.frame = (g_view.frame + 1) % frameCount;
-        }
     }
 }
 
@@ -147,9 +155,8 @@ void MT5View_Draw(Rectangle area) {
     const char* lines[4] = {
         g_view.filename,
         TextFormat("%u nodes, %u triangles, %u/%u textures", model->nodeCount, model->mesh.triangleCount, model->loadedTextures, model->textureCount),
-        TextFormat("%s   R: reset   %sC: back faces", FreeCamera_Help(&g_view.camera), g_view.camera.fly ? "" : "W: wireframe   "),
-        TextFormat("Frame %u/%u   Space: play/pause%s", g_view.frame + 1, model->mesh.frameCount,
-            g_view.camera.fly ? "" : "   Left/Right: previous/next frame"),
+        FreeCamera_Help(&g_view.camera),
+        TextFormat("Frame %u/%u", g_view.frame + 1, model->mesh.frameCount),
     };
     int lineCount = model->mesh.frameCount > 0 ? 4 : 3;
     for (int i = 0; i < lineCount; i++)

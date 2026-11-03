@@ -8,6 +8,7 @@
 #include "formats/sound/snd.h"
 #include "audio/sndSynth.h"
 #include "ui/list.h"
+#include "ui/toolbar.h"
 #include "ui/waveform.h"
 #include "views/sndView.h"
 
@@ -285,32 +286,49 @@ static void Seek(int64_t frame) {
         SendCommand(COMMAND_SEEK, 0);
 }
 
-static void UpdateInput(Rectangle waveform) {
-    if (IsKeyPressed(KEY_SPACE))
+// The same controls in both modes, as in the view of xWMA files: those of the samples are disabled with the sequences
+void SNDView_Toolbar(void) {
+    bool sequences = g_player.mode == MODE_SEQUENCES;
+    if (Toolbar_Button(g_player.playing && !g_player.paused ? ICON_PLAYER_PAUSE : ICON_PLAYER_PLAY, NULL, "Play or pause", KEY_SPACE))
         TogglePlay();
-    if (IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP))
-        Select(g_player.selected[g_player.mode] - 1);
-    if (IsKeyPressed(KEY_DOWN) || IsKeyPressedRepeat(KEY_DOWN))
-        Select(g_player.selected[g_player.mode] + 1);
-    if (IsKeyPressed(KEY_HOME))
+    if (Toolbar_Button(ICON_PLAYER_STOP, NULL, "Stop", 0)) {
+        g_player.paused = false;
+        SendCommand(COMMAND_STOP, 0);
+    }
+    if (Toolbar_Button(ICON_PLAYER_PREVIOUS, NULL, "Play from the start", KEY_HOME))
         Select(g_player.selected[g_player.mode]);
-    if (IsKeyPressed(KEY_TAB))
-        SetMode(g_player.mode == MODE_SEQUENCES ? MODE_SAMPLES : MODE_SEQUENCES);
-    if (g_player.mode != MODE_SAMPLES)
-        return;
-
+    if (sequences)
+        GuiDisable();
     int64_t second = SampleRate(g_player.selected[MODE_SAMPLES]);
-    if (IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT))
+    if (Toolbar_Button(ICON_ARROW_LEFT_FILL, NULL, "Back 1 second", TOOLBAR_REPEAT | KEY_LEFT))
         Seek((int64_t)g_player.samplePosition - second);
-    if (IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT))
+    if (Toolbar_Button(ICON_ARROW_RIGHT_FILL, NULL, "Forward 1 second", TOOLBAR_REPEAT | KEY_RIGHT))
         Seek((int64_t)g_player.samplePosition + second);
-    if (IsKeyPressed(KEY_L)) {
-        g_player.loopEnabled = !g_player.loopEnabled;
+    GuiEnable();
+    Toolbar_Separator();
+    if (Toolbar_Button(ICON_ARROW_UP_FILL, NULL, sequences ? "Previous sequence" : "Previous sample", TOOLBAR_REPEAT | TOOLBAR_SHIFT | KEY_TAB))
+        Select(g_player.selected[g_player.mode] - 1);
+    if (Toolbar_Button(ICON_ARROW_DOWN_FILL, NULL, sequences ? "Next sequence" : "Next sample", TOOLBAR_REPEAT | KEY_TAB))
+        Select(g_player.selected[g_player.mode] + 1);
+    Toolbar_Separator();
+    if (sequences)
+        GuiDisable();
+    bool loop = g_player.loopEnabled;
+    if (Toolbar_Toggle(ICON_REPEAT, "Loop", "Play the loop of the sample", KEY_L, &loop)) {
+        g_player.loopEnabled = loop;
         SendCommand(COMMAND_LOOP, 0);
     }
+    int rateIndex = g_player.rateIndex;
+    if (Toolbar_Choice("Auto;11025 Hz;22050 Hz;44100 Hz", "Sample rate: the one of the split that plays the sample, or a fixed one", 0, &rateIndex)) {
+        g_player.rateIndex = rateIndex;
+        PlaySample(g_player.samplePosition);
+    }
+    GuiEnable();
+}
 
+static void UpdateInput(Rectangle waveform) {
     int64_t frame;
-    if (Waveform_UpdateSeek(&g_player.waveform, waveform, &frame))
+    if (g_player.mode == MODE_SAMPLES && Waveform_UpdateSeek(&g_player.waveform, waveform, &frame))
         Seek(frame);
 }
 
@@ -356,9 +374,7 @@ void SNDView_Draw(Rectangle area) {
         TextFormat("DTPK sound bank, %u music and %u effect sequences, %u programs, %u samples%s%s", music,
             g_player.listedSequences - music, bank->programCount, bank->sampleCount,
             g_player.invalidCount > 0 ? TextFormat(" (%u invalid)", g_player.invalidCount) : "", bank->dsp.present ? ", reverb" : ""),
-        g_player.mode == MODE_SEQUENCES ?
-            "Space: play/pause   Up/Down: previous/next sequence   Home: start   Tab: samples" :
-            "Space: play/pause   Up/Down: previous/next sample   Left/Right: back/forward 1 s   Home: start   L: loop   Tab: sequences   Click on the waveform: seek",
+        g_player.mode == MODE_SEQUENCES ? "Click on the list: play a sequence" : "Click on the list: play a sample   Click on the waveform: seek",
     };
 
     float margin = 10.0f;
@@ -381,7 +397,7 @@ void SNDView_Draw(Rectangle area) {
     for (int i = 0; i < 3; i++)
         DrawTextEx(font, lines[i], (Vector2) { area.x + margin, area.y + margin + i * lineHeight }, fontSize, 1.0f, LIGHTGRAY);
 
-    // The style of the application draws the pressed controls like the normal ones: highlight the selected toggles
+    // Tabs of the list. The style of the application draws the pressed controls like the normal ones: highlight the active one
     int pressedColor = GuiGetStyle(TOGGLE, BASE_COLOR_PRESSED);
     GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, 0x2F5F8FFF);
     int mode = g_player.mode;
@@ -398,9 +414,6 @@ void SNDView_Draw(Rectangle area) {
 
     float controlsY = panel.y + panel.height + margin;
     float x = panel.x;
-    if (GuiButton((Rectangle) { x, controlsY, 100.0f, controlsHeight }, g_player.playing && !g_player.paused ? "Pause" : "Play"))
-        TogglePlay();
-    x += 110.0f;
 
     if (g_player.mode == MODE_SEQUENCES) {
         const SND_Sequence* sequence = &bank->sequences[g_player.sequenceIndices[g_player.selected[MODE_SEQUENCES]]];
@@ -410,11 +423,6 @@ void SNDView_Draw(Rectangle area) {
             TextFormat("Sequence %u-%u: effect", sequence->group, sequence->index);
         DrawTextEx(font, info, (Vector2) { panel.x, top }, fontSize, 1.0f, LIGHTGRAY);
         DrawChannelMeters(panel, font, fontSize);
-        if (GuiButton((Rectangle) { x, controlsY, 100.0f, controlsHeight }, "Stop")) {
-            g_player.paused = false;
-            SendCommand(COMMAND_STOP, 0);
-        }
-        x += 110.0f;
         const char* status = TextFormat("%s   %u/%u voices", FormatMilliseconds(g_player.time), g_player.voices, SND_SYNTH_VOICES);
         DrawTextEx(font, status, (Vector2) { x, controlsY + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
         return;
@@ -430,22 +438,6 @@ void SNDView_Draw(Rectangle area) {
     DrawTextEx(font, info, (Vector2) { panel.x, top }, fontSize, 1.0f, LIGHTGRAY);
     DrawWaveform(panel);
 
-    bool loopEnabled = g_player.loopEnabled;
-    GuiCheckBox((Rectangle) { x, controlsY + (controlsHeight - 20.0f) * 0.5f, 20.0f, 20.0f }, "Loop", &loopEnabled);
-    if (loopEnabled != g_player.loopEnabled) {
-        g_player.loopEnabled = loopEnabled;
-        SendCommand(COMMAND_LOOP, 0);
-    }
-    x += 90.0f;
-    int rateIndex = g_player.rateIndex;
-    GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, 0x2F5F8FFF);
-    GuiToggleGroup((Rectangle) { x, controlsY, 80.0f, controlsHeight }, "Auto;11025 Hz;22050 Hz;44100 Hz", &rateIndex);
-    GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, pressedColor);
-    if (rateIndex != g_player.rateIndex) {
-        g_player.rateIndex = rateIndex;
-        PlaySample(g_player.samplePosition);
-    }
-    x += 4 * 80.0f + 3 * GuiGetStyle(TOGGLE, GROUP_PADDING) + margin;
     // TextFormat uses a rotating buffer, so the two times can be formatted in the same call
     const char* time = TextFormat("%s / %s", FormatMilliseconds((uint32_t)((uint64_t)g_player.samplePosition * 1000 / rate)),
         FormatMilliseconds((uint32_t)((uint64_t)sample->frameCount * 1000 / rate)));

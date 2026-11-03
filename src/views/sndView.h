@@ -16,5 +16,7 @@ bool SNDView_IsOpen(void);
 // samples: left/right: back/forward 1 second, L: loop on/off, click or drag on the waveform: seek) and draws the player
 // inside area
 void SNDView_Draw(Rectangle area);
+// Adds its actions to the toolbar
+void SNDView_Toolbar(void);
 
 #endif

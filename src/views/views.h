@@ -22,5 +22,7 @@ void Views_CloseOthers(ViewID view);
 void Views_CloseAll(void);
 // Draws the open view inside area
 void Views_Draw(Rectangle area);
+// Adds the actions of the open view to the toolbar, after a separator. Before Views_Draw, which uses their changes
+void Views_Toolbar(void);
 
 #endif

@@ -11,6 +11,7 @@
 #include "formats/animation/motn.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
+#include "ui/toolbar.h"
 #include "views/authView.h"
 
 #define AUTHVIEW_LABEL_SIZE     128
@@ -304,31 +305,34 @@ static Camera3D CutsceneCamera(void) {
     return Scene3D_CurveCamera(g_view.sequence.camera, g_view.time, AUTHVIEW_FOVY);
 }
 
-// The arrows move the flying free camera
-static bool Flying(void) {
-    return !g_options.cutsceneCamera && g_view.camera.fly;
+void AUTHView_Toolbar(void) {
+    if (Toolbar_Button(g_view.playing ? ICON_PLAYER_PAUSE : ICON_PLAYER_PLAY, NULL, "Play or pause", KEY_SPACE))
+        TogglePlay();
+    if (Toolbar_Button(ICON_PLAYER_PREVIOUS, NULL, "Go to the start", KEY_HOME))
+        Seek(0.0f);
+    if (Toolbar_Button(ICON_ARROW_LEFT_FILL, NULL, "Previous command", TOOLBAR_REPEAT | KEY_LEFT))
+        SeekCommand(-1);
+    if (Toolbar_Button(ICON_ARROW_RIGHT_FILL, NULL, "Next command", TOOLBAR_REPEAT | KEY_RIGHT))
+        SeekCommand(1);
+    Toolbar_Separator();
+    int mode = g_options.cutsceneCamera ? 1 : 0;
+    if (Toolbar_Choice("Free camera;Cutscene camera", "Show the scene from the free camera or from the camera of the cutscene", KEY_C, &mode))
+        g_options.cutsceneCamera = mode == 1;
+    if (Toolbar_Button(ICON_RESTART, "Reset", "Reset the free camera", KEY_R)) {
+        ResetCamera();
+        g_options.cutsceneCamera = false;
+    }
+    bool fly = !g_options.cutsceneCamera && g_view.camera.fly;
+    if (Toolbar_Toggle(ICON_TARGET_MOVE, "Fly", "Fly with the free camera, from the camera of the cutscene if it is shown", KEY_F, &fly)) {
+        // Flies from the position of the camera of the cutscene, or of the free camera, looking around it
+        if (fly && g_options.cutsceneCamera)
+            FreeCamera_LookFrom(&g_view.camera, CutsceneCamera());
+        FreeCamera_SetFly(&g_view.camera, fly);
+        g_options.cutsceneCamera = false;
+    }
 }
 
 static void UpdateInput(Rectangle scene) {
-    if (IsKeyPressed(KEY_SPACE))
-        TogglePlay();
-    if ((IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT)) && !Flying())
-        SeekCommand(-1);
-    if ((IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT)) && !Flying())
-        SeekCommand(1);
-    if (IsKeyPressed(KEY_HOME))
-        Seek(0.0f);
-    if (IsKeyPressed(KEY_V))
-        g_options.cutsceneCamera = !g_options.cutsceneCamera;
-    if (IsKeyPressed(KEY_F)) {
-        // Flies from the position of the camera of the cutscene, or of the free camera, looking around it
-        if (g_options.cutsceneCamera)
-            FreeCamera_LookFrom(&g_view.camera, CutsceneCamera());
-        FreeCamera_SetFly(&g_view.camera, g_options.cutsceneCamera || !g_view.camera.fly);
-        g_options.cutsceneCamera = false;
-    }
-    if (IsKeyPressed(KEY_R))
-        ResetCamera();
     if (!g_options.cutsceneCamera)
         FreeCamera_Update(&g_view.camera, scene, 0.1f);
 
@@ -596,10 +600,8 @@ void AUTHView_Draw(Rectangle area) {
         g_view.filename,
         TextFormat("Cutscene, %u frames (%s), %u characters (%s), %u commands, %u sounds", sequence->duration,
             FormatTime(Duration()), sequence->characterCount, characters, sequence->commandCount, sequence->soundCount),
-        g_options.cutsceneCamera ?
-            "Space: play/pause   Left/Right: previous/next command   Home: start   V: free camera   F: fly   Click on the timeline: seek" :
-            TextFormat("Space: play/pause   %sHome: start   V: cutscene camera   %s   R: reset", Flying() ? "" : "Left/Right: previous/next command   ",
-                FreeCamera_Help(&g_view.camera)),
+        g_options.cutsceneCamera ? "Click on the timeline: seek" :
+            TextFormat("%s   Click on the timeline: seek", FreeCamera_Help(&g_view.camera)),
     };
 
     float margin = 10.0f;
@@ -635,17 +637,6 @@ void AUTHView_Draw(Rectangle area) {
     DrawTimeline(timeline, font, fontSize);
 
     float x = controls.x;
-    if (GuiButton((Rectangle) { x, controls.y, 100.0f, controlsHeight }, g_view.playing ? "Pause" : "Play"))
-        TogglePlay();
-    x += 110.0f;
-    // The style of the application draws the pressed controls like the normal ones: highlight the selected toggle
-    int pressedColor = GuiGetStyle(TOGGLE, BASE_COLOR_PRESSED);
-    GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, 0x2F5F8FFF);
-    int mode = g_options.cutsceneCamera ? 1 : 0;
-    GuiToggleGroup((Rectangle) { x, controls.y, 140.0f, controlsHeight }, "Free camera;Cutscene camera", &mode);
-    GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, pressedColor);
-    g_options.cutsceneCamera = mode == 1;
-    x += 2 * 140.0f + GuiGetStyle(TOGGLE, GROUP_PADDING) + margin;
     // TextFormat uses a rotating buffer, so the two times can be formatted in the same call
     const char* status = TextFormat("Frame %u/%u   %s / %s", CurrentFrame(), sequence->duration, FormatTime(g_view.time),
         FormatTime(Duration()));

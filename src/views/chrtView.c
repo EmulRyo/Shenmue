@@ -12,6 +12,7 @@
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
+#include "ui/toolbar.h"
 #include "ui/list.h"
 #include "views/chrtView.h"
 
@@ -358,24 +359,28 @@ static void FitCamera(Rectangle area) {
     free(points);
 }
 
+void CHRTView_Toolbar(void) {
+    if (Toolbar_Button(ICON_RESTART, "Reset", "Reset the camera", KEY_R))
+        ResetCamera();
+    bool fly = g_view.camera.fly;
+    if (Toolbar_Toggle(ICON_TARGET_MOVE, "Fly", "Fly with the camera", KEY_F, &fly))
+        FreeCamera_SetFly(&g_view.camera, fly);
+    Toolbar_Separator();
+    if (Toolbar_Button(ICON_ARROW_UP_FILL, NULL, "Previous character", TOOLBAR_REPEAT | TOOLBAR_SHIFT | KEY_TAB))
+        SelectNext(-1);
+    if (Toolbar_Button(ICON_ARROW_DOWN_FILL, NULL, "Next character", TOOLBAR_REPEAT | KEY_TAB))
+        SelectNext(1);
+    Toolbar_Separator();
+    Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the IDs of the characters", KEY_L, &g_options.showLabels);
+    bool sleeping = !g_options.hideSleeping;
+    if (Toolbar_Toggle(ICON_EYE_ON, "Sleeping", "Show the sleeping characters", KEY_H, &sleeping))
+        g_options.hideSleeping = !sleeping;
+    Toolbar_Toggle(ICON_GRID, "Wireframe", "Draw the edges of the triangles", KEY_Z, &g_options.wireframe);
+    Toolbar_Toggle(ICON_CUBE_FACE_BACK, "Back faces", "Draw the back faces", KEY_B, &g_options.noCulling);
+}
+
 static void UpdateInput(Rectangle area) {
     FreeCamera_Update(&g_view.camera, area, g_view.radius * 0.001f);
-    if (IsKeyPressed(KEY_R))
-        ResetCamera();
-    if (IsKeyPressed(KEY_F))
-        FreeCamera_SetFly(&g_view.camera, !g_view.camera.fly);
-    if (IsKeyPressed(KEY_TAB) || IsKeyPressedRepeat(KEY_TAB))
-        SelectNext(IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ? -1 : 1);
-    if (IsKeyPressed(KEY_L))
-        g_options.showLabels = !g_options.showLabels;
-    // The keys of the flight move the camera
-    if (IsKeyPressed(KEY_S) && !g_view.camera.fly)
-        g_options.hideSleeping = !g_options.hideSleeping;
-    if (IsKeyPressed(KEY_W) && !g_view.camera.fly)
-        g_options.wireframe = !g_options.wireframe;
-    if (IsKeyPressed(KEY_C))
-        g_options.noCulling = !g_options.noCulling;
-
     g_view.frameTime += Scene3D_FrameTime();
     for (; g_view.frameTime >= 1.0f / CHRTVIEW_FRAME_RATE; g_view.frameTime -= 1.0f / CHRTVIEW_FRAME_RATE)
         g_view.frame++;
@@ -459,14 +464,13 @@ void CHRTView_Draw(Rectangle area) {
         DrawLabels(camera, scene, font, fontSize);
     DrawRectangleLinesEx(scene, 1.0f, (Color) { 112, 112, 112, 255 });
 
-    // TextFormat has 4 buffers: 1 for the counts, 1 for the controls, 2 for the selected character
+    // TextFormat has 4 buffers: 1 for the counts, 1 for the help, 2 for the selected character
     const char* lines[4] = {
         g_view.filename,
         TextFormat("%u characters, %u with a model (%u without a position in the scene, arranged in rows), %u without a model, %u models%s",
             g_view.characterCount, g_view.modelledCount, g_view.unpositionedCount, g_view.characterCount - g_view.modelledCount,
             g_view.modelCount, g_options.hideSleeping ? ", sleeping characters hidden" : ""),
-        TextFormat("%s   R: reset   Tab or click on the list or a label: select   L: labels   %sC: back faces",
-            FreeCamera_Help(&g_view.camera), g_view.camera.fly ? "" : "S: sleeping   W: wireframe   "),
+        TextFormat("%s   Click on the list or a label: select", FreeCamera_Help(&g_view.camera)),
         g_view.selected >= 0 ? SelectedText() : NULL,
     };
     int lineCount = g_view.selected >= 0 ? 4 : 3;

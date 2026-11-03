@@ -6,6 +6,7 @@
 #include <raylib.h>
 #include "raygui.h"
 #include "formats/sound/xwm.h"
+#include "ui/toolbar.h"
 #include "ui/waveform.h"
 #include "views/xwmView.h"
 
@@ -99,17 +100,34 @@ static void Seek(int64_t frame) {
     g_player.position = (uint32_t)frame;
 }
 
-static void UpdateInput(Rectangle waveform) {
+// The same controls as the view of sound banks, with those of its lists and samples disabled
+void XWMView_Toolbar(void) {
     int64_t second = g_player.info.sampleRate;
-    if (IsKeyPressed(KEY_SPACE))
+    if (Toolbar_Button(g_player.playing ? ICON_PLAYER_PAUSE : ICON_PLAYER_PLAY, NULL, "Play or pause", KEY_SPACE))
         TogglePlay();
-    if (IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT))
-        Seek((int64_t)g_player.position - second);
-    if (IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT))
-        Seek((int64_t)g_player.position + second);
-    if (IsKeyPressed(KEY_HOME))
+    if (Toolbar_Button(ICON_PLAYER_STOP, NULL, "Stop", 0)) {
+        g_player.playing = false;
         Seek(0);
+    }
+    if (Toolbar_Button(ICON_PLAYER_PREVIOUS, NULL, "Go to the start", KEY_HOME))
+        Seek(0);
+    if (Toolbar_Button(ICON_ARROW_LEFT_FILL, NULL, "Back 1 second", TOOLBAR_REPEAT | KEY_LEFT))
+        Seek((int64_t)g_player.position - second);
+    if (Toolbar_Button(ICON_ARROW_RIGHT_FILL, NULL, "Forward 1 second", TOOLBAR_REPEAT | KEY_RIGHT))
+        Seek((int64_t)g_player.position + second);
+    GuiDisable();
+    Toolbar_Separator();
+    Toolbar_Button(ICON_ARROW_UP_FILL, NULL, "Previous sample", 0);
+    Toolbar_Button(ICON_ARROW_DOWN_FILL, NULL, "Next sample", 0);
+    Toolbar_Separator();
+    bool loop = false;
+    Toolbar_Toggle(ICON_REPEAT, "Loop", "Play the loop of the sample", 0, &loop);
+    int rate = 0;
+    Toolbar_Choice("Auto;11025 Hz;22050 Hz;44100 Hz", "Sample rate", 0, &rate);
+    GuiEnable();
+}
 
+static void UpdateInput(Rectangle waveform) {
     int64_t frame;
     if (Waveform_UpdateSeek(&g_player.waveform, waveform, &frame))
         Seek(frame);
@@ -132,7 +150,7 @@ void XWMView_Draw(Rectangle area) {
         g_player.filename,
         TextFormat("xWMA (WMA v2), %u Hz, %s, %u bytes/s, %u packets", info->sampleRate, info->channels == 1 ? "mono" : "stereo",
             info->avgBytesPerSec, info->packetCount),
-        "Space: play/pause   Left/Right: back/forward 1 s   Home: start   Click on the waveform: seek",
+        "Click on the waveform: seek",
     };
 
     float margin = 10.0f;
@@ -153,9 +171,7 @@ void XWMView_Draw(Rectangle area) {
     Waveform_Draw(&g_player.waveform, waveform, g_player.position, NULL);
 
     float controlsY = waveform.y + waveform.height + margin;
-    if (GuiButton((Rectangle) { waveform.x, controlsY, 100.0f, controlsHeight }, g_player.playing ? "Pause" : "Play"))
-        TogglePlay();
     // TextFormat uses a rotating buffer, so the two times can be formatted in the same call
     const char* time = TextFormat("%s / %s", FormatTime(g_player.position), FormatTime(info->frameCount));
-    DrawTextEx(font, time, (Vector2) { waveform.x + 110.0f, controlsY + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
+    DrawTextEx(font, time, (Vector2) { waveform.x, controlsY + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
 }

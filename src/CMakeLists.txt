@@ -82,6 +82,8 @@ set(SRC
 
     src/ui/list.c
     src/ui/list.h
+    src/ui/toolbar.c
+    src/ui/toolbar.h
     src/ui/waveform.c
     src/ui/waveform.h
 

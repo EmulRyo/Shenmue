@@ -17,5 +17,7 @@ bool MAPINFOView_IsOpen(void);
 // Handles the input (click on the list: select a camera, light, character or door, V: free/map camera, mouse on the scene:
 // rotate, pan and zoom the free camera, R: reset it, toggles: layers) and draws the view inside area
 void MAPINFOView_Draw(Rectangle area);
+// Adds its actions to the toolbar
+void MAPINFOView_Toolbar(void);
 
 #endif

@@ -13,5 +13,7 @@ bool XWMView_IsOpen(void);
 // Handles the input (space: play/pause, left/right: back/forward 1 second, home: start, click or drag on the waveform:
 // seek) and draws the player inside area
 void XWMView_Draw(Rectangle area);
+// Adds its actions to the toolbar
+void XWMView_Toolbar(void);
 
 #endif

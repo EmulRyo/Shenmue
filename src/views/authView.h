@@ -17,5 +17,7 @@ bool AUTHView_IsOpen(void);
 // on the scene: rotate, pan and zoom the free camera, R: reset it, click or drag on the timeline: seek) and draws the
 // player inside area
 void AUTHView_Draw(Rectangle area);
+// Adds its actions to the toolbar
+void AUTHView_Toolbar(void);
 
 #endif

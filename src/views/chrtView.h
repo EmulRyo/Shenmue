@@ -17,5 +17,7 @@ bool CHRTView_IsOpen(void);
 // label: look at the next/previous character, L: labels, S: sleeping characters, W: wireframe, C: back faces) and draws
 // the scene inside area
 void CHRTView_Draw(Rectangle area);
+// Adds its actions to the toolbar
+void CHRTView_Toolbar(void);
 
 #endif

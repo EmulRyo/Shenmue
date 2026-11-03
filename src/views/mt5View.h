@@ -16,5 +16,7 @@ bool MT5View_IsOpen(void);
 // back faces) and the animation frames (space: play/pause, left/right: previous/next frame), and draws the model inside
 // area
 void MT5View_Draw(Rectangle area);
+// Adds its actions to the toolbar
+void MT5View_Toolbar(void);
 
 #endif

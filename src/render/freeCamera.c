@@ -120,8 +120,8 @@ static bool Drag(FreeCamera* camera, Rectangle area, Vector2* delta) {
     return true;
 }
 
-static float Axis(int positive, int alternative, int negative, int alternativeNegative) {
-    return (IsKeyDown(positive) || IsKeyDown(alternative) ? 1.0f : 0.0f) - (IsKeyDown(negative) || IsKeyDown(alternativeNegative) ? 1.0f : 0.0f);
+static float Axis(int positive, int negative) {
+    return (IsKeyDown(positive) ? 1.0f : 0.0f) - (IsKeyDown(negative) ? 1.0f : 0.0f);
 }
 
 static void UpdateFly(FreeCamera* camera, Rectangle area) {
@@ -142,9 +142,9 @@ static void UpdateFly(FreeCamera* camera, Rectangle area) {
     // Forward in the direction of the view, sideways and vertically in the horizontal plane
     Vector3 forward = Vector3Negate(Direction(camera));
     Vector3 right = Vector3Normalize(Vector3CrossProduct(forward, (Vector3) { 0.0f, 1.0f, 0.0f }));
-    Vector3 move = Vector3Scale(forward, Axis(KEY_W, KEY_UP, KEY_S, KEY_DOWN));
-    move = Vector3Add(move, Vector3Scale(right, Axis(KEY_D, KEY_RIGHT, KEY_A, KEY_LEFT)));
-    move.y += Axis(KEY_E, KEY_PAGE_UP, KEY_Q, KEY_PAGE_DOWN);
+    Vector3 move = Vector3Scale(forward, Axis(KEY_W, KEY_S));
+    move = Vector3Add(move, Vector3Scale(right, Axis(KEY_D, KEY_A)));
+    move.y += Axis(KEY_E, KEY_Q);
     if (Vector3LengthSqr(move) == 0.0f)
         return;
     float speed = camera->speed * (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ? 4.0f : 1.0f);
@@ -185,10 +185,10 @@ void FreeCamera_Update(FreeCamera* camera, Rectangle area, float minDistance) {
 const char* FreeCamera_Help(const FreeCamera* camera) {
     static char help[256];
     if (camera->fly)
-        snprintf(help, sizeof(help), "Fly: drag: look   W/A/S/D: move   Q/E: down/up   Shift: faster   Wheel: speed (%.3g/s)   F: orbit",
+        snprintf(help, sizeof(help), "Fly: drag: look   W/A/S/D: move   Q/E: down/up   Shift: faster   Wheel: speed (%.3g/s)",
             camera->speed);
     else
-        snprintf(help, sizeof(help), "Left drag: rotate   Right drag: pan   Wheel: zoom   F: fly");
+        snprintf(help, sizeof(help), "Left drag: rotate   Right drag: pan   Wheel: zoom");
     return help;
 }
 
