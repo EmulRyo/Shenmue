@@ -39,7 +39,7 @@ typedef struct {
 
 typedef struct {
     bool                open;
-    char                filename[256];
+    char                path[1024];  // Of the open file
     CHRT_Script         script;
     MT5Render           render;
     uint32_t            modelCount;
@@ -276,7 +276,7 @@ bool CHRTView_Open(const char* filepath) {
 
     CHRTView_Close();
     g_view.script = script;
-    snprintf(g_view.filename, sizeof(g_view.filename), "%s", GetFileName(filepath));
+    snprintf(g_view.path, sizeof(g_view.path), "%s", filepath);
     uint32_t count = 0;
     for (uint32_t c = 0; c < script.commandCount; c++)
         count += script.commands[c].parent == -1 && CHRT_IsCommand(&script.commands[c], "Character");
@@ -426,9 +426,8 @@ void CHRTView_Draw(Rectangle area) {
 
     Font font = GuiGetFont();
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
-    float lineHeight = fontSize * 1.2f;
     float margin = 10.0f;
-    float top = area.y + margin * 2.0f + 4 * lineHeight;
+    float top = area.y + margin;
     Rectangle list = { area.x + margin, top, CHRTVIEW_LIST_WIDTH, area.y + area.height - margin - top };
     Rectangle scene = { list.x + list.width + margin, top, area.width - list.width - margin * 3.0f, list.height };
     if (list.height <= 0.0f || scene.width <= 0.0f)
@@ -463,17 +462,15 @@ void CHRTView_Draw(Rectangle area) {
     if (g_options.showLabels)
         DrawLabels(camera, scene, font, fontSize);
     DrawRectangleLinesEx(scene, 1.0f, (Color) { 112, 112, 112, 255 });
+}
 
-    // TextFormat has 4 buffers: 1 for the counts, 1 for the help, 2 for the selected character
-    const char* lines[4] = {
-        g_view.filename,
-        TextFormat("%u characters, %u with a model (%u without a position in the scene, arranged in rows), %u without a model, %u models%s",
-            g_view.characterCount, g_view.modelledCount, g_view.unpositionedCount, g_view.characterCount - g_view.modelledCount,
-            g_view.modelCount, g_options.hideSleeping ? ", sleeping characters hidden" : ""),
-        TextFormat("%s   Click on the list or a label: select", FreeCamera_Help(&g_view.camera)),
-        g_view.selected >= 0 ? SelectedText() : NULL,
-    };
-    int lineCount = g_view.selected >= 0 ? 4 : 3;
-    for (int i = 0; i < lineCount; i++)
-        DrawTextEx(font, lines[i], (Vector2) { area.x + margin, area.y + margin + i * lineHeight }, fontSize, 1.0f, LIGHTGRAY);
+void CHRTView_Status(ViewStatus* status) {
+    snprintf(status->file, sizeof(status->file), "%s", g_view.path);
+    if (g_view.selected >= 0)
+        snprintf(status->info, sizeof(status->info), "%s", SelectedText());
+    else
+        snprintf(status->info, sizeof(status->info), "%u characters, %u without a model, %u not placed, %u models%s",
+            g_view.characterCount, g_view.characterCount - g_view.modelledCount, g_view.unpositionedCount, g_view.modelCount,
+            g_options.hideSleeping ? ", sleeping hidden" : "");
+    snprintf(status->hint, sizeof(status->hint), "%s, click a label: select", FreeCamera_Help(&g_view.camera));
 }

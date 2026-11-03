@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <raylib.h>
+#include "views/views.h"
 
 // Viewer of textures: shows the image over a checkered pattern, scaled to fit
 
@@ -12,6 +13,8 @@ bool ImageView_OpenSPR(const char* filepath);
 void ImageView_Close(void);
 bool ImageView_IsOpen(void);
 void ImageView_Draw(Rectangle area);
+// Fills the texts of the status bar
+void ImageView_Status(ViewStatus* status);
 // Saves the image in a format given by the extension (png, jpg, bmp). Returns false if there is no image or on error
 bool ImageView_Export(const char* filepath);
 

@@ -7,6 +7,7 @@
 
 static Image g_image;
 static Texture g_texture;
+static char g_path[1024];
 
 // Takes the ownership of pixels
 static void Show(uint32_t* pixels, uint16_t width, uint16_t height) {
@@ -37,6 +38,7 @@ bool ImageView_OpenPVR(const char* filepath) {
     if (!PVR_Load(filepath, &width, &height, &data))
         return false;
     Show(data, width, height);
+    snprintf(g_path, sizeof(g_path), "%s", filepath);
     return true;
 }
 
@@ -46,6 +48,7 @@ bool ImageView_OpenSPR(const char* filepath) {
     if (!SPR_Load(filepath, &width, &height, &data))
         return false;
     Show(data, width, height);
+    snprintf(g_path, sizeof(g_path), "%s", filepath);
     return true;
 }
 
@@ -97,4 +100,9 @@ bool ImageView_Export(const char* filepath) {
     if (g_image.data == NULL)
         return false;
     return ExportImage(g_image, filepath);
+}
+
+void ImageView_Status(ViewStatus* status) {
+    snprintf(status->file, sizeof(status->file), "%s", g_path);
+    snprintf(status->info, sizeof(status->info), "%dx%d pixels", g_image.width, g_image.height);
 }

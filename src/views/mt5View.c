@@ -18,7 +18,7 @@
 
 typedef struct {
     bool            open;
-    char            filename[256];
+    char            path[1024];  // Of the open file
     MT5Render       render;
     MT5Render_Model model;
     FreeCamera     camera;
@@ -68,7 +68,7 @@ bool MT5View_Open(const char* filepath) {
         return false;
 
     MT5View_Close();
-    snprintf(g_view.filename, sizeof(g_view.filename), "%s", GetFileName(filepath));
+    snprintf(g_view.path, sizeof(g_view.path), "%s", filepath);
     g_view.model = model;
     MT5Render_Init(&g_view.render);
     if (model.mesh.hiddenNodes > 0)
@@ -148,17 +148,14 @@ void MT5View_Draw(Rectangle area) {
     rlEnableBackfaceCulling();
 
     FreeCamera_End3D();
+}
 
-    Font font = GuiGetFont();
-    float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
+void MT5View_Status(ViewStatus* status) {
     const MT5Render_Model* model = &g_view.model;
-    const char* lines[4] = {
-        g_view.filename,
-        TextFormat("%u nodes, %u triangles, %u/%u textures", model->nodeCount, model->mesh.triangleCount, model->loadedTextures, model->textureCount),
-        FreeCamera_Help(&g_view.camera),
-        TextFormat("Frame %u/%u", g_view.frame + 1, model->mesh.frameCount),
-    };
-    int lineCount = model->mesh.frameCount > 0 ? 4 : 3;
-    for (int i = 0; i < lineCount; i++)
-        DrawTextEx(font, lines[i], (Vector2) { area.x + 10.0f, area.y + 10.0f + i * fontSize * 1.2f }, fontSize, 1.0f, LIGHTGRAY);
+    snprintf(status->file, sizeof(status->file), "%s", g_view.path);
+    int length = snprintf(status->info, sizeof(status->info), "%u nodes, %u triangles, %u/%u textures", model->nodeCount,
+        model->mesh.triangleCount, model->loadedTextures, model->textureCount);
+    if (model->mesh.frameCount > 0)
+        snprintf(status->info + length, sizeof(status->info) - length, ", frame %u/%u", g_view.frame + 1, model->mesh.frameCount);
+    snprintf(status->hint, sizeof(status->hint), "%s", FreeCamera_Help(&g_view.camera));
 }

@@ -1,12 +1,14 @@
 #ifndef __TADBATCH_H__
 #define __TADBATCH_H__
 
+#include <stdbool.h>
 #include <stddef.h>
 #include "core/hashTable.h"
 
 // Extraction of all the TAD files of a folder into "content", one entry per frame so the window keeps responding
 
 typedef struct {
+    bool            running;    // An extraction is running
     unsigned int    file;       // Index of the TAD file being extracted
     unsigned int    fileCount;
     size_t          entry;      // Index of the entry being extracted

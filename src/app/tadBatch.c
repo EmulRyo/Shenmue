@@ -61,5 +61,5 @@ void TADBatch_Update(void) {
 }
 
 TADBatch_Progress TADBatch_GetProgress(void) {
-    return (TADBatch_Progress) { g_fileID, g_fileList.count, g_TADCtx.entryID, g_tadEntriesCount };
+    return (TADBatch_Progress) { g_TADCtx.buffer != NULL, g_fileID, g_fileList.count, g_TADCtx.entryID, g_tadEntriesCount };
 }

@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <raylib.h>
+#include "views/views.h"
 
 // 3D view of a mapinfo.bin: the models of the map (MAP*.mt5 files of the folder of the file and of its subfolders,
 // where the PKF files of the map are extracted) and of the doors of the door table of the scene program, with the
@@ -17,6 +18,8 @@ bool MAPINFOView_IsOpen(void);
 // Handles the input (click on the list: select a camera, light, character or door, V: free/map camera, mouse on the scene:
 // rotate, pan and zoom the free camera, R: reset it, toggles: layers) and draws the view inside area
 void MAPINFOView_Draw(Rectangle area);
+// Fills the texts of the status bar
+void MAPINFOView_Status(ViewStatus* status);
 // Adds its actions to the toolbar
 void MAPINFOView_Toolbar(void);
 

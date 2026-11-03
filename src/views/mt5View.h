@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <raylib.h>
+#include "views/views.h"
 
 // 3D viewer of MT5/CHRM models. The textures of CHRM files are searched in the folder of the model, where the PKF of
 // the scene is extracted (tex_<index>_<texture ID>.pvr files)
@@ -16,6 +17,8 @@ bool MT5View_IsOpen(void);
 // back faces) and the animation frames (space: play/pause, left/right: previous/next frame), and draws the model inside
 // area
 void MT5View_Draw(Rectangle area);
+// Fills the texts of the status bar
+void MT5View_Status(ViewStatus* status);
 // Adds its actions to the toolbar
 void MT5View_Toolbar(void);
 

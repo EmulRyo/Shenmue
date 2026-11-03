@@ -185,10 +185,10 @@ void FreeCamera_Update(FreeCamera* camera, Rectangle area, float minDistance) {
 const char* FreeCamera_Help(const FreeCamera* camera) {
     static char help[256];
     if (camera->fly)
-        snprintf(help, sizeof(help), "Fly: drag: look   W/A/S/D: move   Q/E: down/up   Shift: faster   Wheel: speed (%.3g/s)",
+        snprintf(help, sizeof(help), "Drag: look, WASD: move, Q/E: down/up, Shift: faster, wheel: speed (%.3g/s)",
             camera->speed);
     else
-        snprintf(help, sizeof(help), "Left drag: rotate   Right drag: pan   Wheel: zoom");
+        snprintf(help, sizeof(help), "Drag: rotate, right drag: pan, wheel: zoom");
     return help;
 }
 

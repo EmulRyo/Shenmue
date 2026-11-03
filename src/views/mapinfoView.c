@@ -94,7 +94,7 @@ typedef struct {
 
 typedef struct {
     bool                open;
-    char                filename[256];
+    char                filename[1024]; // Path of the open file
     MAPINFO_File        file;
     uint32_t            scriptCount;
     CHRT_Script*        scripts;        // The CHRD chunk, then the CHRT files of the map
@@ -1124,25 +1124,10 @@ void MAPINFOView_Draw(Rectangle area) {
 
     Font font = GuiGetFont();
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
-    float lineHeight = fontSize * 1.2f;
-    const MAPINFO_File* file = &g_view.file;
-    const MAPINFO_Camera* camera = SelectedCamera();
-    const char* lines[3] = {
-        g_view.filename,
-        TextFormat("Map info, %u chunks: %u cameras, %u lights, %u collision and area shapes, %u characters (%u shown with their model), %u map models, %u doors%s",
-            file->chunkCount, file->cameraCount, file->lightCount, file->shapeCount, g_view.characterCount,
-            g_view.modelledCharacters, g_view.mapModelCount, file->doorCount, g_view.loadedDoors < file->doorCount ?
-                TextFormat(" (%u without their model)", file->doorCount - g_view.loadedDoors) : ""),
-        g_view.mapCamera && camera != NULL ?
-            TextFormat("Camera %s   Click on the list: select a camera, light, character or door, show or hide a package", camera->id) :
-            TextFormat("%s   Click on the list: select a camera, light, character or door, show or hide a package",
-                FreeCamera_Help(&g_view.camera)),
-    };
-
     float margin = 10.0f;
     float controlsHeight = 30.0f;
-    float top = area.y + margin * 2.0f + 3 * lineHeight;
-    Rectangle list = { area.x + margin, top, MAPINFOVIEW_LIST_WIDTH, area.height - margin * 3.0f - 3 * lineHeight };
+    float top = area.y + margin;
+    Rectangle list = { area.x + margin, top, MAPINFOVIEW_LIST_WIDTH, area.height - margin * 2.0f };
     float panelX = list.x + list.width + margin;
     float panelWidth = area.width - list.width - margin * 3.0f;
     Rectangle controls = { panelX, area.y + area.height - margin - controlsHeight, panelWidth, controlsHeight };
@@ -1152,9 +1137,6 @@ void MAPINFOView_Draw(Rectangle area) {
     UpdateInput(scene);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
-    for (int i = 0; i < 3; i++)
-        DrawTextEx(font, lines[i], (Vector2) { area.x + margin, area.y + margin + i * lineHeight }, fontSize, 1.0f, LIGHTGRAY);
-
     int active = g_view.selected;
     int alignment = GuiGetStyle(LISTVIEW, TEXT_ALIGNMENT);
     GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, TEXT_ALIGN_LEFT);
@@ -1165,4 +1147,19 @@ void MAPINFOView_Draw(Rectangle area) {
 
     DrawScene(scene, font, fontSize);
     DrawLayerToggles(controls);
+}
+
+void MAPINFOView_Status(ViewStatus* status) {
+    const MAPINFO_File* file = &g_view.file;
+    const MAPINFO_Camera* camera = SelectedCamera();
+    snprintf(status->file, sizeof(status->file), "%s", g_view.filename);
+    int length = snprintf(status->info, sizeof(status->info),
+        "%u cameras, %u lights, %u shapes, %u characters (%u with a model), %u models, %u doors", file->cameraCount,
+        file->lightCount, file->shapeCount, g_view.characterCount, g_view.modelledCharacters, g_view.mapModelCount, file->doorCount);
+    if (g_view.loadedDoors < file->doorCount)
+        snprintf(status->info + length, sizeof(status->info) - length, " (%u without a model)", file->doorCount - g_view.loadedDoors);
+    if (g_view.mapCamera && camera != NULL)
+        snprintf(status->hint, sizeof(status->hint), "Seen from the camera %s", camera->id);
+    else
+        snprintf(status->hint, sizeof(status->hint), "%s", FreeCamera_Help(&g_view.camera));
 }

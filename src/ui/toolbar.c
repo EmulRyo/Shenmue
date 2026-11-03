@@ -4,12 +4,12 @@
 #include <raylib.h>
 #include "raygui.h"
 #include "ui/toolbar.h"
+#include "ui/tooltip.h"
 
 #define TOOLBAR_PADDING     5.0f
 #define TOOLBAR_SPACING     4.0f
 #define TOOLBAR_SEPARATOR   16.0f
 #define TOOLBAR_MAX_KEYS    64
-#define TOOLBAR_TOOLTIP_TIME 0.4f // Seconds over an action before its tooltip is shown
 
 #define KEY_CODE(key)       ((key) & 0xFFFF)
 #define KEY_MODIFIERS(key)  ((key) & (TOOLBAR_SHIFT | TOOLBAR_CTRL))
@@ -22,11 +22,6 @@ typedef struct {
     int         warned[TOOLBAR_MAX_KEYS]; // Keys already reported as reserved or repeated
     int         warnedCount;
     int         pressedColor;   // Of the style, restored at the end
-    // Action under the mouse: its tooltip, and how long the mouse has been over it
-    char        tooltip[256];
-    Rectangle   hovered;
-    Rectangle   previousHovered;
-    float       hoverTime;
 } Toolbar_State;
 
 static Toolbar_State g_toolbar;
@@ -118,13 +113,8 @@ static bool Place(float width, const char* name, int key, Rectangle* bounds) {
     g_toolbar.x += width + TOOLBAR_SPACING;
     if (bounds->x + bounds->width > g_toolbar.area.x + g_toolbar.area.width)
         return false;
-    if (CheckCollisionPointRec(GetMousePosition(), *bounds)) {
-        g_toolbar.hovered = *bounds;
-        if (KEY_CODE(key) != 0)
-            snprintf(g_toolbar.tooltip, sizeof(g_toolbar.tooltip), "%s (%s)", name, KeyName(key));
-        else
-            snprintf(g_toolbar.tooltip, sizeof(g_toolbar.tooltip), "%s", name);
-    }
+    if (CheckCollisionPointRec(GetMousePosition(), *bounds))
+        Tooltip_Set(*bounds, KEY_CODE(key) != 0 ? TextFormat("%s (%s)", name, KeyName(key)) : name);
     return true;
 }
 
@@ -132,7 +122,6 @@ void Toolbar_Begin(Rectangle area) {
     g_toolbar.area = area;
     g_toolbar.x = area.x + TOOLBAR_PADDING;
     g_toolbar.keyCount = 0;
-    g_toolbar.hovered = (Rectangle) { 0 };
     DrawRectangleRec(area, g_backgroundColor);
     DrawLineEx((Vector2) { area.x, area.y + area.height - 0.5f }, (Vector2) { area.x + area.width, area.y + area.height - 0.5f }, 1.0f, g_lineColor);
     // The style of the application draws the pressed controls like the normal ones: highlight the pressed toggles
@@ -183,7 +172,7 @@ bool Toolbar_Choice(const char* options, const char* name, int key, int* active)
         bool pressed = i == previous;
         if (Place(ControlWidth(ICON_NONE, labels[i]), name, 0, &bounds)) {
             if (KEY_CODE(key) != 0 && CheckCollisionPointRec(GetMousePosition(), bounds))
-                snprintf(g_toolbar.tooltip, sizeof(g_toolbar.tooltip), "%s (%s)", name, KeyName(key));
+                Tooltip_Set(bounds, TextFormat("%s (%s)", name, KeyName(key)));
             GuiToggle(bounds, labels[i], &pressed);
         }
         // A click on the pressed option keeps it
@@ -199,22 +188,4 @@ bool Toolbar_Choice(const char* options, const char* name, int key, int* active)
 
 void Toolbar_End(void) {
     GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, g_toolbar.pressedColor);
-    bool same = g_toolbar.hovered.width > 0.0f && g_toolbar.hovered.x == g_toolbar.previousHovered.x &&
-        g_toolbar.hovered.y == g_toolbar.previousHovered.y;
-    g_toolbar.hoverTime = same ? g_toolbar.hoverTime + GetFrameTime() : 0.0f;
-    g_toolbar.previousHovered = g_toolbar.hovered;
-}
-
-void Toolbar_DrawTooltip(void) {
-    if (g_toolbar.hovered.width <= 0.0f || g_toolbar.hoverTime < TOOLBAR_TOOLTIP_TIME || IsMouseButtonDown(MOUSE_BUTTON_LEFT))
-        return;
-    Font font = GuiGetFont();
-    float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
-    Vector2 size = MeasureTextEx(font, g_toolbar.tooltip, fontSize, 1.0f);
-    Rectangle box = { g_toolbar.hovered.x, g_toolbar.hovered.y + g_toolbar.hovered.height + 4.0f, size.x + 12.0f, size.y + 8.0f };
-    if (box.x + box.width > (float)GetScreenWidth())
-        box.x = (float)GetScreenWidth() - box.width;
-    DrawRectangleRec(box, (Color) { 50, 50, 52, 255 });
-    DrawRectangleLinesEx(box, 1.0f, (Color) { 112, 112, 112, 255 });
-    DrawTextEx(font, g_toolbar.tooltip, (Vector2) { box.x + 6.0f, box.y + 4.0f }, fontSize, 1.0f, WHITE);
 }

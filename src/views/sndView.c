@@ -35,7 +35,7 @@ static const uint32_t g_sampleRates[] = { 0, 11025, 22050, 44100 }; // 0: the ra
 
 typedef struct {
     bool            open;
-    char            filename[256];
+    char            path[1024];  // Of the open file
     SND_Bank        bank;
     SND_Synth*      synth;
     AudioStream     stream;
@@ -224,7 +224,7 @@ bool SNDView_Open(const char* filepath) {
     SNDView_Close();
     if (!IsAudioDeviceReady())
         InitAudioDevice();
-    snprintf(g_player.filename, sizeof(g_player.filename), "%s", GetFileName(filepath));
+    snprintf(g_player.path, sizeof(g_player.path), "%s", filepath);
     g_player.bank = bank;
     g_player.loopEnabled = true;
     g_player.listFocus = -1;
@@ -235,7 +235,7 @@ bool SNDView_Open(const char* filepath) {
     }
     g_player.mode = g_player.listedSequences > 0 ? MODE_SEQUENCES : MODE_SAMPLES;
     if (ItemCount(g_player.mode) == 0) {
-        printf("%s: the bank has nothing to play\n", g_player.filename);
+        printf("%s: the bank has nothing to play\n", GetFileName(g_player.path));
         SNDView_Close();
         return false;
     }
@@ -250,7 +250,7 @@ bool SNDView_Open(const char* filepath) {
     Select(0);
     PlayAudioStream(g_player.stream);
 
-    printf("%s: DTPK sound bank, %u sequences (%u not empty), %u programs, %u parts, %u samples%s\n", g_player.filename,
+    printf("%s: DTPK sound bank, %u sequences (%u not empty), %u programs, %u parts, %u samples%s\n", GetFileName(g_player.path),
         bank.sequenceCount, g_player.listedSequences, bank.programCount, bank.partCount, bank.sampleCount,
         bank.dsp.present ? ", DSP program" : "");
     g_player.open = true;
@@ -366,36 +366,23 @@ void SNDView_Draw(Rectangle area) {
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
     float lineHeight = fontSize * 1.2f;
     const SND_Bank* bank = &g_player.bank;
-    uint32_t music = 0;
-    for (uint32_t i = 0; i < bank->sequenceCount; i++)
-        music += bank->sequences[i].type == SND_SEQUENCE_MUSIC;
-    const char* lines[3] = {
-        g_player.filename,
-        TextFormat("DTPK sound bank, %u music and %u effect sequences, %u programs, %u samples%s%s", music,
-            g_player.listedSequences - music, bank->programCount, bank->sampleCount,
-            g_player.invalidCount > 0 ? TextFormat(" (%u invalid)", g_player.invalidCount) : "", bank->dsp.present ? ", reverb" : ""),
-        g_player.mode == MODE_SEQUENCES ? "Click on the list: play a sequence" : "Click on the list: play a sample   Click on the waveform: seek",
-    };
-
     float margin = 10.0f;
     float controlsHeight = 30.0f;
-    float top = area.y + margin * 2.0f + 3 * lineHeight;
+    float top = area.y + margin;
     Rectangle modes = { area.x + margin, top, SNDVIEW_LIST_WIDTH, controlsHeight };
     Rectangle list = { area.x + margin, top + controlsHeight + margin, SNDVIEW_LIST_WIDTH,
-        area.height - margin * 4.0f - 3 * lineHeight - controlsHeight };
+        area.height - margin * 3.0f - controlsHeight };
     Rectangle panel = {
         list.x + list.width + margin,
         top + lineHeight + margin,
         area.width - list.width - margin * 3.0f,
-        area.height - margin * 5.0f - 4 * lineHeight - controlsHeight,
+        area.height - margin * 4.0f - lineHeight - controlsHeight,
     };
     if (list.height <= 0.0f || panel.width <= 0.0f || panel.height <= 0.0f)
         return;
     UpdateInput(panel);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
-    for (int i = 0; i < 3; i++)
-        DrawTextEx(font, lines[i], (Vector2) { area.x + margin, area.y + margin + i * lineHeight }, fontSize, 1.0f, LIGHTGRAY);
 
     // Tabs of the list. The style of the application draws the pressed controls like the normal ones: highlight the active one
     int pressedColor = GuiGetStyle(TOGGLE, BASE_COLOR_PRESSED);
@@ -442,4 +429,19 @@ void SNDView_Draw(Rectangle area) {
     const char* time = TextFormat("%s / %s", FormatMilliseconds((uint32_t)((uint64_t)g_player.samplePosition * 1000 / rate)),
         FormatMilliseconds((uint32_t)((uint64_t)sample->frameCount * 1000 / rate)));
     DrawTextEx(font, time, (Vector2) { x, controlsY + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
+}
+
+void SNDView_Status(ViewStatus* status) {
+    const SND_Bank* bank = &g_player.bank;
+    uint32_t music = 0;
+    for (uint32_t i = 0; i < bank->sequenceCount; i++)
+        music += bank->sequences[i].type == SND_SEQUENCE_MUSIC;
+    snprintf(status->file, sizeof(status->file), "%s", g_player.path);
+    int length = snprintf(status->info, sizeof(status->info), "%u music, %u effects, %u samples",
+        music, g_player.listedSequences - music, bank->sampleCount);
+    if (g_player.invalidCount > 0)
+        length += snprintf(status->info + length, sizeof(status->info) - length, " (%u invalid)", g_player.invalidCount);
+    if (bank->dsp.present)
+        snprintf(status->info + length, sizeof(status->info) - length, ", reverb");
+    snprintf(status->hint, sizeof(status->hint), "%s", g_player.mode == MODE_SEQUENCES ? "" : "Click the waveform: seek");
 }

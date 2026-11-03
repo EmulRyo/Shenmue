@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <raylib.h>
+#include "views/views.h"
 
 // 3D view of the characters and objects of a CHRT script, each one with its model at its position and angle. The
 // models are searched in the folder of the script (<name>.chrm or <name>.mt5), where the IPAC block that contains it
@@ -17,6 +18,8 @@ bool CHRTView_IsOpen(void);
 // label: look at the next/previous character, L: labels, S: sleeping characters, W: wireframe, C: back faces) and draws
 // the scene inside area
 void CHRTView_Draw(Rectangle area);
+// Fills the texts of the status bar
+void CHRTView_Status(ViewStatus* status);
 // Adds its actions to the toolbar
 void CHRTView_Toolbar(void);
 

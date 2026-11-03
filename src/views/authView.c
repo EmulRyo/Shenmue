@@ -25,7 +25,7 @@
 
 typedef struct {
     bool            open;
-    char            filename[256];
+    char            path[1024];  // Of the open file
     AUTH_Sequence   sequence;
     uint32_t        bankCount;
     MOTN_Bank*      banks;      // MOTN files of the folder, for the names of the motions
@@ -224,7 +224,7 @@ bool AUTHView_Open(const char* filepath) {
         return false;
 
     AUTHView_Close();
-    snprintf(g_view.filename, sizeof(g_view.filename), "%s", GetFileName(filepath));
+    snprintf(g_view.path, sizeof(g_view.path), "%s", filepath);
     g_view.sequence = sequence;
     g_view.listFocus = -1;
     LoadMotionNames(filepath);
@@ -238,7 +238,7 @@ bool AUTHView_Open(const char* filepath) {
     FreeCamera_SetFly(&g_view.camera, g_options.fly);
     g_view.playing = true;
 
-    printf("%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files in the folder\n", g_view.filename,
+    printf("%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files in the folder\n", GetFileName(g_view.path),
         sequence.duration, sequence.characterCount, sequence.commandCount, sequence.soundCount, g_view.bankCount);
     g_view.open = true;
     return true;
@@ -591,23 +591,11 @@ void AUTHView_Draw(Rectangle area) {
 
     Font font = GuiGetFont();
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
-    float lineHeight = fontSize * 1.2f;
     const AUTH_Sequence* sequence = &g_view.sequence;
-    char characters[64] = "";
-    for (uint32_t i = 0; i < sequence->characterCount && strlen(characters) + 6 < sizeof(characters); i++)
-        snprintf(characters + strlen(characters), sizeof(characters) - strlen(characters), "%s%s", i > 0 ? ", " : "", sequence->characters[i].id);
-    const char* lines[3] = {
-        g_view.filename,
-        TextFormat("Cutscene, %u frames (%s), %u characters (%s), %u commands, %u sounds", sequence->duration,
-            FormatTime(Duration()), sequence->characterCount, characters, sequence->commandCount, sequence->soundCount),
-        g_options.cutsceneCamera ? "Click on the timeline: seek" :
-            TextFormat("%s   Click on the timeline: seek", FreeCamera_Help(&g_view.camera)),
-    };
-
     float margin = 10.0f;
     float controlsHeight = 30.0f;
-    float top = area.y + margin * 2.0f + 3 * lineHeight;
-    Rectangle list = { area.x + margin, top, AUTHVIEW_LIST_WIDTH, area.height - margin * 3.0f - 3 * lineHeight };
+    float top = area.y + margin;
+    Rectangle list = { area.x + margin, top, AUTHVIEW_LIST_WIDTH, area.height - margin * 2.0f };
     float panelX = list.x + list.width + margin;
     float panelWidth = area.width - list.width - margin * 3.0f;
     Rectangle controls = { panelX, area.y + area.height - margin - controlsHeight, panelWidth, controlsHeight };
@@ -619,8 +607,6 @@ void AUTHView_Draw(Rectangle area) {
     UpdateInput(scene);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
-    for (int i = 0; i < 3; i++)
-        DrawTextEx(font, lines[i], (Vector2) { area.x + margin, area.y + margin + i * lineHeight }, fontSize, 1.0f, LIGHTGRAY);
 
     int current = CurrentCommand();
     if (g_view.playing || g_view.seeking)
@@ -641,4 +627,15 @@ void AUTHView_Draw(Rectangle area) {
     const char* status = TextFormat("Frame %u/%u   %s / %s", CurrentFrame(), sequence->duration, FormatTime(g_view.time),
         FormatTime(Duration()));
     DrawTextEx(font, status, (Vector2) { x, controls.y + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
+}
+
+void AUTHView_Status(ViewStatus* status) {
+    const AUTH_Sequence* sequence = &g_view.sequence;
+    snprintf(status->file, sizeof(status->file), "%s", g_view.path);
+    snprintf(status->info, sizeof(status->info), "%s, %u characters, %u commands, %u sounds", FormatTime(Duration()),
+        sequence->characterCount, sequence->commandCount, sequence->soundCount);
+    if (g_options.cutsceneCamera)
+        snprintf(status->hint, sizeof(status->hint), "Click the timeline: seek");
+    else
+        snprintf(status->hint, sizeof(status->hint), "%s", FreeCamera_Help(&g_view.camera));
 }

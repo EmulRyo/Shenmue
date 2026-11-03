@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <raylib.h>
+#include "views/views.h"
 
 // Player of SND sound banks: plays the sequences (music and effects) as the Dreamcast does, or the samples alone with
 // their waveform
@@ -16,6 +17,8 @@ bool SNDView_IsOpen(void);
 // samples: left/right: back/forward 1 second, L: loop on/off, click or drag on the waveform: seek) and draws the player
 // inside area
 void SNDView_Draw(Rectangle area);
+// Fills the texts of the status bar
+void SNDView_Status(ViewStatus* status);
 // Adds its actions to the toolbar
 void SNDView_Toolbar(void);
 

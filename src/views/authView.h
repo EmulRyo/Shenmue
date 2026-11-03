@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <raylib.h>
+#include "views/views.h"
 
 // Player of AUTH cutscenes: the list of commands, the camera and the characters in 3D (seen from a free camera or from
 // the camera of the cutscene), and a timeline with the motions, voices and sounds. The names of the motions are taken
@@ -17,6 +18,8 @@ bool AUTHView_IsOpen(void);
 // on the scene: rotate, pan and zoom the free camera, R: reset it, click or drag on the timeline: seek) and draws the
 // player inside area
 void AUTHView_Draw(Rectangle area);
+// Fills the texts of the status bar
+void AUTHView_Status(ViewStatus* status);
 // Adds its actions to the toolbar
 void AUTHView_Toolbar(void);
 

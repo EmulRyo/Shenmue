@@ -5,9 +5,9 @@
 #include <raylib.h>
 
 // Toolbar at the top of the window. Each control is an action with an icon, a name and an optional key: the name and the
-// key are shown in a tooltip, and the key does the same as a click. Immediate mode, as raygui: the application and the
-// open view add their actions every frame, between Toolbar_Begin and Toolbar_End. The actions added while raygui is
-// disabled (GuiDisable) are drawn disabled and their key does nothing.
+// key are shown in a tooltip (see Tooltip), and the key does the same as a click. Immediate mode, as raygui: the
+// application and the open view add their actions every frame, between Toolbar_Begin and Toolbar_End. The actions added
+// while raygui is disabled (GuiDisable) are drawn disabled and their key does nothing.
 // The keys of the flight of the free camera (W/A/S/D/Q/E) are reserved for it: a warning is printed if an action uses one
 // of them, or if two actions of the same frame use the same key
 
@@ -27,7 +27,5 @@ bool Toolbar_Toggle(int icon, const char* label, const char* name, int key, bool
 // when it changes
 bool Toolbar_Choice(const char* options, const char* name, int key, int* active);
 void Toolbar_End(void);
-// Draws the tooltip of the action under the mouse over everything else: the last thing drawn in the frame
-void Toolbar_DrawTooltip(void);
 
 #endif

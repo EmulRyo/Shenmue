@@ -12,7 +12,7 @@
 
 typedef struct {
     bool            open;
-    char            filename[256];
+    char            path[1024];  // Of the open file
     XWM_Info        info;
     int16_t*        pcm;
     AudioStream     stream;
@@ -61,7 +61,7 @@ bool XWMView_Open(const char* filepath) {
     XWMView_Close();
     if (!IsAudioDeviceReady())
         InitAudioDevice();
-    snprintf(g_player.filename, sizeof(g_player.filename), "%s", GetFileName(filepath));
+    snprintf(g_player.path, sizeof(g_player.path), "%s", filepath);
     g_player.info = info;
     g_player.pcm = pcm;
     Waveform_Compute(&g_player.waveform, pcm, info.frameCount, info.channels);
@@ -75,7 +75,7 @@ bool XWMView_Open(const char* filepath) {
     SetAudioStreamCallback(g_player.stream, StreamCallback);
     PlayAudioStream(g_player.stream);
 
-    printf("%s: %u Hz, %u channel(s), %u packets of %u bytes, %.2f s\n", g_player.filename, info.sampleRate, info.channels,
+    printf("%s: %u Hz, %u channel(s), %u packets of %u bytes, %.2f s\n", GetFileName(g_player.path), info.sampleRate, info.channels,
         info.packetCount, info.blockAlign, (float)info.frameCount / info.sampleRate);
     g_player.playing = true;
     g_player.open = true;
@@ -144,34 +144,32 @@ void XWMView_Draw(Rectangle area) {
 
     Font font = GuiGetFont();
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
-    float lineHeight = fontSize * 1.2f;
     const XWM_Info* info = &g_player.info;
-    const char* lines[3] = {
-        g_player.filename,
-        TextFormat("xWMA (WMA v2), %u Hz, %s, %u bytes/s, %u packets", info->sampleRate, info->channels == 1 ? "mono" : "stereo",
-            info->avgBytesPerSec, info->packetCount),
-        "Click on the waveform: seek",
-    };
-
     float margin = 10.0f;
     float controlsHeight = 30.0f;
     Rectangle waveform = {
         area.x + margin,
-        area.y + margin * 2.0f + 3 * lineHeight,
+        area.y + margin,
         area.width - margin * 2.0f,
-        area.height - margin * 4.0f - 3 * lineHeight - controlsHeight,
+        area.height - margin * 3.0f - controlsHeight,
     };
     if (waveform.width <= 0.0f || waveform.height <= 0.0f)
         return;
     UpdateInput(waveform);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
-    for (int i = 0; i < 3; i++)
-        DrawTextEx(font, lines[i], (Vector2) { area.x + margin, area.y + margin + i * lineHeight }, fontSize, 1.0f, LIGHTGRAY);
     Waveform_Draw(&g_player.waveform, waveform, g_player.position, NULL);
 
     float controlsY = waveform.y + waveform.height + margin;
     // TextFormat uses a rotating buffer, so the two times can be formatted in the same call
     const char* time = TextFormat("%s / %s", FormatTime(g_player.position), FormatTime(info->frameCount));
     DrawTextEx(font, time, (Vector2) { waveform.x, controlsY + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
+}
+
+void XWMView_Status(ViewStatus* status) {
+    const XWM_Info* info = &g_player.info;
+    snprintf(status->file, sizeof(status->file), "%s", g_player.path);
+    snprintf(status->info, sizeof(status->info), "xWMA, %u Hz, %s, %u bytes/s", info->sampleRate,
+        info->channels == 1 ? "mono" : "stereo", info->avgBytesPerSec);
+    snprintf(status->hint, sizeof(status->hint), "Click the waveform: seek");
 }

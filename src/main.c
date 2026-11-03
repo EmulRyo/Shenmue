@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 #include <nfd.h>
 #include <raylib.h>
 #define RAYGUI_IMPLEMENTATION
@@ -12,6 +13,7 @@
 #include "app/style.h"
 #include "app/tadBatch.h"
 #include "ui/toolbar.h"
+#include "ui/tooltip.h"
 
 static HashTable g_filenameDB;
 
@@ -53,29 +55,68 @@ static void Update() {
     TADBatch_Update();
 }
 
-static void DrawStatusBar(Rectangle dst) {
-    float x, y, w, h;
-    const char* text;
-    x = dst.x;
-    w = 0;
-    h = dst.height;
-    y = dst.y;
+// The text cut with an ellipsis to fit in width, at the end or at the start (for the paths, whose end is the name of the
+// file with its extension). Valid until the next call
+static const char* FitText(const char* text, float width, bool start) {
+    static char fitted[512];
+    Font font = GuiGetFont();
+    float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
+    float spacing = (float)GuiGetStyle(DEFAULT, TEXT_SPACING);
+    snprintf(fitted, sizeof(fitted), "%s", text);
+    size_t length = strlen(fitted);
+    if (MeasureTextEx(font, fitted, fontSize, spacing).x <= width)
+        return fitted;
+    for (size_t cut = 1; cut <= length; cut++) {
+        if (start)
+            snprintf(fitted, sizeof(fitted), "...%s", text + cut);
+        else
+            snprintf(fitted, sizeof(fitted), "%.*s...", (int)(length - cut), text);
+        if (MeasureTextEx(font, fitted, fontSize, spacing).x <= width)
+            break;
+    }
+    return fitted;
+}
 
-    w = roundf((float)GetScreenWidth() * 1.0f/3.0f);
-    text = TextFormat("%s: %d fps", "Refresh", GetFPS());
-    GuiStatusBar((Rectangle){ x, y, w, h }, text);
-    x += w;
+// A field of the status bar. The whole text is shown in a tooltip if it is cut
+static void DrawField(Rectangle bounds, const char* text, bool path) {
+    float padding = (float)GuiGetStyle(STATUSBAR, TEXT_PADDING);
+    const char* fitted = FitText(text, bounds.width - 2.0f * padding, path);
+    if (strcmp(fitted, text) != 0 && CheckCollisionPointRec(GetMousePosition(), bounds))
+        Tooltip_Set(bounds, text);
+    GuiStatusBar(bounds, fitted);
+}
 
+// The open file, what it contains, what the mouse does, the progress of the TAD extraction while it runs, and the refresh
+// rate. The file and the refresh rate have a fixed width, and the contents and the mouse share the rest
+static void DrawStatusBar(Rectangle area) {
+    ViewStatus status;
+    if (!Views_Status(&status))
+        snprintf(status.info, sizeof(status.info), "Open a file, or drop it on the window");
     TADBatch_Progress progress = TADBatch_GetProgress();
-    w = roundf((float)GetScreenWidth() * 1.0f/3.0f);
-    text = TextFormat("TAD extraction: file %u/%u, entry: %zu/%zu", progress.file+1, progress.fileCount, progress.entry+1, progress.entryCount);
-    GuiStatusBar((Rectangle){ x, y, w, h }, text);
-    x += w;
+    float fileWidth = 280.0f;
+    float fpsWidth = 64.0f;
+    float progressWidth = progress.running ? 300.0f : 0.0f;
+    float infoWidth = floorf(fmaxf(area.width - fileWidth - fpsWidth - progressWidth, 0.0f) * 0.5f);
+    float hintWidth = fmaxf(area.width - fileWidth - fpsWidth - progressWidth - infoWidth, 0.0f);
 
-    w = (float)GetScreenWidth() * 1.0f / 3.0f;
-    GuiStatusBar((Rectangle) { x, y, w, h }, "");
-    float ratio = (float)(progress.entry + 1) / progress.entryCount;
-    DrawRectangleRec((Rectangle) { x + 1, y + 1, ratio * (w - 2), h - 2 }, GREEN);
+    float x = area.x;
+    DrawField((Rectangle) { x, area.y, fileWidth, area.height }, status.file, true);
+    x += fileWidth;
+    DrawField((Rectangle) { x, area.y, infoWidth, area.height }, status.info, false);
+    x += infoWidth;
+    DrawField((Rectangle) { x, area.y, hintWidth, area.height }, status.hint, false);
+    x += hintWidth;
+    if (progress.running) {
+        // The text over a bar of the entries extracted of the current file
+        float padding = (float)GuiGetStyle(STATUSBAR, TEXT_PADDING);
+        GuiStatusBar((Rectangle) { x, area.y, progressWidth, area.height }, NULL);
+        float ratio = progress.entryCount > 0 ? (float)(progress.entry + 1) / progress.entryCount : 0.0f;
+        DrawRectangleRec((Rectangle) { x + 1, area.y + 1, ratio * (progressWidth - 2), area.height - 2 }, (Color) { 40, 110, 60, 255 });
+        GuiLabel((Rectangle) { x + padding, area.y, progressWidth - 2.0f * padding, area.height },
+            TextFormat("TAD %u/%u, entry %zu/%zu", progress.file + 1, progress.fileCount, progress.entry + 1, progress.entryCount));
+        x += progressWidth;
+    }
+    DrawField((Rectangle) { x, area.y, area.x + area.width - x, area.height }, TextFormat("%d fps", GetFPS()), false);
 }
 
 // The actions of the application, then those of the open view
@@ -99,7 +140,7 @@ static void Draw() {
     DrawToolbar((Rectangle) { 0, 0, (float)GetScreenWidth(), toolbarHeight });
     Views_Draw((Rectangle) { 0, toolbarHeight, (float)GetScreenWidth(), (float)GetScreenHeight() - toolbarHeight - statusHeight });
     DrawStatusBar((Rectangle) { 0, (float)GetScreenHeight() - statusHeight, (float)GetScreenWidth(), statusHeight });
-    Toolbar_DrawTooltip();
+    Tooltip_Draw();
 }
 
 int main(int argc, char** argv) {

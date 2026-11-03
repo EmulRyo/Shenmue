@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <raylib.h>
+#include "views/views.h"
 
 // Player of xWMA audio clips: shows the waveform and plays the clip
 
@@ -13,6 +14,8 @@ bool XWMView_IsOpen(void);
 // Handles the input (space: play/pause, left/right: back/forward 1 second, home: start, click or drag on the waveform:
 // seek) and draws the player inside area
 void XWMView_Draw(Rectangle area);
+// Fills the texts of the status bar
+void XWMView_Status(ViewStatus* status);
 // Adds its actions to the toolbar
 void XWMView_Toolbar(void);
 
