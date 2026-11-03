@@ -3,6 +3,7 @@
 #include <string.h>
 #include <raylib.h>
 #include "raygui.h"
+#include "ui/input.h"
 #include "ui/toolbar.h"
 #include "ui/tooltip.h"
 
@@ -87,7 +88,7 @@ static void AddKey(int key) {
 
 static bool KeyTriggered(int key) {
     int code = KEY_CODE(key);
-    if (code == 0 || GuiGetState() == STATE_DISABLED)
+    if (code == 0 || GuiGetState() == STATE_DISABLED || Input_IsTyping())
         return false;
     bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     bool ctrl = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);

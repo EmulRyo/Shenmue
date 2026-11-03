@@ -4,6 +4,8 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "render/freeCamera.h"
+#include "ui/input.h"
+#include "ui/input.h"
 
 void FreeCamera_Reset(FreeCamera* camera, Vector3 center, Vector3 front, float radius, float fovy) {
     camera->target = center;
@@ -120,7 +122,10 @@ static bool Drag(FreeCamera* camera, Rectangle area, Vector2* delta) {
     return true;
 }
 
+// Nothing while a text box has the keyboard
 static float Axis(int positive, int negative) {
+    if (Input_IsTyping())
+        return 0.0f;
     return (IsKeyDown(positive) ? 1.0f : 0.0f) - (IsKeyDown(negative) ? 1.0f : 0.0f);
 }
 

@@ -7,8 +7,8 @@
 #include "raygui.h"
 #include "formats/sound/snd.h"
 #include "audio/sndSynth.h"
-#include "ui/list.h"
 #include "ui/toolbar.h"
+#include "ui/tree.h"
 #include "ui/waveform.h"
 #include "views/sndView.h"
 
@@ -40,15 +40,14 @@ typedef struct {
     SND_Synth*      synth;
     AudioStream     stream;
     Mode            mode;
-    // Lists: the sequences that aren't empty, and the samples
+    // Groups of the tree: the sequences that aren't empty, and the samples
     uint32_t*       sequenceIndices;
     uint32_t        listedSequences;
     char            (*labels[2])[SNDVIEW_LABEL_SIZE];
-    char**          labelPointers[2];
     bool*           invalidSamples; // Samples that couldn't be decoded
     uint32_t        invalidCount;
-    int             listScroll[2];
-    int             listFocus;
+    Tree            tree;
+    bool            expanded[2];
     int             selected[2];
     int             rateIndex;
     bool            loopEnabled;
@@ -147,14 +146,6 @@ static void Select(int index) {
     }
 }
 
-static void SetMode(Mode mode) {
-    if (mode == g_player.mode || ItemCount(mode) == 0)
-        return;
-    g_player.mode = mode;
-    g_player.listFocus = -1;
-    Select(g_player.selected[mode]);
-}
-
 void SNDView_Close(void) {
     if (IsAudioStreamValid(g_player.stream)) {
         StopAudioStream(g_player.stream);
@@ -162,10 +153,8 @@ void SNDView_Close(void) {
     }
     SND_SynthDestroy(g_player.synth);
     SND_Free(&g_player.bank);
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 2; i++)
         free(g_player.labels[i]);
-        free(g_player.labelPointers[i]);
-    }
     free(g_player.sequenceIndices);
     free(g_player.invalidSamples);
     memset(&g_player, 0, sizeof(g_player));
@@ -189,11 +178,8 @@ static bool CreateLabels(void) {
     uint32_t counts[2] = { g_player.listedSequences, bank->sampleCount };
     for (int m = 0; m < 2; m++) {
         g_player.labels[m] = malloc((counts[m] + 1) * sizeof(*g_player.labels[m]));
-        g_player.labelPointers[m] = malloc((counts[m] + 1) * sizeof(*g_player.labelPointers[m]));
-        if (g_player.sequenceIndices == NULL || g_player.labels[m] == NULL || g_player.labelPointers[m] == NULL)
+        if (g_player.sequenceIndices == NULL || g_player.labels[m] == NULL)
             return false;
-        for (uint32_t i = 0; i < counts[m]; i++)
-            g_player.labelPointers[m][i] = g_player.labels[m][i];
     }
     for (uint32_t i = 0; i < g_player.listedSequences; i++) {
         const SND_Sequence* sequence = &bank->sequences[g_player.sequenceIndices[i]];
@@ -208,7 +194,7 @@ static bool CreateLabels(void) {
         g_player.invalidSamples[i] = sample->pcm == NULL;
         g_player.invalidCount += sample->pcm == NULL;
         if (sample->pcm == NULL)
-            snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, LIST_FAILED "%u: invalid", i);
+            snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, "%u: invalid", i);
         else
             snprintf(g_player.labels[MODE_SAMPLES][i], SNDVIEW_LABEL_SIZE, "%u: %s, %u frames%s", i,
                 sample->encoding == SND_ENCODING_ADPCM ? "ADPCM" : "PCM", sample->frameCount, sample->loop ? ", loop" : "");
@@ -227,7 +213,8 @@ bool SNDView_Open(const char* filepath) {
     snprintf(g_player.path, sizeof(g_player.path), "%s", filepath);
     g_player.bank = bank;
     g_player.loopEnabled = true;
-    g_player.listFocus = -1;
+    g_player.expanded[MODE_SEQUENCES] = true;
+    g_player.expanded[MODE_SAMPLES] = true;
     g_player.synth = SND_SynthCreate(&g_player.bank);
     if (g_player.synth == NULL || !CreateLabels()) {
         SNDView_Close();
@@ -286,6 +273,12 @@ static void Seek(int64_t frame) {
         SendCommand(COMMAND_SEEK, 0);
 }
 
+// The previous or next item of the group of the current mode, shown in the tree
+static void SelectNext(int direction) {
+    Select(g_player.selected[g_player.mode] + direction);
+    Tree_Reveal(&g_player.tree, true);
+}
+
 // The same controls in both modes, as in the view of xWMA files: those of the samples are disabled with the sequences
 void SNDView_Toolbar(void) {
     bool sequences = g_player.mode == MODE_SEQUENCES;
@@ -307,9 +300,9 @@ void SNDView_Toolbar(void) {
     GuiEnable();
     Toolbar_Separator();
     if (Toolbar_Button(ICON_ARROW_UP_FILL, NULL, sequences ? "Previous sequence" : "Previous sample", TOOLBAR_REPEAT | TOOLBAR_SHIFT | KEY_TAB))
-        Select(g_player.selected[g_player.mode] - 1);
+        SelectNext(-1);
     if (Toolbar_Button(ICON_ARROW_DOWN_FILL, NULL, sequences ? "Next sequence" : "Next sample", TOOLBAR_REPEAT | KEY_TAB))
-        Select(g_player.selected[g_player.mode] + 1);
+        SelectNext(1);
     Toolbar_Separator();
     if (sequences)
         GuiDisable();
@@ -358,6 +351,30 @@ static void DrawChannelMeters(Rectangle area, Font font, float fontSize) {
     DrawRectangleLinesEx(area, 1.0f, (Color) { 112, 112, 112, 255 });
 }
 
+// The sequences and the samples. A click on one plays it from the start, in its mode
+static void DrawTree(Rectangle bounds) {
+    static const char* names[2] = { "Sequences", "Samples" };
+    int clickedMode = -1, clicked = -1;
+    Tree_Begin(&g_player.tree, bounds);
+    for (int m = 0; m < 2; m++) {
+        Tree_BeginGroup(&g_player.tree, names[m], &g_player.expanded[m], NULL);
+        for (int i = 0; i < ItemCount((Mode)m); i++) {
+            int flags = (m == (int)g_player.mode && i == g_player.selected[m] ? TREE_SELECTED : 0) |
+                (m == MODE_SAMPLES && g_player.invalidSamples[i] ? TREE_FAILED : 0);
+            if (Tree_Item(&g_player.tree, g_player.labels[m][i], flags, NULL)) {
+                clickedMode = m;
+                clicked = i;
+            }
+        }
+        Tree_EndGroup(&g_player.tree);
+    }
+    Tree_End(&g_player.tree);
+    if (clicked >= 0) {
+        g_player.mode = (Mode)clickedMode;
+        Select(clicked);
+    }
+}
+
 void SNDView_Draw(Rectangle area) {
     if (!g_player.open || area.width <= 0.0f || area.height <= 0.0f)
         return;
@@ -369,9 +386,7 @@ void SNDView_Draw(Rectangle area) {
     float margin = 10.0f;
     float controlsHeight = 30.0f;
     float top = area.y + margin;
-    Rectangle modes = { area.x + margin, top, SNDVIEW_LIST_WIDTH, controlsHeight };
-    Rectangle list = { area.x + margin, top + controlsHeight + margin, SNDVIEW_LIST_WIDTH,
-        area.height - margin * 3.0f - controlsHeight };
+    Rectangle list = { area.x + margin, top, SNDVIEW_LIST_WIDTH, area.height - margin * 2.0f };
     Rectangle panel = {
         list.x + list.width + margin,
         top + lineHeight + margin,
@@ -383,21 +398,7 @@ void SNDView_Draw(Rectangle area) {
     UpdateInput(panel);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
-
-    // Tabs of the list. The style of the application draws the pressed controls like the normal ones: highlight the active one
-    int pressedColor = GuiGetStyle(TOGGLE, BASE_COLOR_PRESSED);
-    GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, 0x2F5F8FFF);
-    int mode = g_player.mode;
-    float toggleWidth = (SNDVIEW_LIST_WIDTH - GuiGetStyle(TOGGLE, GROUP_PADDING)) / 2.0f;
-    GuiToggleGroup((Rectangle) { modes.x, modes.y, toggleWidth, modes.height }, "Sequences;Samples", &mode);
-    GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, pressedColor);
-    SetMode((Mode)mode);
-
-    int active = g_player.selected[g_player.mode];
-    List_Draw(list, g_player.labelPointers[g_player.mode], g_player.mode == MODE_SAMPLES ? g_player.invalidSamples : NULL,
-        ItemCount(g_player.mode), &g_player.listScroll[g_player.mode], &active, &g_player.listFocus);
-    if (active >= 0 && active != g_player.selected[g_player.mode])
-        Select(active);
+    DrawTree(list);
 
     float controlsY = panel.y + panel.height + margin;
     float x = panel.x;

@@ -12,6 +12,7 @@
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
 #include "ui/toolbar.h"
+#include "ui/tree.h"
 #include "views/authView.h"
 
 #define AUTHVIEW_LABEL_SIZE     128
@@ -23,16 +24,29 @@
 #define AUTHVIEW_RADIUS         0.25f
 #define AUTHVIEW_SOUND_TIME     0.5f    // Seconds a sound with no length is shown
 
+// Groups of the tree: the characters, then the commands in the lanes of the timeline
+typedef enum {
+    GROUP_CHARACTERS,
+    GROUP_MOTIONS,
+    GROUP_VOICES,
+    GROUP_SOUNDS,
+    GROUP_OTHER,
+    GROUP_COUNT,
+} Group;
+
+static const char* g_groupNames[GROUP_COUNT] = { "Characters", "Motions", "Voices", "Sounds", "Other" };
+
 typedef struct {
     bool            open;
     char            path[1024];  // Of the open file
     AUTH_Sequence   sequence;
     uint32_t        bankCount;
     MOTN_Bank*      banks;      // MOTN files of the folder, for the names of the motions
-    char            (*labels)[AUTHVIEW_LABEL_SIZE];
-    char**          labelPointers;
-    int             listScroll;
-    int             listFocus;
+    char            (*labels)[AUTHVIEW_LABEL_SIZE]; // Of the commands
+    char            (*characterLabels)[AUTHVIEW_LABEL_SIZE];
+    bool*           shownCharacters; // Their eye in the tree
+    Tree            tree;
+    int             current;    // Command of the current frame in the tree, to follow it while playing
     float           time;       // Seconds
     bool            playing;
     bool            seeking;    // Dragging on the timeline
@@ -45,10 +59,16 @@ typedef struct {
 typedef struct {
     bool            cutsceneCamera; // Show the scene from the camera of the cutscene
     bool            fly;
+    bool            expanded[GROUP_COUNT];
+    bool            charactersShown;
 } AUTHView_Options;
 
 static AUTHView_State g_view;
-static AUTHView_Options g_options = { .cutsceneCamera = true };
+static AUTHView_Options g_options = {
+    .cutsceneCamera = true,
+    .expanded = { true, true, true, true, true },
+    .charactersShown = true,
+};
 
 static const Color g_characterColors[] = {
     { 230, 120, 80, 255 }, { 90, 170, 255, 255 }, { 120, 210, 110, 255 }, { 230, 200, 80, 255 },
@@ -153,16 +173,23 @@ static void LoadMotionNames(const char* filepath) {
     UnloadDirectoryFiles(files);
 }
 
+// The frame and the text of the commands; the ID and the keys of the characters
 static bool CreateLabels(void) {
-    uint32_t count = g_view.sequence.commandCount;
-    g_view.labels = malloc((count + 1) * sizeof(*g_view.labels));
-    g_view.labelPointers = malloc((count + 1) * sizeof(*g_view.labelPointers));
-    if (g_view.labels == NULL || g_view.labelPointers == NULL)
+    const AUTH_Sequence* sequence = &g_view.sequence;
+    g_view.labels = malloc((sequence->commandCount + 1) * sizeof(*g_view.labels));
+    g_view.characterLabels = malloc((sequence->characterCount + 1) * sizeof(*g_view.characterLabels));
+    g_view.shownCharacters = malloc((sequence->characterCount + 1) * sizeof(bool));
+    if (g_view.labels == NULL || g_view.characterLabels == NULL || g_view.shownCharacters == NULL)
         return false;
-    for (uint32_t i = 0; i < count; i++) {
-        const AUTH_Command* command = &g_view.sequence.commands[i];
+    for (uint32_t i = 0; i < sequence->commandCount; i++) {
+        const AUTH_Command* command = &sequence->commands[i];
         snprintf(g_view.labels[i], AUTHVIEW_LABEL_SIZE, "%5u  %s", command->frame, CommandText(command));
-        g_view.labelPointers[i] = g_view.labels[i];
+    }
+    for (uint32_t i = 0; i < sequence->characterCount; i++) {
+        const AUTH_Character* character = &sequence->characters[i];
+        uint32_t keys = character->curves[AUTH_CHARACTER_X].count;
+        snprintf(g_view.characterLabels[i], AUTHVIEW_LABEL_SIZE, keys > 0 ? "%s  %u keys" : "%s  no movement", character->id, keys);
+        g_view.shownCharacters[i] = true;
     }
     return true;
 }
@@ -214,7 +241,8 @@ void AUTHView_Close(void) {
         MOTN_Free(&g_view.banks[i]);
     free(g_view.banks);
     free(g_view.labels);
-    free(g_view.labelPointers);
+    free(g_view.characterLabels);
+    free(g_view.shownCharacters);
     memset(&g_view, 0, sizeof(g_view));
 }
 
@@ -226,7 +254,7 @@ bool AUTHView_Open(const char* filepath) {
     AUTHView_Close();
     snprintf(g_view.path, sizeof(g_view.path), "%s", filepath);
     g_view.sequence = sequence;
-    g_view.listFocus = -1;
+    g_view.current = -1;
     LoadMotionNames(filepath);
     if (!CreateLabels()) {
         fputs("[AUTHView_Open]: Memory error\n", stderr);
@@ -386,6 +414,11 @@ static bool HasMovement(const AUTH_Character* character) {
     return character->curves[AUTH_CHARACTER_X].count > 0 || character->curves[AUTH_CHARACTER_Z].count > 0;
 }
 
+// With movement, and shown in the tree
+static bool IsShown(uint32_t character) {
+    return HasMovement(&g_view.sequence.characters[character]) && g_options.charactersShown && g_view.shownCharacters[character];
+}
+
 static void DrawCameraGizmo(void) {
     Camera3D camera = CutsceneCamera();
     Scene3D_DrawCameraGizmo(camera, fmaxf(g_view.radius * 0.15f, 0.5f), AUTHVIEW_ASPECT, true, g_cameraColor);
@@ -406,7 +439,7 @@ static void DrawGround(void) {
 static void DrawCharacters(void) {
     for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {
         const AUTH_Character* character = &g_view.sequence.characters[i];
-        if (!HasMovement(character))
+        if (!IsShown(i))
             continue;
         Color color = CharacterColor((int)i);
         Vector3 position = CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time);
@@ -457,7 +490,7 @@ static const AUTH_Command* CharacterMotion(uint32_t idValue) {
 static void DrawCharacterLabels(Camera3D camera, Rectangle area, Font font, float fontSize) {
     for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {
         const AUTH_Character* character = &g_view.sequence.characters[i];
-        if (!HasMovement(character))
+        if (!IsShown(i))
             continue;
         Vector3 head = Vector3Add(CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time), (Vector3) { 0.0f, AUTHVIEW_HEIGHT + 0.15f, 0.0f });
         Vector2 point;
@@ -496,8 +529,10 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     DrawGround();
     if (!g_options.cutsceneCamera) {
         DrawPath(&g_view.sequence.camera[AUTH_CAMERA_X], Fade(g_cameraColor, 0.5f));
-        for (uint32_t i = 0; i < g_view.sequence.characterCount; i++)
-            DrawPath(&g_view.sequence.characters[i].curves[AUTH_CHARACTER_X], Fade(CharacterColor((int)i), 0.5f));
+        for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {
+            if (IsShown(i))
+                DrawPath(&g_view.sequence.characters[i].curves[AUTH_CHARACTER_X], Fade(CharacterColor((int)i), 0.5f));
+        }
         DrawCameraGizmo();
     }
     DrawCharacters();
@@ -568,16 +603,59 @@ static void UpdateTimeline(Rectangle area) {
         Seek((mouse.x - area.x) / area.width * Duration());
 }
 
-// Keeps the item visible in the list
-static void ScrollTo(int item, Rectangle list) {
-    float itemHeight = (float)(GuiGetStyle(LISTVIEW, LIST_ITEMS_HEIGHT) + GuiGetStyle(LISTVIEW, LIST_ITEMS_SPACING));
-    int visible = (int)((list.height - 2.0f * GuiGetStyle(DEFAULT, BORDER_WIDTH)) / itemHeight);
-    if (visible < 1 || item < 0)
-        return;
-    if (item < g_view.listScroll)
-        g_view.listScroll = item;
-    else if (item >= g_view.listScroll + visible)
-        g_view.listScroll = item - visible + 1;
+static Group CommandGroup(const AUTH_Command* command) {
+    switch (command->opcode) {
+    case AUTH_COMMAND_MOTION:
+        return GROUP_MOTIONS;
+    case AUTH_COMMAND_VOICE:
+        return GROUP_VOICES;
+    case AUTH_COMMAND_SOUND:
+        return GROUP_SOUNDS;
+    default:
+        return GROUP_OTHER;
+    }
+}
+
+// The characters, whose eye shows or hides them in the scene; a click on one looks at it with the free camera. Then the
+// commands by lane of the timeline, with the one of the current frame selected; a click on one goes to its frame. The
+// current command is followed while playing or seeking, without expanding its group
+static void DrawTree(Rectangle bounds) {
+    const AUTH_Sequence* sequence = &g_view.sequence;
+    Tree* tree = &g_view.tree;
+    int current = CurrentCommand();
+    if (current != g_view.current && (g_view.playing || g_view.seeking))
+        Tree_Reveal(tree, false);
+    g_view.current = current;
+
+    int clickedCharacter = -1, clickedCommand = -1;
+    Tree_Begin(tree, bounds);
+    Tree_BeginGroup(tree, g_groupNames[GROUP_CHARACTERS], &g_options.expanded[GROUP_CHARACTERS], &g_options.charactersShown);
+    for (uint32_t i = 0; i < sequence->characterCount; i++) {
+        bool moves = HasMovement(&sequence->characters[i]);
+        if (Tree_Item(tree, g_view.characterLabels[i], moves ? 0 : TREE_DIMMED, moves ? &g_view.shownCharacters[i] : NULL) && moves)
+            clickedCharacter = (int)i;
+    }
+    Tree_EndGroup(tree);
+    for (int g = GROUP_MOTIONS; g < GROUP_COUNT; g++) {
+        Tree_BeginGroup(tree, g_groupNames[g], &g_options.expanded[g], NULL);
+        for (uint32_t i = 0; i < sequence->commandCount; i++) {
+            if ((int)CommandGroup(&sequence->commands[i]) == g &&
+                Tree_Item(tree, g_view.labels[i], (int)i == current ? TREE_SELECTED : 0, NULL))
+                clickedCommand = (int)i;
+        }
+        Tree_EndGroup(tree);
+    }
+    Tree_End(tree);
+
+    if (clickedCommand >= 0)
+        SeekFrame(sequence->commands[clickedCommand].frame);
+    if (clickedCharacter >= 0) {
+        const AUTH_Character* character = &sequence->characters[clickedCharacter];
+        g_options.cutsceneCamera = false;
+        g_view.camera.target = Vector3Add(CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time),
+            (Vector3) { 0.0f, AUTHVIEW_HEIGHT * 0.5f, 0.0f });
+        g_view.camera.distance = 6.0f;
+    }
 }
 
 static const char* FormatTime(float seconds) {
@@ -608,16 +686,7 @@ void AUTHView_Draw(Rectangle area) {
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
 
-    int current = CurrentCommand();
-    if (g_view.playing || g_view.seeking)
-        ScrollTo(current, list);
-    int active = current;
-    int alignment = GuiGetStyle(LISTVIEW, TEXT_ALIGNMENT);
-    GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, TEXT_ALIGN_LEFT);
-    GuiListViewEx(list, g_view.labelPointers, (int)sequence->commandCount, &g_view.listScroll, &active, &g_view.listFocus);
-    GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, alignment);
-    if (active >= 0 && active != current)
-        SeekFrame(sequence->commands[active].frame);
+    DrawTree(list);
 
     DrawScene(scene, font, fontSize);
     DrawTimeline(timeline, font, fontSize);

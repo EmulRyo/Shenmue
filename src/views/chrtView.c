@@ -13,7 +13,7 @@
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
 #include "ui/toolbar.h"
-#include "ui/list.h"
+#include "ui/tree.h"
 #include "views/chrtView.h"
 
 #define CHRTVIEW_FOVY 45.0f
@@ -37,6 +37,16 @@ typedef struct {
     float           radius;
 } CHRTView_Character;
 
+// Groups of the characters in the tree
+typedef enum {
+    GROUP_POSITIONED,
+    GROUP_UNPOSITIONED,     // Arranged in rows next to the positioned ones
+    GROUP_FAILED,           // Without a model, not drawn
+    GROUP_COUNT,
+} Group;
+
+static const char* g_groupNames[GROUP_COUNT] = { "Positioned", "Not positioned", "Without a model" };
+
 typedef struct {
     bool                open;
     char                path[1024];  // Of the open file
@@ -50,10 +60,8 @@ typedef struct {
     uint32_t            modelledCount;     // Characters with a model
     uint32_t            unpositionedCount; // Characters with a model and without a Position command
     char                (*labels)[CHRTVIEW_LABEL_SIZE];
-    char**              labelPointers;
-    bool*               failed;      // Characters without a model, marked in the list
-    int                 listScroll;
-    int                 listFocus;
+    bool*               shown;       // Their eye in the tree
+    Tree                tree;
     Vector3             center;      // Bounding sphere of the scene
     float               radius;
     FreeCamera         camera;
@@ -70,10 +78,16 @@ typedef struct {
     bool                wireframe;
     bool                noCulling;   // Draw the back faces too
     bool                fly;
+    bool                groupShown[GROUP_COUNT];    // Their eye in the tree
+    bool                expanded[GROUP_COUNT];
 } CHRTView_Options;
 
 static CHRTView_State g_view;
-static CHRTView_Options g_options = { .showLabels = true };
+static CHRTView_Options g_options = {
+    .showLabels = true,
+    .groupShown = { true, true, true },
+    .expanded = { true, true, true },
+};
 
 // Model file of an Image name: the file of the DefImage with that name, or the name itself (some names are defined in
 // other scripts, and they are usually the name of the model file)
@@ -213,25 +227,27 @@ static void ComputeBounds(void) {
     g_view.radius = fmaxf(Vector3Distance(min, max) * 0.5f, 0.1f);
 }
 
-// ID, model file, position and flags of each character; the reason when it has no model
+// ID, model file and flags of each character; the reason when it has no model
 static bool CreateLabels(void) {
     g_view.labels = malloc((g_view.characterCount + 1) * sizeof(*g_view.labels));
-    g_view.labelPointers = malloc((g_view.characterCount + 1) * sizeof(*g_view.labelPointers));
-    g_view.failed = malloc((g_view.characterCount + 1) * sizeof(bool));
-    if (g_view.labels == NULL || g_view.labelPointers == NULL || g_view.failed == NULL)
+    g_view.shown = malloc((g_view.characterCount + 1) * sizeof(bool));
+    if (g_view.labels == NULL || g_view.shown == NULL)
         return false;
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
         const CHRTView_Character* character = &g_view.characters[i];
-        g_view.failed[i] = character->model < 0;
+        g_view.shown[i] = true;
         if (character->model < 0)
-            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, LIST_FAILED "%s  %s%s%s", character->info.id,
+            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s  %s%s%s", character->info.id,
                 character->info.image != NULL ? character->info.image : "", character->info.image != NULL ? "  " : "", character->error);
         else
-            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s  %s%s%s", character->info.id, GetFileName(g_view.models[character->model].path),
-                character->info.positioned ? "" : "  no position", character->info.sleep ? "  sleep" : "");
-        g_view.labelPointers[i] = g_view.labels[i];
+            snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s  %s%s", character->info.id, GetFileName(g_view.models[character->model].path),
+                character->info.sleep ? "  sleep" : "");
     }
     return true;
+}
+
+static Group CharacterGroup(const CHRTView_Character* character) {
+    return character->model < 0 ? GROUP_FAILED : character->info.positioned ? GROUP_POSITIONED : GROUP_UNPOSITIONED;
 }
 
 // From the front of the characters with angle 0, which face -Z as the bodies of the models
@@ -262,8 +278,7 @@ void CHRTView_Close(void) {
     free(g_view.characters);
     free(g_view.visible);
     free(g_view.labels);
-    free(g_view.labelPointers);
-    free(g_view.failed);
+    free(g_view.shown);
     CHRT_Free(&g_view.script);
     MT5Render_Free(&g_view.render);
     memset(&g_view, 0, sizeof(g_view));
@@ -308,7 +323,6 @@ bool CHRTView_Open(const char* filepath) {
     ComputeBounds();
     ResetCamera();
     FreeCamera_SetFly(&g_view.camera, g_options.fly);
-    g_view.listFocus = -1;
     g_view.open = true;
     return true;
 }
@@ -317,8 +331,10 @@ bool CHRTView_IsOpen(void) {
     return g_view.open;
 }
 
+// With a model, shown in the tree with its group, and not a sleeping one if they are hidden
 static bool IsVisible(const CHRTView_Character* character) {
-    return character->model >= 0 && !(g_options.hideSleeping && character->info.sleep);
+    return character->model >= 0 && !(g_options.hideSleeping && character->info.sleep) && g_view.shown[character - g_view.characters] &&
+        g_options.groupShown[CharacterGroup(character)];
 }
 
 // Selects the next or previous visible character
@@ -329,6 +345,7 @@ static void SelectNext(int direction) {
         index = ((index + direction) % count + count) % count;
         if (IsVisible(&g_view.characters[index])) {
             Select(index);
+            Tree_Reveal(&g_view.tree, true);
             return;
         }
     }
@@ -402,8 +419,10 @@ static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSiz
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(GetMousePosition(), box))
             clicked = (int32_t)i; // The last one drawn, on top of the others
     }
-    if (clicked >= 0)
+    if (clicked >= 0) {
         Select(clicked);
+        Tree_Reveal(&g_view.tree, true);
+    }
 }
 
 // Image, model file (or why it has none), position and angle of the selected character
@@ -418,6 +437,32 @@ static const char* SelectedText(void) {
             character->model >= 0 ? GetFileName(g_view.models[character->model].path) : character->error);
     return TextFormat("%s: %s, %s, angle (%g, %g, %g)%s", character->info.id, image, position, character->info.angle[0],
         character->info.angle[1], character->info.angle[2], character->info.sleep ? ", sleep" : "");
+}
+
+// The characters by group. A click selects a character, or unselects it if it is selected. The sleeping characters are
+// dimmed while they are hidden
+static void DrawTree(Rectangle bounds) {
+    int32_t clicked = -1;
+    Tree_Begin(&g_view.tree, bounds);
+    for (int g = 0; g < GROUP_COUNT; g++) {
+        bool drawn = g != GROUP_FAILED;
+        Tree_BeginGroup(&g_view.tree, g_groupNames[g], &g_options.expanded[g], drawn ? &g_options.groupShown[g] : NULL);
+        for (uint32_t i = 0; i < g_view.characterCount; i++) {
+            const CHRTView_Character* character = &g_view.characters[i];
+            if ((int)CharacterGroup(character) != g)
+                continue;
+            int flags = ((int32_t)i == g_view.selected ? TREE_SELECTED : 0) | (character->model < 0 ? TREE_FAILED : 0) |
+                (g_options.hideSleeping && character->info.sleep ? TREE_DIMMED : 0);
+            if (Tree_Item(&g_view.tree, g_view.labels[i], flags, drawn ? &g_view.shown[i] : NULL))
+                clicked = (int32_t)i;
+        }
+        Tree_EndGroup(&g_view.tree);
+    }
+    Tree_End(&g_view.tree);
+    if (clicked >= 0 && clicked == g_view.selected)
+        g_view.selected = -1;
+    else if (clicked >= 0)
+        Select(clicked);
 }
 
 void CHRTView_Draw(Rectangle area) {
@@ -437,17 +482,7 @@ void CHRTView_Draw(Rectangle area) {
         FitCamera(scene);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
-    int active = g_view.selected;
-    int alignment = GuiGetStyle(LISTVIEW, TEXT_ALIGNMENT);
-    GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, TEXT_ALIGN_LEFT);
-    List_Draw(list, g_view.labelPointers, g_view.failed, (int)g_view.characterCount, &g_view.listScroll, &active, &g_view.listFocus);
-    GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, alignment);
-    if (active != g_view.selected) {
-        if (active >= 0)
-            Select(active);
-        else
-            g_view.selected = -1;
-    }
+    DrawTree(list);
 
     Camera3D camera = FreeCamera_Begin3D(&g_view.camera, scene);
     // The models have explicit back faces where both sides are seen (see MT5View_Draw)

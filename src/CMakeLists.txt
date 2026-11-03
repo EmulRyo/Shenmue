@@ -80,12 +80,14 @@ set(SRC
     src/render/scene3D.c
     src/render/scene3D.h
 
-    src/ui/list.c
-    src/ui/list.h
+    src/ui/input.c
+    src/ui/input.h
     src/ui/toolbar.c
     src/ui/toolbar.h
     src/ui/tooltip.c
     src/ui/tooltip.h
+    src/ui/tree.c
+    src/ui/tree.h
     src/ui/waveform.c
     src/ui/waveform.h
 

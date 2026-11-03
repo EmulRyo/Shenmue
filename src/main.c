@@ -12,6 +12,7 @@
 #include "app/filenameDB.h"
 #include "app/style.h"
 #include "app/tadBatch.h"
+#include "ui/input.h"
 #include "ui/toolbar.h"
 #include "ui/tooltip.h"
 
@@ -55,35 +56,10 @@ static void Update() {
     TADBatch_Update();
 }
 
-// The text cut with an ellipsis to fit in width, at the end or at the start (for the paths, whose end is the name of the
-// file with its extension). Valid until the next call
-static const char* FitText(const char* text, float width, bool start) {
-    static char fitted[512];
-    Font font = GuiGetFont();
-    float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
-    float spacing = (float)GuiGetStyle(DEFAULT, TEXT_SPACING);
-    snprintf(fitted, sizeof(fitted), "%s", text);
-    size_t length = strlen(fitted);
-    if (MeasureTextEx(font, fitted, fontSize, spacing).x <= width)
-        return fitted;
-    for (size_t cut = 1; cut <= length; cut++) {
-        if (start)
-            snprintf(fitted, sizeof(fitted), "...%s", text + cut);
-        else
-            snprintf(fitted, sizeof(fitted), "%.*s...", (int)(length - cut), text);
-        if (MeasureTextEx(font, fitted, fontSize, spacing).x <= width)
-            break;
-    }
-    return fitted;
-}
-
 // A field of the status bar. The whole text is shown in a tooltip if it is cut
 static void DrawField(Rectangle bounds, const char* text, bool path) {
     float padding = (float)GuiGetStyle(STATUSBAR, TEXT_PADDING);
-    const char* fitted = FitText(text, bounds.width - 2.0f * padding, path);
-    if (strcmp(fitted, text) != 0 && CheckCollisionPointRec(GetMousePosition(), bounds))
-        Tooltip_Set(bounds, text);
-    GuiStatusBar(bounds, fitted);
+    GuiStatusBar(bounds, Tooltip_Fit(bounds, text, bounds.width - 2.0f * padding, path));
 }
 
 // The open file, what it contains, what the mouse does, the progress of the TAD extraction while it runs, and the refresh
@@ -141,6 +117,7 @@ static void Draw() {
     Views_Draw((Rectangle) { 0, toolbarHeight, (float)GetScreenWidth(), (float)GetScreenHeight() - toolbarHeight - statusHeight });
     DrawStatusBar((Rectangle) { 0, (float)GetScreenHeight() - statusHeight, (float)GetScreenWidth(), statusHeight });
     Tooltip_Draw();
+    Input_EndFrame();
 }
 
 int main(int argc, char** argv) {

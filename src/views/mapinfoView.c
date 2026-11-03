@@ -17,8 +17,8 @@
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
-#include "ui/list.h"
 #include "ui/toolbar.h"
+#include "ui/tree.h"
 #include "views/mapinfoView.h"
 
 #define MAPINFOVIEW_LABEL_SIZE   160
@@ -32,34 +32,41 @@
 #define MAPINFOVIEW_PACKAGE      "mpk00" // Base package of the map (PKF/PKS files or their extracted folder)
 #define MAPINFOVIEW_SCENE_MODELS "model/chara" // Models of the characters in the folder of the scene, for the maps without them
 
+// Kinds of the items of the tree, in this order
 typedef enum {
     ITEM_INFO,
+    ITEM_MAP_MODEL,
+    ITEM_DOOR,
     ITEM_CAMERA,
     ITEM_LIGHT,
-    ITEM_PACKAGE,
+    ITEM_SHAPE,
     ITEM_CHARACTER,
-    ITEM_DOOR,
+    ITEM_KIND_COUNT,
 } ItemKind;
 
 typedef struct {
     ItemKind    kind;
-    uint32_t    index;  // In the cameras, lights, packages, characters or doors
+    uint32_t    index;  // In the models of the map, doors, cameras, lights, shapes or characters
 } Item;
 
+// Groups of the tree, one per kind of item, shown or hidden by their eye (not the information)
 typedef enum {
+    LAYER_INFO,
     LAYER_MAP,
     LAYER_DOORS,
-    LAYER_GROUPS,          // One per COLS group, MAPINFO_GROUP_COUNT
-    LAYER_LIGHTS = LAYER_GROUPS + MAPINFO_GROUP_COUNT,
     LAYER_CAMERAS,
+    LAYER_LIGHTS,
+    LAYER_SHAPES,
     LAYER_CHARACTERS,
-    LAYER_LABELS,
-    LAYER_COUNT,
+    LAYER_GROUPS,           // Subgroups of the shapes, one per COLS group, MAPINFO_GROUP_COUNT
+    LAYER_COUNT = LAYER_GROUPS + MAPINFO_GROUP_COUNT,
 } Layer;
 
 static const char* g_layerNames[LAYER_COUNT] = {
-    "Map", "Doors", "COLI", "HGHT", "EVNT", "UNDU", "SOND", "PROP", "Lights", "Cameras", "Characters", "Labels",
+    "Information", "Map", "Doors", "Cameras", "Lights", "Shapes", "Characters", "COLI", "HGHT", "EVNT", "UNDU", "SOND", "PROP",
 };
+
+static const char* g_shapeTypes[] = { "point", "segment", "polyline", "circle", "triangle", "rectangle", "polygon" };
 
 static const Color g_groupColors[MAPINFO_GROUP_COUNT] = {
     { 235, 80, 70, 255 }, { 230, 210, 80, 255 }, { 190, 110, 240, 255 },
@@ -79,6 +86,7 @@ typedef struct {
     uint32_t            characterCount;
     int                 variantOf;      // Previous package with one of its character IDs, -1 if none
     bool                shown;          // Its characters are shown; at first, those of the packages that aren't variants
+    bool                expanded;       // In the tree; at first, the shown ones
 } MapPackage;
 
 // A character of the CHRD chunk or of a CHRT script of a package of the map. The displayed ones (positioned in the scene,
@@ -88,7 +96,8 @@ typedef struct {
     uint32_t            script;         // In g_view.scripts
     int                 package;        // In g_view.packages, -1 for the CHRD chunk
     int                 model;          // In g_view.models, -1 if it isn't drawn with a model
-    bool                shown;          // The CHRD chunk or a shown package, and no character shown before has its ID
+    bool                shown;          // The CHRD chunk or a shown package, and no character shown before has its ID. Drawn
+                                        // if it is visible in the tree too
     const char*         error;          // Why the model of a displayed character couldn't be loaded, NULL otherwise
 } MapCharacter;
 
@@ -107,20 +116,24 @@ typedef struct {
     uint32_t            modelCount;
     MT5Render_Model*    models;         // The models of the map, then the models of the doors and of the characters
     uint32_t            mapModelCount;
+    char                (*mapModelNames)[MAPINFOVIEW_LABEL_SIZE]; // File and package of each model of the map
     uint32_t            instanceCount;
     MT5Render_Instance* instances;      // Each model of the map (mapModelCount), then each door with its model
                                         // (loadedDoors), then the shown characters with their model (from
                                         // characterInstances)
     uint32_t            loadedDoors;    // Doors with their model
     uint32_t            characterInstances;
+    MT5Render_Instance* visibleInstances; // The instances drawn, filled before drawing them
+    int32_t*            doorInstances;  // Instance of each door, -1 if its model couldn't be loaded
     const char**        doorErrors;     // Why the model of each door couldn't be loaded, NULL if it was
     uint32_t            itemCount;
-    Item*               items;
+    Item*               items;          // Of each kind in ItemKind order, and in the order of their arrays
+    uint32_t            firstItems[ITEM_KIND_COUNT]; // First item of each kind
     char                (*labels)[MAPINFOVIEW_LABEL_SIZE];
-    char**              labelPointers;
     bool*               failedItems;    // Doors and characters without their model
-    int                 listScroll;
-    int                 listFocus;
+    bool*               visibleItems;   // Their eye in the tree
+    Tree                tree;
+    bool                mapExpanded;    // The characters of the CHRD chunk in the tree
     int                 selected;       // Item, -1 if none
     bool                mapCamera;      // Show the map from the selected camera
     float               time;           // Seconds, for the animated cameras
@@ -133,16 +146,29 @@ typedef struct {
     float               radius;
 } MAPINFOView_State;
 
-// Kept when another map is opened. The collisions, the lights and the cameras are hidden at first
+// Kept when another map is opened. The groups of shapes, the lights and the cameras are hidden at first
 typedef struct {
-    bool                layers[LAYER_COUNT];
+    bool                layers[LAYER_COUNT];    // Visible
+    bool                expanded[LAYER_COUNT];  // In the tree
+    bool                labels;
     bool                fly;
 } MAPINFOView_Options;
 
 static MAPINFOView_State g_view;
 static MAPINFOView_Options g_options = {
-    .layers = { [LAYER_MAP] = true, [LAYER_DOORS] = true,[LAYER_CHARACTERS] = true, [LAYER_LABELS] = true },
+    .layers = { [LAYER_MAP] = true, [LAYER_DOORS] = true, [LAYER_SHAPES] = true, [LAYER_CHARACTERS] = true },
+    .expanded = { [LAYER_INFO] = true, [LAYER_CAMERAS] = true, [LAYER_CHARACTERS] = true },
+    .labels = true,
 };
+
+// The eye of the item in the tree. All of them are visible before the tree is created
+static bool IsItemVisible(ItemKind kind, uint32_t index) {
+    return g_view.visibleItems == NULL || g_view.visibleItems[g_view.firstItems[kind] + index];
+}
+
+static bool IsSelected(ItemKind kind, uint32_t index) {
+    return g_view.selected >= 0 && g_view.items[g_view.selected].kind == kind && g_view.items[g_view.selected].index == index;
+}
 
 static Vector3 LightPosition(const MAPINFO_Light* light) {
     return (Vector3) { light->position[0], light->position[1], light->position[2] };
@@ -454,7 +480,7 @@ static void ShowCharacters(void) {
             const MapCharacter* previous = &g_view.characters[c];
             character->shown = !previous->shown || previous->script == character->script || strcmp(previous->info.id, character->info.id) != 0;
         }
-        if (character->shown && character->model >= 0) {
+        if (character->shown && character->model >= 0 && IsItemVisible(ITEM_CHARACTER, i)) {
             AddInstance((uint32_t)character->model, CharacterTransform(&character->info, &g_view.models[character->model]));
             g_view.modelledCharacters++;
         }
@@ -466,13 +492,17 @@ static void ShowCharacters(void) {
 static void PlaceModels(const char* folder, const MapFile* files, uint32_t count, int* fileModels, const IPAC_FileList* packed) {
     const MAPINFO_File* file = &g_view.file;
     for (uint32_t i = 0; i < count; i++) {
-        if (IsFileExtension(files[i].name, ".mt5") && IsMapModel(files[i].name) && FileModel(files, (int)i, fileModels, packed) >= 0)
+        if (IsFileExtension(files[i].name, ".mt5") && IsMapModel(files[i].name) && FileModel(files, (int)i, fileModels, packed) >= 0) {
+            snprintf(g_view.mapModelNames[g_view.instanceCount], MAPINFOVIEW_LABEL_SIZE, "%s%s%s", files[i].name,
+                files[i].package[0] != '\0' ? "  " : "", files[i].package);
             AddInstance((uint32_t)fileModels[i], MatrixIdentity());
+        }
     }
     g_view.mapModelCount = g_view.modelCount;
 
     for (uint32_t i = 0; i < file->doorCount; i++) {
         const MAPINFO_Door* door = &file->doors[i];
+        g_view.doorInstances[i] = -1;
         int f = DoorModelFile(files, count, door->model);
         if (f < 0) {
             g_view.doorErrors[i] = "no model file";
@@ -485,6 +515,7 @@ static void PlaceModels(const char* folder, const MapFile* files, uint32_t count
         // As the nodes of the models: scale, rotation and translation
         Matrix transform = MatrixMultiply(MatrixScale(door->scale[0], door->scale[1], door->scale[2]), MatrixRotateY(door->angle * DEG2RAD));
         transform = MatrixMultiply(transform, MatrixTranslate(door->position[0], door->position[1], door->position[2]));
+        g_view.doorInstances[i] = (int32_t)g_view.instanceCount;
         AddInstance((uint32_t)fileModels[f], transform);
         g_view.loadedDoors++;
     }
@@ -559,6 +590,7 @@ static void LoadScripts(const MapFile* files, uint32_t count) {
                 package->variantOf = (int)q;
         }
         package->shown = package->variantOf < 0;
+        package->expanded = package->shown;
     }
 }
 
@@ -578,7 +610,10 @@ static void LoadModels(const char* folder) {
     int* fileModels = malloc((capacity + 1) * sizeof(int)); // Model of each file, -1 if not loaded
     g_view.scripts = calloc(capacity + 2, sizeof(CHRT_Script));
     g_view.doorErrors = calloc(file->doorCount + 1, sizeof(const char*));
-    if (packsLoaded && files != NULL && fileModels != NULL && g_view.scripts != NULL && g_view.doorErrors != NULL) {
+    g_view.doorInstances = calloc(file->doorCount + 1, sizeof(int32_t));
+    g_view.mapModelNames = calloc(capacity + 1, sizeof(*g_view.mapModelNames));
+    if (packsLoaded && files != NULL && fileModels != NULL && g_view.scripts != NULL && g_view.doorErrors != NULL &&
+        g_view.doorInstances != NULL && g_view.mapModelNames != NULL) {
         for (unsigned int i = 0; i < paths.count; i++) {
             const char* relative = paths.paths[i] + strlen(folder);
             int separators = 0;
@@ -613,7 +648,8 @@ static void LoadModels(const char* folder) {
         // The models of the files, and of the folder of the scene for the characters
         g_view.models = calloc(count + g_view.characterCount + 1, sizeof(MT5Render_Model));
         g_view.instances = calloc(count + file->doorCount + g_view.characterCount + 1, sizeof(MT5Render_Instance));
-        if (g_view.models != NULL && g_view.instances != NULL)
+        g_view.visibleInstances = calloc(count + file->doorCount + g_view.characterCount + 1, sizeof(MT5Render_Instance));
+        if (g_view.models != NULL && g_view.instances != NULL && g_view.visibleInstances != NULL)
             PlaceModels(folder, files, count, fileModels, &packed);
     }
     free(packages);
@@ -626,6 +662,15 @@ static void LoadModels(const char* folder) {
 // Point of a shape in the scene: the shapes have x and z coordinates
 static Vector3 ShapePoint(float x, float y, float z) {
     return (Vector3) { x, y, -z };
+}
+
+// Height of the point of a shape: the height of HGHT, the height of each corner of UNDU, 0 for the rest
+static float ShapeHeight(const MAPINFO_Shape* shape, uint32_t point) {
+    if (shape->group == MAPINFO_GROUP_HGHT)
+        return shape->height;
+    if (shape->group == MAPINFO_GROUP_UNDU)
+        return shape->heights[point < 4 ? point : 0];
+    return 0.0f;
 }
 
 static void AddPoint(Vector3 point, Vector3* min, Vector3* max) {
@@ -691,68 +736,57 @@ static void FitCamera(Rectangle area) {
     free(points);
 }
 
-// The failed items are marked in the list
-static void SetLabel(uint32_t item, const char* text, bool failed) {
-    snprintf(g_view.labels[item], MAPINFOVIEW_LABEL_SIZE, "%s%s", failed ? LIST_FAILED : "", text);
-    g_view.labelPointers[item] = g_view.labels[item];
-    g_view.failedItems[item] = failed;
-}
-
 static void AddItem(ItemKind kind, uint32_t index, const char* text, bool failed) {
-    g_view.items[g_view.itemCount] = (Item) { kind, index };
-    SetLabel(g_view.itemCount++, text, failed);
+    uint32_t item = g_view.itemCount++;
+    g_view.items[item] = (Item) { kind, index };
+    snprintf(g_view.labels[item], MAPINFOVIEW_LABEL_SIZE, "%s", text);
+    g_view.failedItems[item] = failed;
+    g_view.visibleItems[item] = true;
 }
 
+// Name of the subgroup of the characters of a package in the tree
 static const char* PackageText(const MapPackage* package) {
-    return TextFormat("Package %s  %u characters  %s%s%s", package->name, package->characterCount, package->shown ? "shown" : "hidden",
-        package->variantOf >= 0 ? "  variant of " : "", package->variantOf >= 0 ? g_view.packages[package->variantOf].name : "");
+    return package->variantOf >= 0 ? TextFormat("%s, variant of %s", package->name, g_view.packages[package->variantOf].name) : package->name;
 }
 
 static const char* CharacterText(const MapCharacter* character) {
     const CHRT_Character* info = &character->info;
     const char* position = info->positioned ?
         TextFormat("(%.2f, %.2f, %.2f)", info->position[0], info->position[1], info->position[2]) : "no position";
-    const char* package = PackageName(character->package);
-    return TextFormat("Character %s  %s%s%s%s%s%s%s%s", info->id, position, info->sleep ? "  sleep" : "", info->arm ? "  arm" : "",
-        package != NULL ? "  " : "", package != NULL ? package : "", character->shown ? "" : "  hidden", character->error != NULL ? "  " : "",
-        character->error != NULL ? character->error : "");
+    return TextFormat("%s  %s%s%s%s%s", info->id, position, info->sleep ? "  sleep" : "", info->arm ? "  arm" : "",
+        character->error != NULL ? "  " : "", character->error != NULL ? character->error : "");
 }
 
-// After a package is shown or hidden
-static void UpdateLabels(void) {
-    for (uint32_t i = 0; i < g_view.itemCount; i++) {
-        const Item* item = &g_view.items[i];
-        if (item->kind == ITEM_PACKAGE)
-            SetLabel(i, PackageText(&g_view.packages[item->index]), false);
-        else if (item->kind == ITEM_CHARACTER)
-            SetLabel(i, CharacterText(&g_view.characters[item->index]), g_view.characters[item->index].error != NULL);
-    }
+// The center of the points of a shape (see DrawShape)
+static Vector3 ShapeCenter(const MAPINFO_Shape* shape) {
+    const float* v = shape->values;
+    if (shape->type == MAPINFO_SHAPE_CIRCLE && shape->valueCount >= 3)
+        return ShapePoint(v[1], ShapeHeight(shape, 0), v[2]);
+    if (shape->type == MAPINFO_SHAPE_RECTANGLE && shape->valueCount >= 2)
+        return ShapePoint(v[0], ShapeHeight(shape, 0), v[1]);
+    Vector3 sum = Vector3Zero();
+    uint32_t count = shape->valueCount / 2;
+    for (uint32_t i = 0; i < count; i++)
+        sum = Vector3Add(sum, ShapePoint(v[i * 2], ShapeHeight(shape, i), v[i * 2 + 1]));
+    return count > 0 ? Vector3Scale(sum, 1.0f / count) : sum;
+}
+
+static const char* ShapeText(uint32_t index) {
+    const MAPINFO_Shape* shape = &g_view.file.shapes[index];
+    Vector3 center = ShapeCenter(shape);
+    const char* type = shape->type < sizeof(g_shapeTypes) / sizeof(g_shapeTypes[0]) ? g_shapeTypes[shape->type] : "unknown";
+    return TextFormat("%u  %s  (%.2f, %.2f)", index, type, center.x, -center.z);
 }
 
 static const char* ScnText(uint32_t version) {
     return version == 0x20000 ? "SH-4 code" : version == 0x100 ? "bytecode" : "unknown version";
 }
 
-// Information lines, then the cameras, the lights, the packages, the characters and the doors
-static bool CreateItems(void) {
+static void AddInfoItems(void) {
     const MAPINFO_File* file = &g_view.file;
-    uint32_t count = 17 + file->bankCount + file->cameraCount + file->lightCount + g_view.packageCount + g_view.characterCount + file->doorCount;
-    g_view.items = malloc(count * sizeof(Item));
-    g_view.labels = malloc(count * sizeof(*g_view.labels));
-    g_view.labelPointers = malloc(count * sizeof(*g_view.labelPointers));
-    g_view.failedItems = malloc(count * sizeof(bool));
-    if (g_view.items == NULL || g_view.labels == NULL || g_view.labelPointers == NULL || g_view.failedItems == NULL)
-        return false;
-
     const MAPINFO_Chunk* scn = MAPINFO_FindChunk(file, "SCN3");
     if (scn != NULL)
         AddItem(ITEM_INFO, 0, TextFormat("SCN3: %s (0x%X), 0x%X bytes", ScnText(file->scnVersion), file->scnVersion, scn->size), false);
-    uint32_t groupCounts[MAPINFO_GROUP_COUNT] = { 0 };
-    for (uint32_t i = 0; i < file->shapeCount; i++)
-        groupCounts[file->shapes[i].group]++;
-    if (file->shapeCount > 0)
-        AddItem(ITEM_INFO, 0, TextFormat("COLS: %u COLI, %u HGHT, %u EVNT, %u UNDU, %u SOND, %u PROP", groupCounts[0],
-            groupCounts[1], groupCounts[2], groupCounts[3], groupCounts[4], groupCounts[5]), false);
     if (file->fog.present)
         AddItem(ITEM_INFO, 0, TextFormat("Fog: %g to %g, density %g, color #%06X", file->fog.nearDistance, file->fog.farDistance,
             file->fog.density, file->fog.color & 0xFFFFFF), false);
@@ -777,34 +811,61 @@ static bool CreateItems(void) {
             AddItem(ITEM_INFO, 0, TextFormat("%s: %g", floats[i], f), false);
         }
     }
+}
 
+// The items of each kind, in ItemKind order
+static bool CreateItems(void) {
+    const MAPINFO_File* file = &g_view.file;
+    uint32_t count = 16 + file->bankCount + g_view.mapModelCount + file->doorCount + file->cameraCount + file->lightCount +
+        file->shapeCount + g_view.characterCount;
+    g_view.items = malloc(count * sizeof(Item));
+    g_view.labels = malloc(count * sizeof(*g_view.labels));
+    g_view.failedItems = malloc(count * sizeof(bool));
+    bool* visibleItems = malloc(count * sizeof(bool));
+    if (g_view.items == NULL || g_view.labels == NULL || g_view.failedItems == NULL || visibleItems == NULL) {
+        free(visibleItems);
+        return false;
+    }
+    // Set at the end: all the items are visible before
+    g_view.visibleItems = visibleItems;
+
+    g_view.firstItems[ITEM_INFO] = g_view.itemCount;
+    AddInfoItems();
+    g_view.firstItems[ITEM_MAP_MODEL] = g_view.itemCount;
+    for (uint32_t i = 0; i < g_view.mapModelCount; i++)
+        AddItem(ITEM_MAP_MODEL, i, g_view.mapModelNames[i], false);
+    g_view.firstItems[ITEM_DOOR] = g_view.itemCount;
+    for (uint32_t i = 0; i < file->doorCount; i++) {
+        const MAPINFO_Door* door = &file->doors[i];
+        const char* error = g_view.doorErrors != NULL ? g_view.doorErrors[i] : NULL;
+        AddItem(ITEM_DOOR, i, TextFormat("%s  %s  (%.2f, %.2f, %.2f)  %.1f deg%s%s", door->model, door->type == MAPINFO_DOOR_DOOR ? "door" : "model",
+            door->position[0], door->position[1], door->position[2], door->angle, error != NULL ? "  " : "",
+            error != NULL ? error : ""), error != NULL);
+    }
+    g_view.firstItems[ITEM_CAMERA] = g_view.itemCount;
     for (uint32_t i = 0; i < file->cameraCount; i++) {
         const MAPINFO_Camera* camera = &file->cameras[i];
         uint32_t keys = CameraKeys(camera);
         Camera3D view = MapCamera(camera);
         AddItem(ITEM_CAMERA, i, (camera->flags & MAPINFO_CAMERA_FROM_CURRENT) ?
-            TextFormat("Camera %s  from the current one in %.2f s to (%.2f, %.2f, %.2f)  flags 0x%X", camera->id,
+            TextFormat("%s  from the current one in %.2f s to (%.2f, %.2f, %.2f)  flags 0x%X", camera->id,
                 CameraDuration(camera), view.position.x, view.position.y, view.position.z, camera->flags) :
             keys > 1 ?
-            TextFormat("Camera %s  %u keys, %.2f s  flags 0x%X", camera->id, keys, CameraDuration(camera), camera->flags) :
-            TextFormat("Camera %s  (%.2f, %.2f, %.2f)  flags 0x%X", camera->id, view.position.x, view.position.y, view.position.z, camera->flags), false);
+            TextFormat("%s  %u keys, %.2f s  flags 0x%X", camera->id, keys, CameraDuration(camera), camera->flags) :
+            TextFormat("%s  (%.2f, %.2f, %.2f)  flags 0x%X", camera->id, view.position.x, view.position.y, view.position.z, camera->flags), false);
     }
+    g_view.firstItems[ITEM_LIGHT] = g_view.itemCount;
     for (uint32_t i = 0; i < file->lightCount; i++) {
         const MAPINFO_Light* light = &file->lights[i];
-        AddItem(ITEM_LIGHT, i, TextFormat("Light %u.%u  (%.2f, %.2f, %.2f)  color (%.2f, %.2f, %.2f)", light->group, light->id,
+        AddItem(ITEM_LIGHT, i, TextFormat("%u.%u  (%.2f, %.2f, %.2f)  color (%.2f, %.2f, %.2f)", light->group, light->id,
             light->position[0], light->position[1], light->position[2], light->color[0], light->color[1], light->color[2]), false);
     }
-    for (uint32_t i = 0; i < g_view.packageCount; i++)
-        AddItem(ITEM_PACKAGE, i, PackageText(&g_view.packages[i]), false);
+    g_view.firstItems[ITEM_SHAPE] = g_view.itemCount;
+    for (uint32_t i = 0; i < file->shapeCount; i++)
+        AddItem(ITEM_SHAPE, i, ShapeText(i), false);
+    g_view.firstItems[ITEM_CHARACTER] = g_view.itemCount;
     for (uint32_t i = 0; i < g_view.characterCount; i++)
         AddItem(ITEM_CHARACTER, i, CharacterText(&g_view.characters[i]), g_view.characters[i].error != NULL);
-    for (uint32_t i = 0; i < file->doorCount; i++) {
-        const MAPINFO_Door* door = &file->doors[i];
-        const char* error = g_view.doorErrors != NULL ? g_view.doorErrors[i] : NULL;
-        AddItem(ITEM_DOOR, i, TextFormat("%s %s  (%.2f, %.2f, %.2f)  %.1f deg%s%s", door->type == MAPINFO_DOOR_DOOR ? "Door" : "Model",
-            door->model, door->position[0], door->position[1], door->position[2], door->angle, error != NULL ? "  " : "",
-            error != NULL ? error : ""), error != NULL);
-    }
     return true;
 }
 
@@ -815,14 +876,17 @@ void MAPINFOView_Close(void) {
         MT5Render_FreeModel(&g_view.models[i]);
     free(g_view.models);
     free(g_view.instances);
+    free(g_view.visibleInstances);
+    free(g_view.doorInstances);
+    free(g_view.mapModelNames);
     free((void*)g_view.doorErrors);
     MT5Render_Free(&g_view.render);
     free(g_view.characters);
     free(g_view.packages);
     free(g_view.items);
     free(g_view.labels);
-    free(g_view.labelPointers);
     free(g_view.failedItems);
+    free(g_view.visibleItems);
     for (uint32_t i = 0; i < g_view.scriptCount; i++)
         CHRT_Free(&g_view.scripts[i]);
     free(g_view.scripts);
@@ -852,7 +916,7 @@ bool MAPINFOView_Open(const char* filepath) {
     ResetCamera();
     FreeCamera_SetFly(&g_view.camera, g_options.fly);
     g_view.selected = -1;
-    g_view.listFocus = -1;
+    g_view.mapExpanded = true;
 
     printf("[MAPINFOView_Open]: %u chunks, %u cameras, %u lights, %u shapes, %u characters (%u shown with their model), %u map models, %u of %u doors\n",
         file.chunkCount, file.cameraCount, file.lightCount, file.shapeCount, g_view.characterCount, g_view.modelledCharacters,
@@ -865,16 +929,8 @@ bool MAPINFOView_IsOpen(void) {
     return g_view.open;
 }
 
-// A camera of the list shows the map from it; a light or a character is looked at with the free camera. A package is
-// shown or hidden, and the selection is kept
+// A camera of the tree shows the map from it; the other items are looked at with the free camera
 static void Select(int item) {
-    if (item >= 0 && g_view.items[item].kind == ITEM_PACKAGE) {
-        MapPackage* package = &g_view.packages[g_view.items[item].index];
-        package->shown = !package->shown;
-        ShowCharacters();
-        UpdateLabels();
-        return;
-    }
     SetStart();
     g_view.selected = item;
     g_view.mapCamera = false;
@@ -894,6 +950,15 @@ static void Select(int item) {
     else if (selected->kind == ITEM_DOOR) {
         const float* position = g_view.file.doors[selected->index].position;
         target = (Vector3) { position[0], position[1] + 1.0f, position[2] };
+    }
+    else if (selected->kind == ITEM_SHAPE)
+        target = ShapeCenter(&g_view.file.shapes[selected->index]);
+    else if (selected->kind == ITEM_MAP_MODEL) {
+        // The whole model
+        const MT5Mesh* mesh = &g_view.models[selected->index].mesh;
+        g_view.camera.target = mesh->center;
+        g_view.camera.distance = mesh->radius / sinf(MAPINFOVIEW_FOVY * 0.5f * DEG2RAD);
+        return;
     }
     else
         return;
@@ -926,6 +991,8 @@ void MAPINFOView_Toolbar(void) {
         g_view.mapCamera = mode == 1;
     }
     GuiEnable();
+    Toolbar_Separator();
+    Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the IDs of the characters and of the cameras", KEY_L, &g_options.labels);
 }
 
 static void UpdateInput(Rectangle scene) {
@@ -936,25 +1003,21 @@ static void UpdateInput(Rectangle scene) {
     g_view.time += Scene3D_FrameTime();
 }
 
-// The instances of the visible layers: the models of the map, then the doors, then the characters
+// The visible instances: the models of the map, the doors and the characters (only the visible ones have an instance)
 static void DrawModels(Camera3D camera) {
-    uint32_t doors = g_view.mapModelCount, characters = g_view.characterInstances;
-    const uint32_t starts[] = { 0, doors, characters };
-    const uint32_t ends[] = { doors, characters, g_view.instanceCount };
-    const Layer layers[] = { LAYER_MAP, LAYER_DOORS, LAYER_CHARACTERS };
-    for (int i = 0; i < 3; i++) {
-        if (g_options.layers[layers[i]] && starts[i] < ends[i])
-            MT5Render_DrawInstances(&g_view.render, g_view.instances + starts[i], ends[i] - starts[i], camera);
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < g_view.mapModelCount && g_options.layers[LAYER_MAP]; i++) {
+        if (IsItemVisible(ITEM_MAP_MODEL, i))
+            g_view.visibleInstances[count++] = g_view.instances[i];
     }
-}
-
-// Height of the point of a shape: the height of HGHT, the height of each corner of UNDU, 0 for the rest
-static float ShapeHeight(const MAPINFO_Shape* shape, uint32_t point) {
-    if (shape->group == MAPINFO_GROUP_HGHT)
-        return shape->height;
-    if (shape->group == MAPINFO_GROUP_UNDU)
-        return shape->heights[point < 4 ? point : 0];
-    return 0.0f;
+    for (uint32_t i = 0; i < g_view.file.doorCount && g_options.layers[LAYER_DOORS]; i++) {
+        if (g_view.doorInstances[i] >= 0 && IsItemVisible(ITEM_DOOR, i))
+            g_view.visibleInstances[count++] = g_view.instances[g_view.doorInstances[i]];
+    }
+    for (uint32_t i = g_view.characterInstances; i < g_view.instanceCount && g_options.layers[LAYER_CHARACTERS]; i++)
+        g_view.visibleInstances[count++] = g_view.instances[i];
+    if (count > 0)
+        MT5Render_DrawInstances(&g_view.render, g_view.visibleInstances, count, camera);
 }
 
 static void DrawShape(const MAPINFO_Shape* shape, Color color) {
@@ -1015,14 +1078,18 @@ static void DrawOverlays(void) {
     const MAPINFO_File* file = &g_view.file;
     rlDrawRenderBatchActive();
     rlDisableDepthTest();
+    // The selected one too, over the others
     for (uint32_t i = 0; i < file->shapeCount; i++) {
         const MAPINFO_Shape* shape = &file->shapes[i];
-        if (g_options.layers[LAYER_GROUPS + shape->group])
+        if (g_options.layers[LAYER_SHAPES] && g_options.layers[LAYER_GROUPS + shape->group] && IsItemVisible(ITEM_SHAPE, i) &&
+            !IsSelected(ITEM_SHAPE, i))
             DrawShape(shape, g_groupColors[shape->group]);
     }
-    // Not seen from the camera of the map: they would cover the view
+    if (g_view.selected >= 0 && g_view.items[g_view.selected].kind == ITEM_SHAPE)
+        DrawShape(&file->shapes[g_view.items[g_view.selected].index], g_selectedColor);
+    // Not seen from the camera of the map: they would cover the view. The selected one is drawn even if it is hidden
     const MAPINFO_Camera* selectedCamera = SelectedCamera();
-    if (!g_view.mapCamera && (g_options.layers[LAYER_CAMERAS] || selectedCamera != NULL)) {
+    if (!g_view.mapCamera) {
         for (uint32_t i = 0; i < file->cameraCount; i++) {
             const MAPINFO_Camera* camera = &file->cameras[i];
             if (camera == selectedCamera) {
@@ -1030,35 +1097,34 @@ static void DrawOverlays(void) {
                 DrawCameraGizmo(view, g_selectedColor);
                 DrawLine3D(view.position, view.target, Fade(g_selectedColor, 0.5f));
             }
-            else if (g_options.layers[LAYER_CAMERAS])
+            else if (g_options.layers[LAYER_CAMERAS] && IsItemVisible(ITEM_CAMERA, i))
                 DrawCameraGizmo(MapCamera(camera), Fade(g_cameraColor, 0.6f));
         }
     }
-    if (g_options.layers[LAYER_LIGHTS]) {
-        for (uint32_t i = 0; i < file->lightCount; i++) {
+    for (uint32_t i = 0; i < file->lightCount; i++) {
+        bool selected = IsSelected(ITEM_LIGHT, i);
+        if (selected || (g_options.layers[LAYER_LIGHTS] && IsItemVisible(ITEM_LIGHT, i))) {
             const MAPINFO_Light* light = &file->lights[i];
             Vector3 position = LightPosition(light);
             Color color = ColorFromNormalized((Vector4) { light->color[0], light->color[1], light->color[2], 1.0f });
-            bool selected = g_view.selected >= 0 && g_view.items[g_view.selected].kind == ITEM_LIGHT && g_view.items[g_view.selected].index == i;
             DrawSphere(position, selected ? 0.15f : 0.08f, color);
             Vector3 direction = { light->direction[0], light->direction[1], light->direction[2] };
             DrawLine3D(position, Vector3Add(position, Vector3Scale(direction, 0.5f)), selected ? g_selectedColor : color);
         }
     }
     // The shown characters without their model are drawn as cylinders, and the selected one too
-    if (g_options.layers[LAYER_CHARACTERS]) {
-        for (uint32_t i = 0; i < g_view.characterCount; i++) {
-            const CHRT_Character* character = &g_view.characters[i].info;
-            bool selected = g_view.selected >= 0 && g_view.items[g_view.selected].kind == ITEM_CHARACTER && g_view.items[g_view.selected].index == i;
-            if (!character->positioned || (!selected && (!g_view.characters[i].shown || g_view.characters[i].model >= 0)))
-                continue;
-            Color color = selected ? g_selectedColor : character->sleep ? GRAY : g_characterColor;
-            DrawCylinderWires(CharacterPosition(character), MAPINFOVIEW_RADIUS, MAPINFOVIEW_RADIUS, MAPINFOVIEW_HEIGHT, 8, color);
-            // Direction it faces: angle 0 faces -Z, as the bodies of the models
-            float yaw = character->angle[1] * DEG2RAD;
-            Vector3 eyes = Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT * 0.9f, 0.0f });
-            DrawLine3D(eyes, Vector3Add(eyes, (Vector3) { -sinf(yaw) * 0.5f, 0.0f, -cosf(yaw) * 0.5f }), color);
-        }
+    for (uint32_t i = 0; i < g_view.characterCount; i++) {
+        const CHRT_Character* character = &g_view.characters[i].info;
+        bool selected = IsSelected(ITEM_CHARACTER, i);
+        bool visible = g_options.layers[LAYER_CHARACTERS] && g_view.characters[i].shown && IsItemVisible(ITEM_CHARACTER, i);
+        if (!character->positioned || (!selected && (!visible || g_view.characters[i].model >= 0)))
+            continue;
+        Color color = selected ? g_selectedColor : character->sleep ? GRAY : g_characterColor;
+        DrawCylinderWires(CharacterPosition(character), MAPINFOVIEW_RADIUS, MAPINFOVIEW_RADIUS, MAPINFOVIEW_HEIGHT, 8, color);
+        // Direction it faces: angle 0 faces -Z, as the bodies of the models
+        float yaw = character->angle[1] * DEG2RAD;
+        Vector3 eyes = Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT * 0.9f, 0.0f });
+        DrawLine3D(eyes, Vector3Add(eyes, (Vector3) { -sinf(yaw) * 0.5f, 0.0f, -cosf(yaw) * 0.5f }), color);
     }
     rlDrawRenderBatchActive();
     rlEnableDepthTest();
@@ -1070,20 +1136,22 @@ static void DrawLabel(Camera3D camera, Rectangle area, Font font, float fontSize
         Scene3D_DrawLabel(point, text, font, fontSize, color);
 }
 
+// IDs of the visible characters and cameras, and of the selected ones
 static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSize) {
     const MAPINFO_File* file = &g_view.file;
-    if (g_options.layers[LAYER_CHARACTERS]) {
-        for (uint32_t i = 0; i < g_view.characterCount; i++) {
-            const CHRT_Character* character = &g_view.characters[i].info;
-            if (character->positioned && g_view.characters[i].shown)
-                DrawLabel(camera, area, font, fontSize, Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT + 0.1f, 0.0f }),
-                    character->id, character->sleep ? GRAY : g_characterColor);
-        }
+    for (uint32_t i = 0; i < g_view.characterCount; i++) {
+        const CHRT_Character* character = &g_view.characters[i].info;
+        bool selected = IsSelected(ITEM_CHARACTER, i);
+        bool visible = g_options.layers[LAYER_CHARACTERS] && g_view.characters[i].shown && IsItemVisible(ITEM_CHARACTER, i);
+        if (character->positioned && (visible || selected))
+            DrawLabel(camera, area, font, fontSize, Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT + 0.1f, 0.0f }),
+                character->id, selected ? g_selectedColor : character->sleep ? GRAY : g_characterColor);
     }
-    if (g_options.layers[LAYER_CAMERAS] && !g_view.mapCamera) {
-        for (uint32_t i = 0; i < file->cameraCount; i++)
+    for (uint32_t i = 0; i < file->cameraCount && !g_view.mapCamera; i++) {
+        bool selected = &file->cameras[i] == SelectedCamera();
+        if (selected || (g_options.layers[LAYER_CAMERAS] && IsItemVisible(ITEM_CAMERA, i)))
             DrawLabel(camera, area, font, fontSize, MapCamera(&file->cameras[i]).position, file->cameras[i].id,
-                &file->cameras[i] == SelectedCamera() ? g_selectedColor : g_cameraColor);
+                selected ? g_selectedColor : g_cameraColor);
     }
 }
 
@@ -1103,19 +1171,75 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     DrawModels(camera);
     DrawOverlays();
     FreeCamera_End3D();
-    if (g_options.layers[LAYER_LABELS])
+    if (g_options.labels)
         DrawLabels(camera, view, font, fontSize);
     DrawRectangleLinesEx(view, 1.0f, (Color) { 112, 112, 112, 255 });
 }
 
-// Toggles of the layers. The style of the application draws the pressed controls like the normal ones: highlight them
-static void DrawLayerToggles(Rectangle area) {
-    int pressedColor = GuiGetStyle(TOGGLE, BASE_COLOR_PRESSED);
-    GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, 0x2F5F8FFF);
-    float width = fminf(100.0f, (area.width - (LAYER_COUNT - 1) * 4.0f) / LAYER_COUNT);
-    for (int i = 0; i < LAYER_COUNT; i++)
-        GuiToggle((Rectangle) { area.x + i * (width + 4.0f), area.y, width, area.height }, g_layerNames[i], &g_options.layers[i]);
-    GuiSetStyle(TOGGLE, BASE_COLOR_PRESSED, pressedColor);
+// An item of the tree, with its eye or not. A click sets *clicked. Returns true when its eye is clicked
+static bool TreeItem(uint32_t item, bool eye, bool dimmed, int* clicked) {
+    bool* visible = eye ? &g_view.visibleItems[item] : NULL;
+    bool previous = visible != NULL && *visible;
+    int flags = ((int)item == g_view.selected ? TREE_SELECTED : 0) | (g_view.failedItems[item] ? TREE_FAILED : 0) | (dimmed ? TREE_DIMMED : 0);
+    if (Tree_Item(&g_view.tree, g_view.labels[item], flags, visible))
+        *clicked = (int)item;
+    return visible != NULL && *visible != previous;
+}
+
+// The items of a kind in a group, whose eye is the layer if they have one
+static void TreeLayer(Layer layer, ItemKind kind, uint32_t count, bool eyes, int* clicked) {
+    Tree_BeginGroup(&g_view.tree, g_layerNames[layer], &g_options.expanded[layer], eyes ? &g_options.layers[layer] : NULL);
+    for (uint32_t i = 0; i < count; i++)
+        TreeItem(g_view.firstItems[kind] + i, eyes, false, clicked);
+    Tree_EndGroup(&g_view.tree);
+}
+
+// A group per kind of item. The shapes are in a subgroup per COLS group, and the characters in a subgroup per package,
+// whose eye shows or hides the package. A click on an item selects it, or unselects it if it is selected
+static void DrawTree(Rectangle bounds) {
+    const MAPINFO_File* file = &g_view.file;
+    Tree* tree = &g_view.tree;
+    int clicked = -1;
+    Tree_Begin(tree, bounds);
+    TreeLayer(LAYER_INFO, ITEM_INFO, g_view.firstItems[ITEM_MAP_MODEL] - g_view.firstItems[ITEM_INFO], false, &clicked);
+    TreeLayer(LAYER_MAP, ITEM_MAP_MODEL, g_view.mapModelCount, true, &clicked);
+    TreeLayer(LAYER_DOORS, ITEM_DOOR, file->doorCount, true, &clicked);
+    TreeLayer(LAYER_CAMERAS, ITEM_CAMERA, file->cameraCount, true, &clicked);
+    TreeLayer(LAYER_LIGHTS, ITEM_LIGHT, file->lightCount, true, &clicked);
+
+    Tree_BeginGroup(tree, g_layerNames[LAYER_SHAPES], &g_options.expanded[LAYER_SHAPES], &g_options.layers[LAYER_SHAPES]);
+    for (int g = 0; g < MAPINFO_GROUP_COUNT; g++) {
+        Tree_BeginGroup(tree, g_layerNames[LAYER_GROUPS + g], &g_options.expanded[LAYER_GROUPS + g], &g_options.layers[LAYER_GROUPS + g]);
+        for (uint32_t i = 0; i < file->shapeCount; i++) {
+            if ((int)file->shapes[i].group == g)
+                TreeItem(g_view.firstItems[ITEM_SHAPE] + i, true, false, &clicked);
+        }
+        Tree_EndGroup(tree);
+    }
+    Tree_EndGroup(tree);
+
+    // The characters hidden by a character with their ID in a previous package are dimmed
+    bool changed = false;
+    Tree_BeginGroup(tree, g_layerNames[LAYER_CHARACTERS], &g_options.expanded[LAYER_CHARACTERS], &g_options.layers[LAYER_CHARACTERS]);
+    for (int p = -1; p < (int)g_view.packageCount; p++) {
+        MapPackage* package = p >= 0 ? &g_view.packages[p] : NULL;
+        if (package == NULL && (g_view.characterCount == 0 || g_view.characters[0].package >= 0))
+            continue;
+        Tree_BeginGroup(tree, package != NULL ? PackageText(package) : "CHRD chunk", package != NULL ? &package->expanded : &g_view.mapExpanded,
+            package != NULL ? &package->shown : NULL);
+        for (uint32_t i = 0; i < g_view.characterCount; i++) {
+            if (g_view.characters[i].package == p)
+                changed |= TreeItem(g_view.firstItems[ITEM_CHARACTER] + i, true, !g_view.characters[i].shown, &clicked);
+        }
+        changed |= Tree_EndGroup(tree);
+    }
+    Tree_EndGroup(tree);
+    Tree_End(tree);
+
+    if (changed)
+        ShowCharacters();
+    if (clicked >= 0)
+        Select(clicked == g_view.selected ? -1 : clicked);
 }
 
 void MAPINFOView_Draw(Rectangle area) {
@@ -1125,28 +1249,16 @@ void MAPINFOView_Draw(Rectangle area) {
     Font font = GuiGetFont();
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
     float margin = 10.0f;
-    float controlsHeight = 30.0f;
     float top = area.y + margin;
-    Rectangle list = { area.x + margin, top, MAPINFOVIEW_LIST_WIDTH, area.height - margin * 2.0f };
-    float panelX = list.x + list.width + margin;
-    float panelWidth = area.width - list.width - margin * 3.0f;
-    Rectangle controls = { panelX, area.y + area.height - margin - controlsHeight, panelWidth, controlsHeight };
-    Rectangle scene = { panelX, top, panelWidth, controls.y - margin - top };
-    if (list.height <= 0.0f || panelWidth <= 0.0f || scene.height <= 0.0f)
+    Rectangle tree = { area.x + margin, top, MAPINFOVIEW_LIST_WIDTH, area.height - margin * 2.0f };
+    Rectangle scene = { tree.x + tree.width + margin, top, area.width - tree.width - margin * 3.0f, tree.height };
+    if (tree.height <= 0.0f || scene.width <= 0.0f)
         return;
     UpdateInput(scene);
 
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
-    int active = g_view.selected;
-    int alignment = GuiGetStyle(LISTVIEW, TEXT_ALIGNMENT);
-    GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, TEXT_ALIGN_LEFT);
-    List_Draw(list, g_view.labelPointers, g_view.failedItems, (int)g_view.itemCount, &g_view.listScroll, &active, &g_view.listFocus);
-    GuiSetStyle(LISTVIEW, TEXT_ALIGNMENT, alignment);
-    if (active != g_view.selected)
-        Select(active);
-
+    DrawTree(tree);
     DrawScene(scene, font, fontSize);
-    DrawLayerToggles(controls);
 }
 
 void MAPINFOView_Status(ViewStatus* status) {

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <math.h>
 #include <raylib.h>
 #include "raygui.h"
@@ -18,6 +19,28 @@ static Tooltip_State g_tooltip;
 void Tooltip_Set(Rectangle bounds, const char* text) {
     g_tooltip.bounds = bounds;
     snprintf(g_tooltip.text, sizeof(g_tooltip.text), "%s", text);
+}
+
+const char* Tooltip_Fit(Rectangle bounds, const char* text, float width, bool start) {
+    static char fitted[1024];
+    Font font = GuiGetFont();
+    float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
+    float spacing = (float)GuiGetStyle(DEFAULT, TEXT_SPACING);
+    snprintf(fitted, sizeof(fitted), "%s", text);
+    size_t length = strlen(fitted);
+    if (MeasureTextEx(font, fitted, fontSize, spacing).x <= width)
+        return fitted;
+    for (size_t cut = 1; cut <= length; cut++) {
+        if (start)
+            snprintf(fitted, sizeof(fitted), "...%s", text + cut);
+        else
+            snprintf(fitted, sizeof(fitted), "%.*s...", (int)(length - cut), text);
+        if (MeasureTextEx(font, fitted, fontSize, spacing).x <= width)
+            break;
+    }
+    if (CheckCollisionPointRec(GetMousePosition(), bounds))
+        Tooltip_Set(bounds, text);
+    return fitted;
 }
 
 void Tooltip_Draw(void) {
