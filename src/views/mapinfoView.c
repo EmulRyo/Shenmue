@@ -93,7 +93,9 @@ typedef struct {
 // A character of the CHRD chunk or of a CHRT script of a package of the map. The displayed ones (positioned in the scene,
 // not an arm of Ryo, with an image) that are in the map are drawn with their model, sleeping or not, if they are shown
 typedef struct {
-    CHRT_Character      info;           // Its image points into the buffer of its script
+    CHRT_Character      info;           // Its image points into the buffer of its script. Its position and angle can be
+                                        // edited
+    CHRT_Character      original;       // As read from the script, to restore the edits
     uint32_t            script;         // In g_view.scripts
     int                 package;        // In g_view.packages, -1 for the CHRD chunk
     int                 model;          // In g_view.models, -1 if it isn't drawn with a model
@@ -127,6 +129,8 @@ typedef struct {
     MT5Render_Instance* visibleInstances; // The instances drawn, filled before drawing them
     int32_t*            doorInstances;  // Instance of each door, -1 if its model couldn't be loaded
     const char**        doorErrors;     // Why the model of each door couldn't be loaded, NULL if it was
+    MAPINFO_Door*       originalDoors;  // The doors and the lights as read from the file, to restore the edits
+    MAPINFO_Light*      originalLights;
     uint32_t            itemCount;
     Item*               items;          // Of each kind in ItemKind order, and in the order of their arrays
     uint32_t            firstItems[ITEM_KIND_COUNT]; // First item of each kind
@@ -284,6 +288,7 @@ static void AddCharacters(uint32_t script, int package) {
         MapCharacter* character = &characters[g_view.characterCount++];
         memset(character, 0, sizeof(*character));
         CHRT_ReadCharacter(source, c, &character->info);
+        character->original = character->info;
         character->script = script;
         character->package = package;
         character->model = -1;
@@ -489,6 +494,12 @@ static void ShowCharacters(void) {
     }
 }
 
+// As the nodes of the models: scale, rotation and translation
+static Matrix DoorTransform(const MAPINFO_Door* door) {
+    Matrix transform = MatrixMultiply(MatrixScale(door->scale[0], door->scale[1], door->scale[2]), MatrixRotateY(door->angle * DEG2RAD));
+    return MatrixMultiply(transform, MatrixTranslate(door->position[0], door->position[1], door->position[2]));
+}
+
 // The instances of the models of the map, of the doors at their placements and of the shown characters in the map. The
 // characters whose model isn't in the map are drawn with the model of the folder of the scene
 static void PlaceModels(const char* folder, const MapFile* files, uint32_t count, int* fileModels, const IPAC_FileList* packed) {
@@ -514,11 +525,8 @@ static void PlaceModels(const char* folder, const MapFile* files, uint32_t count
             g_view.doorErrors[i] = "invalid model file";
             continue;
         }
-        // As the nodes of the models: scale, rotation and translation
-        Matrix transform = MatrixMultiply(MatrixScale(door->scale[0], door->scale[1], door->scale[2]), MatrixRotateY(door->angle * DEG2RAD));
-        transform = MatrixMultiply(transform, MatrixTranslate(door->position[0], door->position[1], door->position[2]));
         g_view.doorInstances[i] = (int32_t)g_view.instanceCount;
-        AddInstance((uint32_t)fileModels[f], transform);
+        AddInstance((uint32_t)fileModels[f], DoorTransform(door));
         g_view.loadedDoors++;
     }
 
@@ -859,6 +867,8 @@ void MAPINFOView_Close(void) {
     free(g_view.doorInstances);
     free(g_view.mapModelNames);
     free((void*)g_view.doorErrors);
+    free(g_view.originalDoors);
+    free(g_view.originalLights);
     MT5Render_Free(&g_view.render);
     free(g_view.characters);
     free(g_view.packages);
@@ -885,8 +895,14 @@ bool MAPINFOView_Open(const char* filepath) {
     char folder[1024];
     snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(filepath));
     LoadModels(folder);
+    g_view.originalDoors = malloc((file.doorCount + 1) * sizeof(MAPINFO_Door));
+    g_view.originalLights = malloc((file.lightCount + 1) * sizeof(MAPINFO_Light));
+    if (g_view.originalDoors != NULL && g_view.originalLights != NULL) {
+        memcpy(g_view.originalDoors, file.doors, file.doorCount * sizeof(MAPINFO_Door));
+        memcpy(g_view.originalLights, file.lights, file.lightCount * sizeof(MAPINFO_Light));
+    }
     // After the models, for the doors whose model couldn't be loaded
-    if (!CreateItems()) {
+    if (g_view.originalDoors == NULL || g_view.originalLights == NULL || !CreateItems()) {
         fputs("[MAPINFOView_Open]: Memory error\n", stderr);
         MAPINFOView_Close();
         return false;
@@ -906,6 +922,51 @@ bool MAPINFOView_Open(const char* filepath) {
 
 bool MAPINFOView_IsOpen(void) {
     return g_view.open;
+}
+
+// The edits of the properties, in memory: the doors, the lights and the characters differ from the file
+static bool IsItemEdited(const Item* item) {
+    switch (item->kind) {
+    case ITEM_DOOR:
+        return memcmp(&g_view.file.doors[item->index], &g_view.originalDoors[item->index], sizeof(MAPINFO_Door)) != 0;
+    case ITEM_LIGHT:
+        return memcmp(&g_view.file.lights[item->index], &g_view.originalLights[item->index], sizeof(MAPINFO_Light)) != 0;
+    case ITEM_CHARACTER: {
+        const MapCharacter* character = &g_view.characters[item->index];
+        return memcmp(character->info.position, character->original.position, sizeof(character->info.position)) != 0 ||
+            memcmp(character->info.angle, character->original.angle, sizeof(character->info.angle)) != 0;
+    }
+    default:
+        return false;
+    }
+}
+
+static bool IsAnyEdited(void) {
+    for (uint32_t i = 0; i < g_view.itemCount; i++) {
+        if (IsItemEdited(&g_view.items[i]))
+            return true;
+    }
+    return false;
+}
+
+// The instance of a door, after its placement is edited
+static void UpdateDoor(uint32_t door) {
+    if (g_view.doorInstances[door] < 0)
+        return;
+    MT5Render_Instance* instance = &g_view.instances[g_view.doorInstances[door]];
+    instance->transform = DoorTransform(&g_view.file.doors[door]);
+    instance->center = Vector3Transform(instance->model->mesh.center, instance->transform);
+}
+
+// The values of the file
+static void RestoreAll(void) {
+    memcpy(g_view.file.doors, g_view.originalDoors, g_view.file.doorCount * sizeof(MAPINFO_Door));
+    memcpy(g_view.file.lights, g_view.originalLights, g_view.file.lightCount * sizeof(MAPINFO_Light));
+    for (uint32_t i = 0; i < g_view.file.doorCount; i++)
+        UpdateDoor(i);
+    for (uint32_t i = 0; i < g_view.characterCount; i++)
+        g_view.characters[i].info = g_view.characters[i].original;
+    ShowCharacters();
 }
 
 // A camera of the tree shows the map from it; the other items are looked at with the free camera
@@ -972,6 +1033,12 @@ void MAPINFOView_Toolbar(void) {
     GuiEnable();
     Toolbar_Separator();
     Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the IDs of the characters and of the cameras", KEY_L, &g_options.labels);
+    Toolbar_Separator();
+    if (!IsAnyEdited())
+        GuiDisable();
+    if (Toolbar_Button(ICON_UNDO, "Restore", "Restore the values of the file of the edited items", 0))
+        RestoreAll();
+    GuiEnable();
 }
 
 static void UpdateInput(Rectangle scene) {
@@ -1159,7 +1226,8 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
 static bool TreeItem(uint32_t item, bool eye, bool dimmed, int* clicked) {
     bool* visible = eye ? &g_view.visibleItems[item] : NULL;
     bool previous = visible != NULL && *visible;
-    int flags = ((int)item == g_view.selected ? TREE_SELECTED : 0) | (g_view.failedItems[item] ? TREE_FAILED : 0) | (dimmed ? TREE_DIMMED : 0);
+    int flags = ((int)item == g_view.selected ? TREE_SELECTED : 0) | (g_view.failedItems[item] ? TREE_FAILED : 0) | (dimmed ? TREE_DIMMED : 0) |
+        (IsItemEdited(&g_view.items[item]) ? TREE_EDITED : 0);
     if (Tree_Item(&g_view.tree, g_view.labels[item], flags, visible))
         *clicked = (int)item;
     return visible != NULL && *visible != previous;
@@ -1252,17 +1320,19 @@ static void CameraProperties(Properties* properties, uint32_t index) {
         Properties_Int(properties, g_cameraCurves[c], camera->curves[c].count);
 }
 
+// Its color, intensity, position, direction and angle can be edited
 static void LightProperties(Properties* properties, uint32_t index) {
-    const MAPINFO_Light* light = &g_view.file.lights[index];
+    MAPINFO_Light* light = &g_view.file.lights[index];
+    const MAPINFO_Light* original = &g_view.originalLights[index];
     Properties_Int(properties, "Group", light->group);
     Properties_Int(properties, "ID", light->id);
     Properties_Hex(properties, "Flags", light->flags);
     Properties_Int(properties, "Unknown", light->unknown);
-    Properties_Vector(properties, "Color", light->color, 3);
-    Properties_Float(properties, "Intensity", light->intensity);
-    Properties_Vector(properties, "Position", light->position, 3);
-    Properties_Vector(properties, "Direction", light->direction, 3);
-    Properties_Float(properties, "Angle", light->angle);
+    Properties_EditVector(properties, "Color", light->color, original->color, 3, 0.005f);
+    Properties_EditFloat(properties, "Intensity", &light->intensity, &original->intensity, 0.01f);
+    Properties_EditVector(properties, "Position", light->position, original->position, 3, 0.01f);
+    Properties_EditVector(properties, "Direction", light->direction, original->direction, 3, 0.01f);
+    Properties_EditFloat(properties, "Angle", &light->angle, &original->angle, 0.5f);
 }
 
 // The fields of the prefix that the group of the shape has, then its points
@@ -1291,16 +1361,20 @@ static void ShapeProperties(Properties* properties, uint32_t index) {
         Properties_Float(properties, TextFormat("%u", v), shape->values[v]);
 }
 
+// Its placement can be edited
 static void DoorProperties(Properties* properties, uint32_t index) {
-    const MAPINFO_Door* door = &g_view.file.doors[index];
+    MAPINFO_Door* door = &g_view.file.doors[index];
+    const MAPINFO_Door* original = &g_view.originalDoors[index];
     const char* error = g_view.doorErrors != NULL ? g_view.doorErrors[index] : NULL;
     Properties_Text(properties, "Model", door->model);
     Properties_Text(properties, "Type", door->type == MAPINFO_DOOR_DOOR ? "door" : door->type == MAPINFO_DOOR_MODEL ? "model" :
         TextFormat("%u", door->type));
-    Properties_Vector(properties, "Position", door->position, 3);
-    Properties_Float(properties, "Angle", door->angle);
-    Properties_Vector(properties, "Scale", door->scale, 3);
+    bool changed = Properties_EditVector(properties, "Position", door->position, original->position, 3, 0.01f);
+    changed |= Properties_EditFloat(properties, "Angle", &door->angle, &original->angle, 0.5f);
+    changed |= Properties_EditVector(properties, "Scale", door->scale, original->scale, 3, 0.01f);
     Properties_Text(properties, "Model file", error != NULL ? error : "loaded");
+    if (changed)
+        UpdateDoor(index);
 }
 
 static void ModelProperties(Properties* properties, const MT5Render_Model* model) {
@@ -1314,16 +1388,22 @@ static void ModelProperties(Properties* properties, const MT5Render_Model* model
     Properties_Float(properties, "Radius", model->mesh.radius);
 }
 
+// Its position, if it is in the scene, and its angle can be edited
 static void CharacterProperties(Properties* properties, uint32_t index) {
-    const MapCharacter* character = &g_view.characters[index];
-    const CHRT_Character* info = &character->info;
+    MapCharacter* character = &g_view.characters[index];
+    CHRT_Character* info = &character->info;
     const char* package = PackageName(character->package);
     Properties_Text(properties, "ID", info->id);
     Properties_Text(properties, "Package", package != NULL ? package : "CHRD chunk");
     Properties_Text(properties, "Image", info->image != NULL ? info->image : "none");
-    Properties_Text(properties, "Position", info->positioned ? TextFormat("(%.3f, %.3f, %.3f)", info->position[0], info->position[1],
-        info->position[2]) : info->hasPosition ? "off the scene" : "none");
-    Properties_Vector(properties, "Angle", info->angle, 3);
+    bool changed = false;
+    if (info->positioned)
+        changed = Properties_EditVector(properties, "Position", info->position, character->original.position, 3, 0.01f);
+    else
+        Properties_Text(properties, "Position", info->hasPosition ? "off the scene" : "none");
+    changed |= Properties_EditVector(properties, "Angle", info->angle, character->original.angle, 3, 0.5f);
+    if (changed)
+        ShowCharacters();
     Properties_Bool(properties, "Sleep", info->sleep);
     Properties_Bool(properties, "Human", info->human);
     Properties_Bool(properties, "Arm of Ryo", info->arm);

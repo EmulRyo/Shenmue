@@ -30,9 +30,12 @@ typedef struct {
 } CHRTView_Model;
 
 typedef struct {
-    CHRT_Character  info;   // The characters not positioned in the scene are arranged in rows (see ArrangeUnpositioned)
+    CHRT_Character  info;   // The characters not positioned in the scene are arranged in rows (see ArrangeUnpositioned).
+                            // Its position, if it is positioned, and its angle can be edited
+    CHRT_Character  original; // As read from the script, to restore the edits
     int32_t         model;  // Index in the model list, -1 if the model can't be loaded
     const char*     error;  // Why the model can't be loaded, NULL if it is
+    Vector3         arranged; // Offset of the characters not positioned, to their place in the rows
     Matrix          transform;
     Vector3         center; // Bounding sphere of the model in the scene
     float           radius;
@@ -144,6 +147,7 @@ static Matrix CharacterTransform(const CHRT_Character* character, const MT5Rende
 static void LoadCharacter(uint32_t index, const char* folder) {
     CHRTView_Character* character = &g_view.characters[g_view.characterCount++];
     CHRT_ReadCharacter(&g_view.script, index, &character->info);
+    character->original = character->info;
     character->model = -1;
 
     char path[CHRTVIEW_PATH_SIZE];
@@ -202,6 +206,7 @@ static void ArrangeUnpositioned(void) {
             rowDepth = 0.0f;
         }
         Vector3 offset = { startX + x + character->radius - character->center.x, 0.0f, startZ + z + character->radius - character->center.z };
+        character->arranged = offset;
         character->transform = MatrixMultiply(character->transform, MatrixTranslate(offset.x, offset.y, offset.z));
         character->center = Vector3Add(character->center, offset);
         x += size + gap;
@@ -373,6 +378,41 @@ static void FitCamera(Rectangle area) {
     free(points);
 }
 
+// The edits of the properties, in memory: the position and the angle differ from the file
+static bool IsEdited(const CHRTView_Character* character) {
+    return memcmp(character->info.position, character->original.position, sizeof(character->info.position)) != 0 ||
+        memcmp(character->info.angle, character->original.angle, sizeof(character->info.angle)) != 0;
+}
+
+static bool IsAnyEdited(void) {
+    for (uint32_t i = 0; i < g_view.characterCount; i++) {
+        if (IsEdited(&g_view.characters[i]))
+            return true;
+    }
+    return false;
+}
+
+// The placement of the model, after the position or the angle is edited
+static void UpdateCharacter(CHRTView_Character* character) {
+    if (character->model < 0)
+        return;
+    const MT5Render_Model* model = &g_view.models[character->model].model;
+    character->transform = MatrixMultiply(CharacterTransform(&character->info, model),
+        MatrixTranslate(character->arranged.x, character->arranged.y, character->arranged.z));
+    character->center = Vector3Transform(model->mesh.center, character->transform);
+}
+
+// The values of the file
+static void RestoreAll(void) {
+    for (uint32_t i = 0; i < g_view.characterCount; i++) {
+        CHRTView_Character* character = &g_view.characters[i];
+        if (IsEdited(character)) {
+            character->info = character->original;
+            UpdateCharacter(character);
+        }
+    }
+}
+
 void CHRTView_Toolbar(void) {
     if (Toolbar_Button(ICON_RESTART, "Reset", "Reset the camera", KEY_R))
         ResetCamera();
@@ -391,6 +431,12 @@ void CHRTView_Toolbar(void) {
         g_options.hideSleeping = !sleeping;
     Toolbar_Toggle(ICON_GRID, "Wireframe", "Draw the edges of the triangles", KEY_Z, &g_options.wireframe);
     Toolbar_Toggle(ICON_CUBE_FACE_BACK, "Back faces", "Draw the back faces", KEY_B, &g_options.noCulling);
+    Toolbar_Separator();
+    if (!IsAnyEdited())
+        GuiDisable();
+    if (Toolbar_Button(ICON_UNDO, "Restore", "Restore the values of the file of the edited characters", 0))
+        RestoreAll();
+    GuiEnable();
 }
 
 static void UpdateInput(Rectangle area) {
@@ -431,15 +477,21 @@ static void DrawProperties(Rectangle bounds) {
         Properties_End(properties);
         return;
     }
-    const CHRTView_Character* character = &g_view.characters[g_view.selected];
-    const CHRT_Character* info = &character->info;
+    CHRTView_Character* character = &g_view.characters[g_view.selected];
+    CHRT_Character* info = &character->info;
     const float* p = info->position;
     Properties_Begin(properties, bounds, TextFormat("Character %s", info->id));
     Properties_Text(properties, "ID", info->id);
     Properties_Text(properties, "Image", info->image != NULL ? info->image : "none");
-    Properties_Text(properties, "Position", info->positioned ? TextFormat("(%.3f, %.3f, %.3f)", p[0], p[1], p[2]) :
-        !info->hasPosition ? "none" : TextFormat("off the scene (%.3f, %.3f, %.3f)", p[0], p[1], p[2]));
-    Properties_Vector(properties, "Angle", info->angle, 3);
+    // The characters not positioned stay in their row
+    bool changed = false;
+    if (info->positioned)
+        changed = Properties_EditVector(properties, "Position", info->position, character->original.position, 3, 0.01f);
+    else
+        Properties_Text(properties, "Position", !info->hasPosition ? "none" : TextFormat("off the scene (%.3f, %.3f, %.3f)", p[0], p[1], p[2]));
+    changed |= Properties_EditVector(properties, "Angle", info->angle, character->original.angle, 3, 0.5f);
+    if (changed)
+        UpdateCharacter(character);
     Properties_Bool(properties, "Sleep", info->sleep);
     Properties_Bool(properties, "Human", info->human);
     Properties_Bool(properties, "Arm of Ryo", info->arm);
@@ -472,7 +524,7 @@ static void DrawTree(Rectangle bounds) {
             if ((int)CharacterGroup(character) != g)
                 continue;
             int flags = ((int32_t)i == g_view.selected ? TREE_SELECTED : 0) | (character->model < 0 ? TREE_FAILED : 0) |
-                (g_options.hideSleeping && character->info.sleep ? TREE_DIMMED : 0);
+                (g_options.hideSleeping && character->info.sleep ? TREE_DIMMED : 0) | (IsEdited(character) ? TREE_EDITED : 0);
             if (Tree_Item(&g_view.tree, g_view.labels[i], flags, drawn ? &g_view.shown[i] : NULL))
                 clicked = (int32_t)i;
         }

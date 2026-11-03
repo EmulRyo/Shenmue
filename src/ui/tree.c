@@ -19,6 +19,7 @@ static const Color g_groupColor = { 52, 52, 56, 255 };
 static const Color g_hoverColor = { 62, 62, 68, 255 };
 static const Color g_selectedColor = { 47, 95, 143, 255 };
 static const Color g_failedColor = { 230, 70, 60, 255 };
+static const Color g_editedColor = { 235, 170, 80, 255 };
 
 // Case-insensitive. An empty filter is in every text
 static bool Contains(const char* text, const char* filter) {
@@ -233,6 +234,8 @@ bool Tree_Item(Tree* tree, const char* text, int flags, bool* visible) {
 
     float x = row.x + 8.0f + tree->depth * TREE_INDENT;
     Color color = hidden || (visible != NULL && !*visible) || (flags & TREE_DIMMED) ? g_dimmedColor : g_textColor;
+    if (flags & TREE_EDITED)
+        color = hidden || (visible != NULL && !*visible) || (flags & TREE_DIMMED) ? Fade(g_editedColor, 0.6f) : g_editedColor;
     if (flags & TREE_FAILED) {
         DrawIcon(ICON_WARNING, x, row, g_failedColor);
         x += TREE_ICON + 4.0f;

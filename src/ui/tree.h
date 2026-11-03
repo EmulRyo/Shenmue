@@ -18,6 +18,7 @@
 #define TREE_SELECTED   1
 #define TREE_FAILED     2   // Couldn't be loaded: marked in red, with a warning icon
 #define TREE_DIMMED     4   // Drawn in gray: not visible for another reason than its toggle
+#define TREE_EDITED     8   // Its properties were edited: drawn in orange
 
 typedef struct {
     float       y;          // Of its row, in the content
