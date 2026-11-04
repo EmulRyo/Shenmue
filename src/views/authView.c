@@ -9,21 +9,45 @@
 #include "raygui.h"
 #include "formats/animation/auth.h"
 #include "formats/animation/motn.h"
+#include "formats/map/mapinfo.h"
+#include "formats/script/chrt.h"
 #include "render/freeCamera.h"
+#include "render/mt5Render.h"
 #include "render/scene3D.h"
 #include "ui/properties.h"
 #include "ui/toolbar.h"
 #include "ui/tree.h"
+#include "views/authSounds.h"
 #include "views/authView.h"
 
 #define AUTHVIEW_LABEL_SIZE     128
+#define AUTHVIEW_PATH_SIZE      1024
 #define AUTHVIEW_LIST_WIDTH     460.0f
 #define AUTHVIEW_TIMELINE_HEIGHT 64.0f
 #define AUTHVIEW_FOVY           45.0f
 #define AUTHVIEW_ASPECT         (4.0f / 3.0f) // Of the screen of the game, for the camera of the cutscene
-#define AUTHVIEW_HEIGHT         1.7f    // Of the characters, drawn as cylinders
+#define AUTHVIEW_HEIGHT         1.7f    // Of the characters, drawn as cylinders when their model isn't found
 #define AUTHVIEW_RADIUS         0.25f
 #define AUTHVIEW_SOUND_TIME     0.5f    // Seconds a sound with no length is shown
+#define AUTHVIEW_SCENE_MODELS   "model/chara" // Models of the characters in the folder of the scene
+#define AUTHVIEW_HUMANS         "stream/humans" // Folder of each character of the scene, with its script and models
+
+// A model file, loaded once for the characters that use it
+typedef struct {
+    char            path[AUTHVIEW_PATH_SIZE];
+    bool            loaded;
+    float           lift;       // Height to raise the model of a person, whose origin is at the hips
+    float           top;        // Highest height of the model, for the labels
+    MT5Render_Model model;
+} AUTHView_Model;
+
+// The model of a character: the file of the Image of the character with its ID in the CHRT scripts of the folder of the
+// cutscene, in its folder of the scene or in the characters of the map
+typedef struct {
+    int             model;      // Index in the models, -1 if none
+    bool            human;      // Person, whose model is raised to stand at its position
+    const char*     source;     // Script where the character was found, NULL if none
+} AUTHView_CharacterModel;
 
 // Groups of the tree: the characters, then the commands in the lanes of the timeline
 typedef enum {
@@ -53,9 +77,16 @@ typedef struct {
     float           time;       // Seconds
     bool            playing;
     bool            seeking;    // Dragging on the timeline
+    bool            jumped;     // The time was changed by a seek, not by playing
     Vector3         center;     // Of the scene
     float           radius;
     FreeCamera     camera;     // Free camera
+    char            sceneFolder[AUTHVIEW_PATH_SIZE]; // Folder of the scene of the file (e.g. .../scene/01), empty if none
+    MT5Render       render;
+    uint32_t        modelCount;
+    AUTHView_Model* models;
+    AUTHView_CharacterModel* characterModels;
+    MT5Render_Instance* instances; // Of the characters drawn with their model, filled before drawing them
 } AUTHView_State;
 
 // Kept when another cutscene is opened
@@ -85,6 +116,8 @@ static const Color g_soundColor = { 110, 200, 110, 255 };
 static const Color g_otherColor = { 170, 120, 220, 255 };
 
 #define COLOR_COUNT (sizeof(g_characterColors) / sizeof(g_characterColors[0]))
+
+static bool HasMovement(const AUTH_Character* character);
 
 static float Duration(void) {
     return g_view.sequence.duration / AUTH_FRAME_RATE;
@@ -252,6 +285,181 @@ static void ComputeBounds(void) {
     g_view.radius = fmaxf(Vector3Distance(min, max) * 0.5f, 2.0f);
 }
 
+static bool EqualsIgnoreCase(const char* a, const char* b) {
+    return CHRT_EqualsIgnoreCase(a, b);
+}
+
+// Removes the last component of a path with / separators. Returns false if there is none
+static bool ToParent(char* path) {
+    char* slash = strrchr(path, '/');
+    if (slash == NULL || slash == path)
+        return false;
+    *slash = '\0';
+    return true;
+}
+
+// Folder of the scene that contains the file (e.g. .../scene/01 for .../scene/01/d000/auth/SEQDATA0.auth): the folder
+// whose parent is named "scene". Empty if the file isn't in a scene folder
+static void FindSceneFolder(const char* filepath, char* folder, size_t size) {
+    snprintf(folder, size, "%s", filepath);
+    for (char* c = folder; *c != '\0'; c++) {
+        if (*c == '\\')
+            *c = '/';
+    }
+    while (ToParent(folder)) {
+        char parent[AUTHVIEW_PATH_SIZE];
+        snprintf(parent, sizeof(parent), "%s", folder);
+        const char* name = ToParent(parent) ? strrchr(parent, '/') : NULL;
+        if (name != NULL && EqualsIgnoreCase(name + 1, "scene"))
+            return;
+    }
+    folder[0] = '\0';
+}
+
+// Path of a model file of the CHRT scripts in a folder: <name>.chrm or <name>.mt5, without the extension of the script
+// (always .MT5) and the $ and @ prefixes of some names. Returns false if there is none
+static bool ModelPath(const char* folder, const char* file, char* path, size_t size) {
+    while (*file == '$' || *file == '@')
+        file++;
+    const char* dot = strrchr(file, '.');
+    int length = (int)(dot != NULL ? dot - file : strlen(file));
+    const char* extensions[2] = { "chrm", "mt5" };
+    for (int i = 0; i < 2; i++) {
+        snprintf(path, size, "%s/%.*s.%s", folder, length, file, extensions[i]);
+        if (FileExists(path))
+            return true;
+    }
+    return false;
+}
+
+// Model of a character of a CHRT script: the file of its first Image (of the DefImage with that name, or the name itself),
+// in the folder of the script or in the folder of the models of the scene (e.g. scene/01/model/chara/ykb_m.mt5, Ryo).
+// Returns false if the script has no such character with a model file
+static bool ScriptModel(const CHRT_Script* script, const char* id, const char* folder, char* path, size_t size, bool* human) {
+    for (uint32_t i = 0; i < script->commandCount; i++) {
+        const CHRT_Command* command = &script->commands[i];
+        if (!CHRT_IsCommand(command, "Character") || command->argCount == 0 || command->args[0].type != CHRT_ARG_LITERAL ||
+            strcmp(command->args[0].literal, id) != 0)
+            continue;
+        CHRT_Character character;
+        CHRT_ReadCharacter(script, i, &character);
+        if (character.image == NULL || character.arm)
+            continue;
+        const char* file = CHRT_ImageFile(script, character.image);
+        if (file == NULL)
+            file = character.image;
+        char models[AUTHVIEW_PATH_SIZE];
+        snprintf(models, sizeof(models), "%s/%s", g_view.sceneFolder, AUTHVIEW_SCENE_MODELS);
+        if (ModelPath(folder, file, path, size) || (g_view.sceneFolder[0] != '\0' && ModelPath(models, TextToLower(file), path, size))) {
+            *human = character.human;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Model of a character in a CHRT file
+static bool ScriptFileModel(const char* scriptPath, const char* id, char* path, size_t size, bool* human) {
+    CHRT_Script script;
+    if (!FileExists(scriptPath) || !CHRT_Load(scriptPath, &script))
+        return false;
+    char folder[AUTHVIEW_PATH_SIZE];
+    snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(scriptPath));
+    bool found = ScriptModel(&script, id, folder, path, size, human);
+    CHRT_Free(&script);
+    return found;
+}
+
+// Model file of a character: in the CHRT scripts of the folder of the cutscene (e.g. the bus driver BUSS of
+// scene/01/d000/buss), in the folder of the character in the scene (scene/01/stream/humans/YAMA), or in the characters of
+// the mapinfo.bin of the map, the parent folder (Ryo, AKIR, in scene/01/d000). Returns the script where it was found, NULL
+// if none
+static const char* FindCharacterModel(const char* id, const CHRT_Script* mapScript, const char* mapFolder, char* path, size_t size,
+    bool* human) {
+    char folder[AUTHVIEW_PATH_SIZE];
+    snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(g_view.path));
+    FilePathList scripts = LoadDirectoryFilesEx(folder, ".chrt", false);
+    const char* source = NULL;
+    for (unsigned int i = 0; i < scripts.count && source == NULL; i++) {
+        if (ScriptFileModel(scripts.paths[i], id, path, size, human))
+            source = TextFormat("%s", GetFileName(scripts.paths[i]));
+    }
+    UnloadDirectoryFiles(scripts);
+    if (source != NULL)
+        return source;
+    char humans[AUTHVIEW_PATH_SIZE];
+    snprintf(humans, sizeof(humans), "%s/%s/%s/CHARA.chrt", g_view.sceneFolder, AUTHVIEW_HUMANS, id);
+    if (g_view.sceneFolder[0] != '\0' && ScriptFileModel(humans, id, path, size, human))
+        return TextFormat("%s/%s/CHARA.chrt", AUTHVIEW_HUMANS, id);
+    if (mapScript != NULL && ScriptModel(mapScript, id, mapFolder, path, size, human))
+        return "mapinfo.bin of the map";
+    return NULL;
+}
+
+// Index of the model of a file, loaded the first time. Returns -1 if it can't be loaded
+static int LoadModelFile(const char* path) {
+    for (uint32_t i = 0; i < g_view.modelCount; i++) {
+        if (EqualsIgnoreCase(g_view.models[i].path, path))
+            return g_view.models[i].loaded ? (int)i : -1;
+    }
+    AUTHView_Model* model = &g_view.models[g_view.modelCount++];
+    snprintf(model->path, sizeof(model->path), "%s", path);
+    model->loaded = MT5Render_LoadModel(path, &model->model);
+    if (model->loaded) {
+        model->lift = -MT5Render_Bottom(&model->model);
+        model->top = MT5Render_Top(&model->model);
+    }
+    return model->loaded ? (int)(model - g_view.models) : -1;
+}
+
+static bool LoadCharacterModels(void) {
+    const AUTH_Sequence* sequence = &g_view.sequence;
+    g_view.models = calloc(sequence->characterCount + 1, sizeof(AUTHView_Model));
+    g_view.characterModels = calloc(sequence->characterCount + 1, sizeof(AUTHView_CharacterModel));
+    g_view.instances = calloc(sequence->characterCount + 1, sizeof(MT5Render_Instance));
+    if (g_view.models == NULL || g_view.characterModels == NULL || g_view.instances == NULL)
+        return false;
+
+    // The characters of the map
+    char mapFolder[AUTHVIEW_PATH_SIZE], mapinfoPath[AUTHVIEW_PATH_SIZE];
+    snprintf(mapFolder, sizeof(mapFolder), "%s", GetDirectoryPath(g_view.path));
+    ToParent(mapFolder);
+    snprintf(mapinfoPath, sizeof(mapinfoPath), "%s/mapinfo.bin", mapFolder);
+    MAPINFO_File mapinfo;
+    CHRT_Script mapScript;
+    bool hasMapinfo = FileExists(mapinfoPath) && MAPINFO_Load(mapinfoPath, &mapinfo);
+    bool hasMapScript = hasMapinfo && mapinfo.characters != NULL &&
+        CHRT_LoadFromMemory(mapinfo.characters, mapinfo.charactersSize, mapinfoPath, &mapScript);
+
+    for (uint32_t i = 0; i < sequence->characterCount; i++) {
+        const AUTH_Character* character = &sequence->characters[i];
+        AUTHView_CharacterModel* characterModel = &g_view.characterModels[i];
+        characterModel->model = -1;
+        if (!HasMovement(character))
+            continue;
+        char path[AUTHVIEW_PATH_SIZE];
+        characterModel->source = FindCharacterModel(character->id, hasMapScript ? &mapScript : NULL, mapFolder, path, sizeof(path),
+            &characterModel->human);
+        if (characterModel->source != NULL) {
+            // A copy of the source is kept: TextFormat reuses its buffers
+            char* source = malloc(strlen(characterModel->source) + 1);
+            if (source != NULL)
+                strcpy(source, characterModel->source);
+            characterModel->source = source;
+            characterModel->model = LoadModelFile(path);
+        }
+        if (characterModel->model < 0)
+            printf("[AUTHView_Open]: No model for %s (%s)\n", character->id, characterModel->source != NULL ? "invalid model file" : "not found");
+        else
+            printf("  %s: %s (%s)\n", character->id, GetFileName(path), characterModel->source);
+    }
+    if (hasMapScript)
+        CHRT_Free(&mapScript);
+    if (hasMapinfo)
+        MAPINFO_Free(&mapinfo);
+    return true;
+}
+
 static void ResetCamera(void) {
     FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { sinf(0.6f), 0.0f, cosf(0.6f) }, g_view.radius, AUTHVIEW_FOVY);
     g_view.camera.pitch = 0.6f;
@@ -260,6 +468,18 @@ static void ResetCamera(void) {
 void AUTHView_Close(void) {
     if (g_view.open)
         g_options.fly = g_view.camera.fly;
+    AUTHSounds_Free();
+    for (uint32_t i = 0; i < g_view.modelCount; i++) {
+        if (g_view.models[i].loaded)
+            MT5Render_FreeModel(&g_view.models[i].model);
+    }
+    for (uint32_t i = 0; g_view.characterModels != NULL && i < g_view.sequence.characterCount; i++)
+        free((char*)g_view.characterModels[i].source);
+    if (g_view.open)
+        MT5Render_Free(&g_view.render);
+    free(g_view.models);
+    free(g_view.characterModels);
+    free(g_view.instances);
     AUTH_Free(&g_view.sequence);
     for (uint32_t i = 0; i < g_view.bankCount; i++)
         MOTN_Free(&g_view.banks[i]);
@@ -280,20 +500,27 @@ bool AUTHView_Open(const char* filepath) {
     g_view.sequence = sequence;
     g_view.current = -1;
     g_view.selectedCharacter = -1;
+    for (char* c = g_view.path; *c != '\0'; c++) {
+        if (*c == '\\')
+            *c = '/';
+    }
+    FindSceneFolder(g_view.path, g_view.sceneFolder, sizeof(g_view.sceneFolder));
     LoadMotionNames(filepath);
-    if (!CreateLabels()) {
+    printf("%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files in the folder\n", GetFileName(g_view.path),
+        sequence.duration, sequence.characterCount, sequence.commandCount, sequence.soundCount, g_view.bankCount);
+    if (!CreateLabels() || !LoadCharacterModels()) {
         fputs("[AUTHView_Open]: Memory error\n", stderr);
         AUTHView_Close();
         return false;
     }
+    MT5Render_Init(&g_view.render);
+    g_view.open = true;
+    AUTHSounds_Load(g_view.sceneFolder[0] != '\0' ? g_view.sceneFolder : NULL, &g_view.sequence);
     ComputeBounds();
     ResetCamera();
     FreeCamera_SetFly(&g_view.camera, g_options.fly);
     g_view.playing = true;
-
-    printf("%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files in the folder\n", GetFileName(g_view.path),
-        sequence.duration, sequence.characterCount, sequence.commandCount, sequence.soundCount, g_view.bankCount);
-    g_view.open = true;
+    g_view.jumped = true;
     return true;
 }
 
@@ -312,6 +539,7 @@ static int CurrentCommand(void) {
 
 static void Seek(float time) {
     g_view.time = Clamp(time, 0.0f, Duration());
+    g_view.jumped = true;
 }
 
 static void SeekFrame(uint32_t frame) {
@@ -344,7 +572,7 @@ static void SeekCommand(int direction) {
 
 static void TogglePlay(void) {
     if (!g_view.playing && g_view.time >= Duration())
-        g_view.time = 0.0f;
+        Seek(0.0f);
     g_view.playing = !g_view.playing;
 }
 
@@ -396,6 +624,8 @@ static void UpdateInput(Rectangle scene) {
             g_view.playing = false;
         }
     }
+    AUTHSounds_Update(g_view.time, g_view.playing && !g_view.seeking, g_view.jumped);
+    g_view.jumped = false;
 }
 
 // Time of the first jump (a key with the same time as the next one) of the three curves after a time, INFINITY if none
@@ -461,10 +691,45 @@ static void DrawGround(void) {
     }
 }
 
-static void DrawCharacters(void) {
+// As the nodes of the models: rotation around X, Y and Z, and translation, at the current time. The models of the persons
+// are raised to stand at their position
+static Matrix CharacterTransform(uint32_t index) {
+    const AUTH_Character* character = &g_view.sequence.characters[index];
+    const AUTHView_CharacterModel* characterModel = &g_view.characterModels[index];
+    Vector3 position = CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time);
+    Vector3 rotation = CurvePoint(&character->curves[AUTH_CHARACTER_ROTATION_X], g_view.time);
+    Matrix matrix = MatrixTranslate(0.0f, characterModel->human ? g_view.models[characterModel->model].lift : 0.0f, 0.0f);
+    matrix = MatrixMultiply(matrix, MatrixRotateX(rotation.x * DEG2RAD));
+    matrix = MatrixMultiply(matrix, MatrixRotateY(rotation.y * DEG2RAD));
+    matrix = MatrixMultiply(matrix, MatrixRotateZ(rotation.z * DEG2RAD));
+    return MatrixMultiply(matrix, MatrixTranslate(position.x, position.y, position.z));
+}
+
+// Height of the top of a character above its position: of its model, or of the cylinder
+static float CharacterHeight(uint32_t index) {
+    const AUTHView_CharacterModel* characterModel = &g_view.characterModels[index];
+    if (characterModel->model < 0)
+        return AUTHVIEW_HEIGHT;
+    const AUTHView_Model* model = &g_view.models[characterModel->model];
+    return model->top + (characterModel->human ? model->lift : 0.0f);
+}
+
+// With their model, or as cylinders with a line to the direction they face if it wasn't found
+static void DrawCharacters(Camera3D camera) {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {
+        int model = g_view.characterModels[i].model;
+        if (!IsShown(i) || model < 0)
+            continue;
+        Matrix transform = CharacterTransform(i);
+        MT5Render_Model* instanced = &g_view.models[model].model;
+        g_view.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0 };
+    }
+    MT5Render_DrawInstances(&g_view.render, g_view.instances, count, camera);
+
     for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {
         const AUTH_Character* character = &g_view.sequence.characters[i];
-        if (!IsShown(i))
+        if (!IsShown(i) || g_view.characterModels[i].model >= 0)
             continue;
         Color color = CharacterColor((int)i);
         Vector3 position = CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time);
@@ -517,7 +782,7 @@ static void DrawCharacterLabels(Camera3D camera, Rectangle area, Font font, floa
         const AUTH_Character* character = &g_view.sequence.characters[i];
         if (!IsShown(i))
             continue;
-        Vector3 head = Vector3Add(CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time), (Vector3) { 0.0f, AUTHVIEW_HEIGHT + 0.15f, 0.0f });
+        Vector3 head = Vector3Add(CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time), (Vector3) { 0.0f, CharacterHeight(i) + 0.15f, 0.0f });
         Vector2 point;
         if (!Scene3D_ScreenPoint(camera, area, head, &point))
             continue;
@@ -560,7 +825,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
         }
         DrawCameraGizmo();
     }
-    DrawCharacters();
+    DrawCharacters(camera);
     FreeCamera_End3D();
     DrawCharacterLabels(camera, view, font, fontSize);
     DrawRectangleLinesEx(view, 1.0f, (Color) { 112, 112, 112, 255 });
@@ -687,7 +952,7 @@ static void DrawTree(Rectangle bounds) {
             return;
         g_options.cutsceneCamera = false;
         g_view.camera.target = Vector3Add(CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time),
-            (Vector3) { 0.0f, AUTHVIEW_HEIGHT * 0.5f, 0.0f });
+            (Vector3) { 0.0f, CharacterHeight((uint32_t)clickedCharacter) * 0.5f, 0.0f });
         g_view.camera.distance = 6.0f;
     }
 }
@@ -701,9 +966,18 @@ static const char* g_characterCurves[AUTH_CHARACTER_CURVES] = { "X", "Y", "Z", "
     "Unknown 7", "Unknown 8" };
 
 // Its values at the current time, what it does, and the keys of its curves
-static void CharacterProperties(Properties* properties, const AUTH_Character* character) {
+static void CharacterProperties(Properties* properties, uint32_t index) {
+    const AUTH_Character* character = &g_view.sequence.characters[index];
+    const AUTHView_CharacterModel* characterModel = &g_view.characterModels[index];
     Properties_Text(properties, "ID", character->id);
     Properties_Hex(properties, "ID value", character->idValue);
+    if (HasMovement(character)) {
+        Properties_Text(properties, "Model", characterModel->model >= 0 ? GetFileName(g_view.models[characterModel->model].path) :
+            characterModel->source != NULL ? "invalid model file" : "not found");
+        if (characterModel->source != NULL)
+            Properties_Text(properties, "Found in", characterModel->source);
+        Properties_Bool(properties, "Human", characterModel->human);
+    }
     if (HasMovement(character)) {
         Properties_Section(properties, "Now");
         Vector3 position = CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time);
@@ -722,11 +996,14 @@ static void CharacterProperties(Properties* properties, const AUTH_Character* ch
 }
 
 // Its frame, its text and its arguments, as integers and as floats
-static void CommandProperties(Properties* properties, const AUTH_Command* command) {
+static void CommandProperties(Properties* properties, uint32_t index) {
+    const AUTH_Command* command = &g_view.sequence.commands[index];
     Properties_Int(properties, "Frame", command->frame);
     Properties_Text(properties, "Time", FormatTime(command->frame / AUTH_FRAME_RATE));
     Properties_Int(properties, "Opcode", command->opcode);
     Properties_Text(properties, "Command", CommandText(command));
+    if (command->opcode == AUTH_COMMAND_VOICE || command->opcode == AUTH_COMMAND_SOUND)
+        Properties_Text(properties, "Audio", AUTHSounds_HasSound(index) ? "found" : "not found");
     Properties_Section(properties, TextFormat("%u arguments", command->argCount));
     for (uint32_t i = 0; i < command->argCount; i++)
         Properties_Text(properties, TextFormat("%u", i), TextFormat("0x%08X  %d  %g", command->args[i], (int32_t)command->args[i],
@@ -741,11 +1018,11 @@ static void DrawProperties(Rectangle bounds) {
     if (g_view.selectedCharacter >= 0) {
         const AUTH_Character* character = &sequence->characters[g_view.selectedCharacter];
         Properties_Begin(properties, bounds, TextFormat("Character %s", character->id));
-        CharacterProperties(properties, character);
+        CharacterProperties(properties, (uint32_t)g_view.selectedCharacter);
     }
     else if (current >= 0) {
         Properties_Begin(properties, bounds, TextFormat("Command %d", current));
-        CommandProperties(properties, &sequence->commands[current]);
+        CommandProperties(properties, (uint32_t)current);
     }
     else {
         Properties_Begin(properties, bounds, NULL);
@@ -795,8 +1072,11 @@ void AUTHView_Draw(Rectangle area) {
 void AUTHView_Status(ViewStatus* status) {
     const AUTH_Sequence* sequence = &g_view.sequence;
     snprintf(status->file, sizeof(status->file), "%s", g_view.path);
-    snprintf(status->info, sizeof(status->info), "%s, %u characters, %u commands, %u sounds", FormatTime(Duration()),
-        sequence->characterCount, sequence->commandCount, sequence->soundCount);
+    AUTHSounds_Info sounds;
+    AUTHSounds_GetInfo(&sounds);
+    snprintf(status->info, sizeof(status->info), "%s, %u characters, %u commands, voices %u/%u, effects %u/%u%s%s", FormatTime(Duration()),
+        sequence->characterCount, sequence->commandCount, sounds.voices, sounds.voiceCommands, sounds.effects, sounds.effectCommands,
+        sounds.bank[0] != '\0' ? " in " : "", sounds.bank);
     if (g_options.cutsceneCamera)
         snprintf(status->hint, sizeof(status->hint), "Click the timeline: seek");
     else

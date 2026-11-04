@@ -242,21 +242,24 @@ static int16_t* Decode(const XWM_Chunks* chunks, const XWM_Info* info) {
 
 #endif
 
+int16_t* XWM_DecodeMemory(const uint8_t* data, size_t size, const char* name, XWM_Info* info) {
+    XWM_Chunks chunks;
+    int16_t* pcm = NULL;
+    if (!ReadChunks(data, size, &chunks, info))
+        fprintf(stderr, "[XWM_Decode]: Not a valid xWMA file: %s\n", name);
+    else if (info->formatTag != 0x161)
+        fprintf(stderr, "[XWM_Decode]: Unsupported format 0x%X: %s\n", info->formatTag, name);
+    else if ((pcm = Decode(&chunks, info)) == NULL)
+        fprintf(stderr, "[XWM_Decode]: Failed to decode %s\n", name);
+    return pcm;
+}
+
 int16_t* XWM_Decode(const char* filepath, XWM_Info* info) {
     size_t size = 0;
     uint8_t* buffer = File_LoadToMemoryDecompressed(filepath, &size);
     if (buffer == NULL)
         return NULL;
-
-    XWM_Chunks chunks;
-    int16_t* pcm = NULL;
-    if (!ReadChunks(buffer, size, &chunks, info))
-        fprintf(stderr, "[XWM_Decode]: Not a valid xWMA file: %s\n", filepath);
-    else if (info->formatTag != 0x161)
-        fprintf(stderr, "[XWM_Decode]: Unsupported format 0x%X: %s\n", info->formatTag, filepath);
-    else if ((pcm = Decode(&chunks, info)) == NULL)
-        fprintf(stderr, "[XWM_Decode]: Failed to decode %s\n", filepath);
-
+    int16_t* pcm = XWM_DecodeMemory(buffer, size, filepath, info);
     free(buffer);
     return pcm;
 }

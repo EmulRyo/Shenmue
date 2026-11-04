@@ -2,6 +2,7 @@
 #define __XWM_H__
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 // xWMA audio: a RIFF file ("XWMA") with a WAVEFORMATEX, the decoded size at the end of each packet (dpds) and the WMA
@@ -21,5 +22,7 @@ typedef struct {
 // freed with free), or NULL if the file is not a valid xWMA file or can't be decoded. The decoding uses the WMA decoder
 // of Windows (Media Foundation), so it isn't available on other platforms
 int16_t* XWM_Decode(const char* filepath, XWM_Info* info);
+// Same with a file loaded in memory (e.g. an entry of an AFS file). name is used in the error messages
+int16_t* XWM_DecodeMemory(const uint8_t* data, size_t size, const char* name, XWM_Info* info);
 
 #endif

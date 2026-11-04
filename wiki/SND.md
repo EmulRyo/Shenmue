@@ -318,6 +318,8 @@ All the channels in a single stream of [events](#events), ending with the MIDI e
 
 A single [program](#program) (flags 2, one layer without key map) with one split per sound effect, played by the [effect sequences](#effect-sequence). The first byte of each split is its index instead of a key, and the effects play at the rate of their recording, whatever the [pitch](#pitch) of the note.
 
+The sound effects of the cutscenes ([AUTH](AUTH#commands), command 6) are effects of this program, by index, in the banks of the `sound` folder of the scene (e.g. `scene/01/sound/a1_busno.snd` for the bus cutscenes of `scene/01/d000`).
+
 ## Section 5: Unknown table
 
 | Offset | Size | Type      | Name      | Description                                    |

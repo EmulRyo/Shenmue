@@ -93,6 +93,8 @@ set(SRC
     src/ui/waveform.c
     src/ui/waveform.h
 
+    src/views/authSounds.c
+    src/views/authSounds.h
     src/views/authView.c
     src/views/authView.h
     src/views/chrtView.c

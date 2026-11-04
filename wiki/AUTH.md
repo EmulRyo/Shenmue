@@ -62,7 +62,7 @@ Any other word is a command header followed by its arguments:
 | 0x02   | 2    | uint16 | `unused` | Always 0                                     |
 | 0x04   | 4×N  | —      | `args`   | Arguments                                    |
 
-Characters are identified by a 4-character ID (`char[4]`, e.g. `AKIR` for Ryo, `YAMA`, `SMTH`), the same ones used by the other formats. The commands that play a sound (5 and 6) number them in order: the first one plays sound 0, the second one sound 1, and so on; the number is stored in the command and is the index of the sound name in `ASTR`.
+Characters are identified by a 4-character ID (`char[4]`, e.g. `AKIR` for Ryo, `YAMA`, `SMTH`), the same ones used by the other formats (see [Characters](#characters)). The commands that play a sound (5 and 6) number them in order: the first one plays sound 0, the second one sound 1, and so on; the number is stored in the command and is the index of the sound name in `ASTR`.
 
 ### Commands
 
@@ -108,7 +108,7 @@ Characters are identified by a 4-character ID (`char[4]`, e.g. `AKIR` for Ryo, `
 | 2   | uint32  | Unknown, usually 0 (up to 6)                                     |
 | 3   | uint32  | Unknown, 1 to 49; most often 10, 20 or 1 (it looks like a number of frames) |
 
-**5 — Voice clip.** The sound name is a path in a `SOUND` folder (e.g. `.../01TEL/SOUND/01TELA001.aiff`), whose file name is the name of the clip in the [IDX](IDX) of the voice [AFS](AFS) (`01tel.afs`).
+**5 — Voice clip.** The sound name is a path in a `SOUND` folder (e.g. `.../01TEL/SOUND/01TELA001.aiff`), whose file name is the name of the [xWMA](XWM) clip in the [IDX](IDX) of a voice [AFS](AFS) of the same scene (`scene/0N/stream/pc/eng/` and `.../jap/`). The name of the AFS is the name of the clip without its last 4 characters (the speaker letter and the number), which is not always the name of the folder: `01TELA001` is in `01tel.afs`, `01JUCEAA005` in `01jucea.afs`, and the clips of the `01YAMA` folder (`E1020B001`…) in `e1020.afs`.
 
 | Arg | Type    | Description                                                         |
 |----:|---------|---------------------------------------------------------------------|
@@ -123,14 +123,16 @@ Characters are identified by a 4-character ID (`char[4]`, e.g. `AKIR` for Ryo, `
 | Arg | Type    | Description                                                                 |
 |----:|---------|-----------------------------------------------------------------------------|
 | 0   | char[4] | Character that makes the sound                                              |
-| 1   | uint32  | Sound ID: low 16 bits `0x04A9` (or `0x0FA9` in 13 commands), high 16 bits a number from 0 to 38 that changes from one file to another for the same sound. `0xFFFFFFFF` in 33 commands |
+| 1   | uint32  | Sound ID: low 16 bits `0x04A9` (or `0x0FA9` in 13 commands), high 16 bits a number from 0 to 38 that changes from one file to another for the same sound. `0xFFFFFFFF` in 33 commands. With `0x04A9`, the number is the index of the effect in the [effect program](SND#section-4-effect-program) of a [SND](SND) bank of the `sound` folder of the scene (see below) |
 | 2   | uint32  | Sound number (index in `ASTR`)                                              |
 | 3   | char[4] | *9 arguments only.* A declared character, or a value `0x1000xxxx` / `0x1001xxxx` (160 commands) |
 | 4   | uint32  | *9 arguments only.* Always `0x7F` (127)                                     |
 | 5   | uint32  | *9 arguments only.* Always 4                                                |
 | 6   | uint32  | *9 arguments only.* Always `0x10` (16)                                      |
 | 7   | uint32  | *9 arguments only.* Always 0                                                |
-| 8   | float   | *9 arguments only.* Length of the sound in seconds (the same for every use of a sound name) |
+| 8   | float   | *9 arguments only.* Length of the sound in seconds (the same for every use of a sound name): the length of the sample of the effect plus about 0.5 s (0.498) |
+
+The bank of the effects is not named in the file. With the lengths of the 9-argument commands it can be recognized among the banks of the scene: e.g. in `scene/01/d000`, the effects of `buss/SEQDATA1` are those of `scene/01/sound/a1_busno.snd` (7 of the 8 lengths match), those of `drauth/SEQDATA1` and `SEQDATA2` of `a1_senfk.snd` (32 of 33, 14 of 15), and those of `ybhn/SEQDATA0` of `a1_yobi.snd` (14 of 15). Some commands of a file use effects that the bank doesn't have, or with another length (e.g. the indices 37 and 38 of `buss/SEQDATA2`). The 3-argument commands have no length, so the bank of a file with only 3-argument commands (e.g. `auth`, `d0w0` and `djhn` of `scene/01/d000`) is not known.
 
 Example (`scene/01/d000/auth.pks`, `SEQDATA0`):
 
@@ -145,6 +147,16 @@ frame 489  5 Voice        AKIR sound 6 3.30 s     (SOUND/01TELA001.aiff)
 frame 856  6 Sound        AKIR 0x000104A9 sound 9  (smallobject/bookcl.aiff)
 end
 ```
+
+## Characters
+
+The file only has the IDs of the characters. Their models are those of the `Character` blocks with the same ID in the [CHRT](CHRT) scripts (the model file of their first `Image`), found in:
+
+- the `CHARA.chrt` of the same [PKS](PKS), for the characters and objects of the cutscene (e.g. the bus driver `BUSS`, `OGM_L.chrm`, and the policeman `COP_` of `scene/01/d000`);
+- the `CHARA.chrt` of the folder of the character in the scene, `scene/0N/stream/humans/<ID>` (e.g. `YAMA`, `YMG_L.chrm`; `SMTH`, `GIB_M.chrm`; the bus `BUS_`, `BUSS530G.chrm`);
+- the characters of the [MAPINFO](MAPINFO) of the map that contains the cutscene (the parent folder): Ryo, `AKIR`, is `YKB_M`, whose model is `scene/01/model/chara/ykb_m.mt5`.
+
+The persons (`Human` command) have the origin of their model at the hips; the position of their curves is the point of the floor where they stand.
 
 ## Animation curves
 

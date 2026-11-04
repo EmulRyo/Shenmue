@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "core/dir.h"
 #include "core/file.h"
 #include "formats/archive/idx.h"
@@ -164,4 +165,61 @@ void AFS_ExtractAllFiles(const char* filepath, const char* outputPath) {
     free(names);
     free(filenames);
     fclose(afsFile);
+}
+
+static bool EqualsIgnoreCase(const char* a, const char* b) {
+    for (; *a != '\0' && tolower((unsigned char)*a) == tolower((unsigned char)*b); a++, b++)
+        ;
+    return tolower((unsigned char)*a) == tolower((unsigned char)*b);
+}
+
+uint8_t* AFS_LoadNamedEntry(const char* filepath, const char* name, size_t* size) {
+    FILE* afsFile = fopen(filepath, "rb");
+    if (afsFile == NULL)
+        return NULL;
+    fseek(afsFile, 0, SEEK_END);
+    long fileSize = ftell(afsFile);
+    rewind(afsFile);
+
+    uint8_t* data = NULL;
+    AFS_Header header;
+    AFS_Entry* entries = NULL;
+    char (*names)[IDX_NAME_SIZE] = NULL;
+    if (fread(&header, sizeof(AFS_Header), 1, afsFile) != 1 || memcmp(header.id, "AFS\0", 4) != 0 || header.count == 0 ||
+        (uint64_t)header.count * sizeof(AFS_Entry) > (uint64_t)fileSize)
+        goto done;
+    entries = malloc(sizeof(AFS_Entry) * header.count);
+    names = calloc(header.count, IDX_NAME_SIZE);
+    if (entries == NULL || names == NULL || fread(entries, sizeof(AFS_Entry), header.count, afsFile) != header.count)
+        goto done;
+
+    char idxPath[AFS_PATH_SIZE];
+    const char* lastDot = strrchr(filepath, '.');
+    int baseLength = (int)(lastDot != NULL && lastDot > File_GetFilename(filepath) ? lastDot - filepath : strlen(filepath));
+    snprintf(idxPath, sizeof(idxPath), "%.*s.idx", baseLength, filepath);
+    if (!IDX_LoadEntryNames(idxPath, names, header.count))
+        goto done;
+
+    for (uint32_t i = 0; i < header.count; i++) {
+        const AFS_Entry* entry = &entries[i];
+        if (!EqualsIgnoreCase(names[i], name) || entry->size == 0 || (uint64_t)entry->offset + entry->size > (uint64_t)fileSize)
+            continue;
+        data = malloc(entry->size);
+        if (data == NULL)
+            break;
+        fseek(afsFile, entry->offset, SEEK_SET);
+        if (fread(data, 1, entry->size, afsFile) != entry->size) {
+            free(data);
+            data = NULL;
+            break;
+        }
+        *size = entry->size;
+        break;
+    }
+
+done:
+    free(entries);
+    free(names);
+    fclose(afsFile);
+    return data;
 }
