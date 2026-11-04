@@ -67,7 +67,7 @@ static void DrawField(Rectangle bounds, const char* text, bool path) {
 static void DrawStatusBar(Rectangle area) {
     ViewStatus status;
     if (!Views_Status(&status))
-        snprintf(status.info, sizeof(status.info), "Open a file, or drop it on the window");
+        snprintf(status.file, sizeof(status.file), "Open a file, or drop it on the window");
     TADBatch_Progress progress = TADBatch_GetProgress();
     float fileWidth = 280.0f;
     float fpsWidth = 64.0f;
@@ -98,10 +98,10 @@ static void DrawStatusBar(Rectangle area) {
 // The actions of the application, then those of the open view
 static void DrawToolbar(Rectangle area) {
     Toolbar_Begin(area);
-    if (Toolbar_Button(ICON_FOLDER_FILE_OPEN, "Open", "Open files", TOOLBAR_CTRL | KEY_O))
-        FileOpen_Dialog();
     if (Toolbar_Button(ICON_SUITCASE_ZIP, "Extract TAD", "Extract the files of TAD archives", 0))
         TADBatch_Dialog(g_filenameDB);
+    if (Toolbar_Button(ICON_FOLDER_FILE_OPEN, "Open", "Open files", TOOLBAR_CTRL | KEY_O))
+        FileOpen_Dialog();
     if (!ImageView_IsOpen())
         GuiDisable();
     if (Toolbar_Button(ICON_FILE_EXPORT, "Export", "Export the image", TOOLBAR_CTRL | KEY_S))
