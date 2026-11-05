@@ -12,6 +12,7 @@
 #include "formats/map/mapinfo.h"
 #include "formats/script/chrt.h"
 #include "render/freeCamera.h"
+#include "render/mt5Pose.h"
 #include "render/mt5Render.h"
 #include "render/scene3D.h"
 #include "ui/properties.h"
@@ -32,14 +33,25 @@
 #define AUTHVIEW_SCENE_MODELS   "model/chara" // Models of the characters in the folder of the scene
 #define AUTHVIEW_HUMANS         "stream/humans" // Folder of each character of the scene, with its script and models
 
-// A model file, loaded once for the characters that use it
+// A model file, loaded for each character that uses it: each one is in the pose of its motion
 typedef struct {
     char            path[AUTHVIEW_PATH_SIZE];
     bool            loaded;
     float           lift;       // Height to raise the model of a person, whose origin is at the hips
     float           top;        // Highest height of the model, for the labels
     MT5Render_Model model;
+    bool            body;       // The body of a character, that the motions can pose
+    MT5Pose_Body    bodyNodes;
+    Matrix*         pose;       // World matrices of the nodes
+    bool            posed;      // In the pose of the motion of its character at the current frame
 } AUTHView_Model;
+
+// A motion played by the commands, decoded from the MOTN files of the folder
+typedef struct {
+    uint32_t        id;
+    bool            valid;      // Found and decoded
+    MOTN_Motion     motion;
+} AUTHView_Motion;
 
 // The model of a character: the file of the Image of the character with its ID in the CHRT scripts of the folder of the
 // cutscene, in its folder of the scene or in the characters of the map
@@ -67,6 +79,8 @@ typedef struct {
     AUTH_Sequence   sequence;
     uint32_t        bankCount;
     MOTN_Bank*      banks;      // MOTN files of the folder, for the names of the motions
+    uint32_t        motionCount;
+    AUTHView_Motion* motions;   // Of the motion commands
     char            (*labels)[AUTHVIEW_LABEL_SIZE]; // Of the commands
     char            (*characterLabels)[AUTHVIEW_LABEL_SIZE];
     bool*           shownCharacters; // Their eye in the tree
@@ -225,7 +239,7 @@ static void LoadMotionNames(const char* filepath) {
     g_view.banks = calloc(files.count + 1, sizeof(MOTN_Bank));
     if (g_view.banks != NULL) {
         for (unsigned int i = 0; i < files.count; i++) {
-            if (MOTN_LoadNames(files.paths[i], &g_view.banks[g_view.bankCount]))
+            if (MOTN_Load(files.paths[i], &g_view.banks[g_view.bankCount]))
                 g_view.bankCount++;
         }
     }
@@ -396,20 +410,53 @@ static const char* FindCharacterModel(const char* id, const CHRT_Script* mapScri
     return NULL;
 }
 
-// Index of the model of a file, loaded the first time. Returns -1 if it can't be loaded
+// Index of the loaded model of a file, for one character. Returns -1 if it can't be loaded
 static int LoadModelFile(const char* path) {
-    for (uint32_t i = 0; i < g_view.modelCount; i++) {
-        if (EqualsIgnoreCase(g_view.models[i].path, path))
-            return g_view.models[i].loaded ? (int)i : -1;
-    }
     AUTHView_Model* model = &g_view.models[g_view.modelCount++];
     snprintf(model->path, sizeof(model->path), "%s", path);
     model->loaded = MT5Render_LoadModel(path, &model->model);
     if (model->loaded) {
         model->lift = -MT5Render_Bottom(&model->model);
         model->top = MT5Render_Top(&model->model);
+        model->body = MT5Pose_FindBody(&model->model.mesh, &model->bodyNodes);
+        if (model->body)
+            model->pose = malloc((model->model.mesh.nodeCount + 1) * sizeof(Matrix));
     }
     return model->loaded ? (int)(model - g_view.models) : -1;
+}
+
+// Decodes the motions of the motion commands
+static bool LoadMotions(void) {
+    const AUTH_Sequence* sequence = &g_view.sequence;
+    g_view.motions = calloc(sequence->commandCount + 1, sizeof(AUTHView_Motion));
+    if (g_view.motions == NULL)
+        return false;
+    for (uint32_t i = 0; i < sequence->commandCount; i++) {
+        const AUTH_Command* command = &sequence->commands[i];
+        if (command->opcode != AUTH_COMMAND_MOTION)
+            continue;
+        uint32_t id = Arg(command, 1);
+        bool known = false;
+        for (uint32_t m = 0; m < g_view.motionCount && !known; m++)
+            known = g_view.motions[m].id == id;
+        if (known)
+            continue;
+        AUTHView_Motion* motion = &g_view.motions[g_view.motionCount++];
+        motion->id = id;
+        for (uint32_t b = 0; b < g_view.bankCount && !motion->valid; b++) {
+            int32_t index = MOTN_FindMotion(&g_view.banks[b], id);
+            motion->valid = index >= 0 && MOTN_ReadMotion(&g_view.banks[b], (uint32_t)index, &motion->motion);
+        }
+    }
+    return true;
+}
+
+static const MOTN_Motion* FindMotion(uint32_t id) {
+    for (uint32_t i = 0; i < g_view.motionCount; i++) {
+        if (g_view.motions[i].id == id)
+            return g_view.motions[i].valid ? &g_view.motions[i].motion : NULL;
+    }
+    return NULL;
 }
 
 static bool LoadCharacterModels(void) {
@@ -472,7 +519,13 @@ void AUTHView_Close(void) {
     for (uint32_t i = 0; i < g_view.modelCount; i++) {
         if (g_view.models[i].loaded)
             MT5Render_FreeModel(&g_view.models[i].model);
+        free(g_view.models[i].pose);
     }
+    for (uint32_t i = 0; i < g_view.motionCount; i++) {
+        if (g_view.motions[i].valid)
+            MOTN_FreeMotion(&g_view.motions[i].motion);
+    }
+    free(g_view.motions);
     for (uint32_t i = 0; g_view.characterModels != NULL && i < g_view.sequence.characterCount; i++)
         free((char*)g_view.characterModels[i].source);
     if (g_view.open)
@@ -508,7 +561,7 @@ bool AUTHView_Open(const char* filepath) {
     LoadMotionNames(filepath);
     printf("%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files in the folder\n", GetFileName(g_view.path),
         sequence.duration, sequence.characterCount, sequence.commandCount, sequence.soundCount, g_view.bankCount);
-    if (!CreateLabels() || !LoadCharacterModels()) {
+    if (!CreateLabels() || !LoadCharacterModels() || !LoadMotions()) {
         fputs("[AUTHView_Open]: Memory error\n", stderr);
         AUTHView_Close();
         return false;
@@ -585,6 +638,7 @@ static Vector3 CurvePoint(const AUTH_Curve* curves, float time) {
 static Camera3D CutsceneCamera(void) {
     return Scene3D_CurveCamera(g_view.sequence.camera, g_view.time, AUTHVIEW_FOVY);
 }
+
 
 void AUTHView_Toolbar(void) {
     if (Toolbar_Button(g_view.playing ? ICON_PLAYER_PAUSE : ICON_PLAYER_PLAY, NULL, "Play or pause", KEY_SPACE))
@@ -691,14 +745,44 @@ static void DrawGround(void) {
     }
 }
 
+// The last motion that the character started at or before the current frame: it keeps the pose of its last frame after
+// its end. NULL if none
+static const AUTH_Command* PoseCommand(uint32_t idValue) {
+    const AUTH_Command* motion = NULL;
+    uint32_t frame = CurrentFrame();
+    for (uint32_t i = 0; i < g_view.sequence.commandCount && g_view.sequence.commands[i].frame <= frame; i++) {
+        const AUTH_Command* command = &g_view.sequence.commands[i];
+        if (command->opcode == AUTH_COMMAND_MOTION && Arg(command, 0) == idValue)
+            motion = command;
+    }
+    return motion;
+}
+
+// Puts the model of a character in the pose of its motion at the current time (from the first frame of the command to
+// its last one), or in the pose of the file if it has none
+static void PoseCharacter(uint32_t index) {
+    const AUTH_Character* character = &g_view.sequence.characters[index];
+    AUTHView_Model* model = &g_view.models[g_view.characterModels[index].model];
+    const AUTH_Command* command = model->body ? PoseCommand(character->idValue) : NULL;
+    const MOTN_Motion* motion = command != NULL ? FindMotion(Arg(command, 1)) : NULL;
+    float frame = 0.0f;
+    if (motion != NULL) {
+        float first = (float)Arg(command, 2), last = fminf((float)Arg(command, 3), (float)motion->frames);
+        frame = Clamp(first + g_view.time * AUTH_FRAME_RATE - command->frame, first, fmaxf(first, last));
+    }
+    model->posed = motion != NULL && model->pose != NULL && MT5Pose_Compute(&model->model.mesh, &model->bodyNodes, motion, frame, model->pose);
+    MT5Render_Pose(&model->model, model->posed ? model->pose : NULL);
+}
+
 // As the nodes of the models: rotation around X, Y and Z, and translation, at the current time. The models of the persons
-// are raised to stand at their position
+// are raised to stand at their position, unless a motion poses them, with the feet on the floor
 static Matrix CharacterTransform(uint32_t index) {
     const AUTH_Character* character = &g_view.sequence.characters[index];
     const AUTHView_CharacterModel* characterModel = &g_view.characterModels[index];
+    const AUTHView_Model* model = &g_view.models[characterModel->model];
     Vector3 position = CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time);
     Vector3 rotation = CurvePoint(&character->curves[AUTH_CHARACTER_ROTATION_X], g_view.time);
-    Matrix matrix = MatrixTranslate(0.0f, characterModel->human ? g_view.models[characterModel->model].lift : 0.0f, 0.0f);
+    Matrix matrix = MatrixTranslate(0.0f, characterModel->human && !model->posed ? model->lift : 0.0f, 0.0f);
     matrix = MatrixMultiply(matrix, MatrixRotateX(rotation.x * DEG2RAD));
     matrix = MatrixMultiply(matrix, MatrixRotateY(rotation.y * DEG2RAD));
     matrix = MatrixMultiply(matrix, MatrixRotateZ(rotation.z * DEG2RAD));
@@ -721,6 +805,7 @@ static void DrawCharacters(Camera3D camera) {
         int model = g_view.characterModels[i].model;
         if (!IsShown(i) || model < 0)
             continue;
+        PoseCharacter(i);
         Matrix transform = CharacterTransform(i);
         MT5Render_Model* instanced = &g_view.models[model].model;
         g_view.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0 };
@@ -987,6 +1072,11 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
         const AUTH_Command* motion = CharacterMotion(character->idValue);
         const char* name = motion != NULL ? MotionName(Arg(motion, 1)) : NULL;
         Properties_Text(properties, "Motion", motion == NULL ? "none" : name != NULL ? name : TextFormat("0x%X", Arg(motion, 1)));
+        if (characterModel->model >= 0) {
+            const AUTHView_Model* model = &g_view.models[characterModel->model];
+            Properties_Text(properties, "Pose", model->posed ? "of the motion" : !model->body ? "of the file: not a body" :
+                "of the file: no motion found");
+        }
         const char* sound = CharacterSound(character->idValue);
         Properties_Text(properties, "Sound", sound != NULL ? sound : "none");
     }

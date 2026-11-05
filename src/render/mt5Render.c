@@ -213,6 +213,13 @@ void MT5Render_FreeModel(MT5Render_Model* model) {
     memset(model, 0, sizeof(*model));
 }
 
+void MT5Render_Pose(MT5Render_Model* model, const Matrix* world) {
+    if (world == NULL && !model->mesh.posed)
+        return;
+    MT5Mesh_Pose(&model->mesh, world);
+    model->sorted = false; // The translucent triangles moved
+}
+
 uint32_t MT5Render_Vertices(const MT5Render_Model* model, Matrix transform, Vector3* points) {
     uint32_t count = 0;
     for (uint32_t i = 0; i < model->mesh.groupCount; i++) {
@@ -309,6 +316,9 @@ static void SortTriangles(MT5Mesh_Group* group, Vector3 eye, Vector3 forward) {
     PermuteTriangles(mesh->texcoords, 6 * sizeof(float), entries, count, temp);
     PermuteTriangles(mesh->normals, 9 * sizeof(float), entries, count, temp);
     PermuteTriangles(mesh->colors, 12, entries, count, temp);
+    PermuteTriangles(group->nodes, 3 * sizeof(uint16_t), entries, count, temp);
+    PermuteTriangles(group->positions, 9 * sizeof(float), entries, count, temp);
+    PermuteTriangles(group->normals, 9 * sizeof(float), entries, count, temp);
     UpdateMeshBuffer(*mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION, mesh->vertices, mesh->vertexCount * 3 * sizeof(float), 0);
     UpdateMeshBuffer(*mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_TEXCOORD, mesh->texcoords, mesh->vertexCount * 2 * sizeof(float), 0);
     UpdateMeshBuffer(*mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_NORMAL, mesh->normals, mesh->vertexCount * 3 * sizeof(float), 0);

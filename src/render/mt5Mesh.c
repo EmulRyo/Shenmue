@@ -5,6 +5,7 @@
 #include <math.h>
 #include <raylib.h>
 #include <raymath.h>
+#include <rlgl.h>
 #include "formats/model/mt5.h"
 #include "render/mt5Mesh.h"
 
@@ -154,9 +155,14 @@ static bool AddGroup(MT5Mesh* result, const MT5_Triangle* triangle, int32_t fram
     return true;
 }
 
-static void AddCorner(Mesh* mesh, uint32_t index, const MT5_Corner* corner, Vector3 position, Vector3 normal) {
+static void AddCorner(MT5Mesh_Group* group, uint32_t index, const MT5_Corner* corner, uint32_t node, const MT5_Vertex* source,
+    Vector3 position, Vector3 normal) {
+    Mesh* mesh = &group->mesh;
     memcpy(&mesh->vertices[index * 3], &position, sizeof(Vector3));
     memcpy(&mesh->normals[index * 3], &normal, sizeof(Vector3));
+    group->nodes[index] = (uint16_t)node;
+    memcpy(&group->positions[index * 3], source->position, 3 * sizeof(float));
+    memcpy(&group->normals[index * 3], source->normal, 3 * sizeof(float));
     mesh->texcoords[index * 2] = corner->u;
     mesh->texcoords[index * 2 + 1] = 1.0f - corner->v; // The rows of the decoded PVR textures are bottom to top
     mesh->colors[index * 4] = (corner->color >> 16) & 0xFF;
@@ -346,7 +352,11 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
         mesh->normals = MemAlloc(mesh->vertexCount * 3 * sizeof(float));
         mesh->texcoords = MemAlloc(mesh->vertexCount * 2 * sizeof(float));
         mesh->colors = MemAlloc(mesh->vertexCount * 4);
-        if (mesh->vertices == NULL || mesh->normals == NULL || mesh->texcoords == NULL || mesh->colors == NULL) {
+        result->groups[i].nodes = malloc((mesh->vertexCount + 1) * sizeof(uint16_t));
+        result->groups[i].positions = malloc((mesh->vertexCount + 1) * 3 * sizeof(float));
+        result->groups[i].normals = malloc((mesh->vertexCount + 1) * 3 * sizeof(float));
+        if (mesh->vertices == NULL || mesh->normals == NULL || mesh->texcoords == NULL || mesh->colors == NULL ||
+            result->groups[i].nodes == NULL || result->groups[i].positions == NULL || result->groups[i].normals == NULL) {
             free(world);
             return false;
         }
@@ -372,13 +382,26 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
                 Vector3 position = Vector3Transform((Vector3) { source->position[0], source->position[1], source->position[2] }, world[owner]);
                 Vector3 normal = TransformNormal(source->normal, normalMatrix[owner]);
                 int index = mirrored && c > 0 ? 3 - c : c;
-                AddCorner(&group->mesh, group->filled * 3 + index, &triangle->corners[c], position, normal);
+                AddCorner(group, group->filled * 3 + index, &triangle->corners[c], owner, source, position, normal);
                 min = Vector3Min(min, position);
                 max = Vector3Max(max, position);
             }
             group->filled++;
         }
     }
+    result->nodeCount = model->nodeCount;
+    result->nodes = malloc((model->nodeCount + 1) * sizeof(MT5Mesh_Node));
+    result->pose = malloc((model->nodeCount + 1) * sizeof(Matrix));
+    if (result->nodes == NULL || result->pose == NULL) {
+        free(world);
+        return false;
+    }
+    for (uint32_t i = 0; i < model->nodeCount; i++) {
+        const MT5_Node* node = &model->nodes[i];
+        result->nodes[i] = (MT5Mesh_Node) { node->parent, node->id, { node->position[0], node->position[1], node->position[2] },
+            { node->rotation[0], NodeRotationY(node), node->rotation[2] }, { node->scale[0], node->scale[1], node->scale[2] } };
+    }
+    memcpy(result->pose, world, model->nodeCount * sizeof(Matrix));
     free(world);
 
     for (uint32_t i = 0; i < result->groupCount; i++)
@@ -394,8 +417,50 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
 }
 
 void MT5Mesh_Free(MT5Mesh* meshes) {
-    for (uint32_t i = 0; i < meshes->groupCount; i++)
+    for (uint32_t i = 0; i < meshes->groupCount; i++) {
         UnloadMesh(meshes->groups[i].mesh);
+        free(meshes->groups[i].nodes);
+        free(meshes->groups[i].positions);
+        free(meshes->groups[i].normals);
+    }
     free(meshes->groups);
+    free(meshes->nodes);
+    free(meshes->pose);
     memset(meshes, 0, sizeof(*meshes));
+}
+
+Matrix MT5Mesh_NodeMatrix(const MT5Mesh_Node* node) {
+    Matrix matrix = MatrixScale(node->scale.x, node->scale.y, node->scale.z);
+    matrix = MatrixMultiply(matrix, MatrixRotateX(node->rotation.x * DEG2RAD));
+    matrix = MatrixMultiply(matrix, MatrixRotateY(node->rotation.y * DEG2RAD));
+    matrix = MatrixMultiply(matrix, MatrixRotateZ(node->rotation.z * DEG2RAD));
+    return MatrixMultiply(matrix, MatrixTranslate(node->position.x, node->position.y, node->position.z));
+}
+
+void MT5Mesh_Pose(MT5Mesh* meshes, const Matrix* world) {
+    if (world == NULL && !meshes->posed)
+        return;
+    meshes->posed = world != NULL;
+    if (world == NULL)
+        world = meshes->pose;
+    Matrix* normalMatrix = malloc((meshes->nodeCount + 1) * sizeof(Matrix));
+    if (normalMatrix == NULL)
+        return;
+    for (uint32_t i = 0; i < meshes->nodeCount; i++)
+        normalMatrix[i] = MatrixTranspose(MatrixInvert(world[i]));
+    for (uint32_t g = 0; g < meshes->groupCount; g++) {
+        MT5Mesh_Group* group = &meshes->groups[g];
+        Mesh* mesh = &group->mesh;
+        for (int v = 0; v < mesh->vertexCount; v++) {
+            uint16_t node = group->nodes[v];
+            const float* p = &group->positions[v * 3];
+            Vector3 position = Vector3Transform((Vector3) { p[0], p[1], p[2] }, world[node]);
+            Vector3 normal = TransformNormal(&group->normals[v * 3], normalMatrix[node]);
+            memcpy(&mesh->vertices[v * 3], &position, sizeof(Vector3));
+            memcpy(&mesh->normals[v * 3], &normal, sizeof(Vector3));
+        }
+        UpdateMeshBuffer(*mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION, mesh->vertices, mesh->vertexCount * 3 * sizeof(float), 0);
+        UpdateMeshBuffer(*mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_NORMAL, mesh->normals, mesh->vertexCount * 3 * sizeof(float), 0);
+    }
+    free(normalMatrix);
 }

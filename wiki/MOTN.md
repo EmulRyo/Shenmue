@@ -125,7 +125,7 @@ The usual format: the motion is a list of channels (one value of one bone), and 
 | 8    | Position X                                                                            |
 | 9–15 | Bone number (0 to 42)                                                                 |
 
-The channels are numbered in the order of the list, and inside a bone from bit 8 down to bit 3 (the axis order X, Y, Z is likely but not verified). Almost every bone has only the rotation (`0x038`). Bone 0 (the root) has position and rotation (`0x1F8`); its position Y is the height of the body (about 1.13). A few bones have only the position (`0x1C0`), between bones with rotation (e.g. `5r 8p 9r`), probably targets for the arms and legs. The bone numbers are not the node IDs of the [MT5 / CHRM](MT5) models: a body has the nodes `0x01`, `0x04`–`0x06`, `0x09`–`0x0B`, `0x0E`, `0x10`–`0x13`, `0x15`–`0x18`… (e.g. `TAT_M.chrm`), with no node for some of the bones of the motions.
+The channels are numbered in the order of the list, and inside a bone from bit 8 down to bit 3, i.e. X, Y, Z. Almost every bone has only the rotation (`0x038`). Bone 0 (the hips) has position and rotation (`0x1F8`); its position Y is the height of the hips (about 1.13). A few bones have only the position (`0x1C0`), between bones with rotation (e.g. `5r 8p 9r`): they are the positions that the head, the hands and the feet reach (see [Skeleton](#skeleton)). The bone numbers are not the node IDs of the [MT5 / CHRM](MT5) models: a body has the nodes `0x01`, `0x04`–`0x06`, `0x09`–`0x0B`, `0x0E`, `0x10`–`0x13`, `0x15`–`0x18`… (e.g. `TAT_M.chrm`), with no node for some of the bones of the motions, and no bone for some of the nodes.
 
 **Bone sets.** All the keyframe motions use one of three sets of bones (`p` = position, `r` = rotation, `pr` = both). A motion lists the bones of its set, and some motions leave out a few of them.
 
@@ -137,6 +137,40 @@ The channels are numbered in the order of the list, and inside a bone from bit 8
 
 (Counts of different motions, without the repeated files. One motion of type 20 is in the second set but with the bones of the quadruped one.)
 
+#### Skeleton
+
+The motions don't animate the nodes of the models one by one: they give the hips, the rotations of a few parts of the body, and the **positions that the head, the hands and the feet reach** (inverse kinematics). The knees and the elbows are not in the motions: their bones (e.g. 6, 7, 27, 28) are never used, and their bend comes from the distance between the hip or the shoulder and the position of the foot or the hand. The meaning of the bones below was found by comparing the motions of Ryo (`AKI_*`) with his model `YKB_M.MT5`, in which the legs measure 0.838 (thigh 0.393, shin 0.445) and the arms 0.492 (upper arm 0.243, forearm 0.249).
+
+All the positions are in the space of the character, with the floor at y = 0 and the front at −Z: they are not relative to the hips. The rotations are relative to the bone in the Parent column.
+
+Bones of the human set (the numbers of the second set in parentheses, when they differ):
+
+| Bone | Channels | Parent | Part | Node of the bodies | Description |
+|-----:|----------|-------:|------|--------------------|-------------|
+| 0    | p, r | — | Hips | — | Position of the hips (y ≈ 1.13 for Ryo standing, 0.56 in the motions of characters sitting on a seat that is not in the motion, e.g. `OTH_TKA_KAIWA_LP_HB_A`) and rotation of the whole body. The position moves the character in the walks, up to several meters |
+| 1    | r | 0 | Pelvis | `0x0E` | About a quarter turn around Y (`(0, 0.25, 0)`, or other angles of the same rotation such as `(0.25, 0.25, 0.25)`) when the pelvis is as in the models. With this rotation, the positions of the feet are within reach of the legs of `YKB_M` in 199 of the 204 motions of Ryo; with the pelvis turned as the torso, only in 106 |
+| 4, 11 | r | | Unknown | | In 211 motions only |
+| 5    | r | 1 | Thigh | `0x10` | Rotation of the thigh, which is not the direction of the leg: in `AKI_QOK_QOK_HIGHKICK_HB_QTE` it only turns around the axis of the thigh (X) while the ankle goes from the floor to above the head. It *probably* gives the plane in which the knee bends, once the leg points to the ankle position |
+| 8    | p | | Ankle | `0x12` | Position of the ankle (y ≈ 0.12 standing), on the +Z side of the pelvis of the models |
+| 9    | r | | Foot | `0x12` | Rotation of the foot, about 0 when it is flat on the floor and points to the front (*probably* in the space of the character) |
+| 12 (11) | r | 1 | Thigh | `0x15` | As bone 5, for the other leg |
+| 15 (14) | p | | Ankle | `0x17` | As bone 8 |
+| 16 (15) | r | | Foot | `0x17` | As bone 9 |
+| 18 (16) | r | 0 | Torso | `0x01` | Rotation of the torso, with the angles of the node `0x01` of the models |
+| 20 (18) | p | | Head | `0xFFBD` | Position of the head. It is at 0.380 from the hips (median), the length of the torso of Ryo (0.381), but the rotation of bone 18 alone doesn't always bring the head there (it ends more than 0.5 away in 10% of the frames): *probably* the torso turns to reach it |
+| 21 (19) | r | 18 | Head | `0xFFBD` | Rotation of the head, with the angles of the node `0xFFBD` |
+| 23 (21) | p | | Look | — | A point 0.2 in front of the face, on the X axis of the head (where the face looks): *probably* the point the head looks at |
+| 25 (23) | r | 18 | Shoulder | `0x09` | Small rotation of the shoulder (under 0.06 turns) |
+| 26 (24) | r | 25 | Upper arm | `0x0A` | Rotation of the upper arm (around Z about ±0.5, the 180° of the node `0x0A`), as bone 5 for the elbow |
+| 29 (27) | p | | Wrist | `0xFFBE` | Position of the wrist. It is the arm of the −Z side of the models: from the other shoulder it is out of reach in 188 of the 204 motions of Ryo |
+| 30 (28) | r | — | Hand | `0xFFBE` | Rotation of the hand, small: relative to the forearm |
+| 31 (29) | r | 18 | Shoulder | `0x04` | As bone 25, for the arm of the +Z side |
+| 32 (30) | r | 31 | Upper arm | `0x05` | As bone 26 |
+| 35 (33) | p | | Wrist | `0xFFBF` | As bone 29 |
+| 36 (34) | r | — | Hand | `0xFFBF` | As bone 30 |
+
+The rest of the pelvis differs from the models: the node `0x0E` is a child of the torso turned 180° around Z, while bone 1 is relative to the hips and is a quarter turn around Y in the same pose. The rotations of the motions don't depend on how the body is turned in the file: in a few models the nodes above the torso are turned (e.g. 180° around Y in `OGM_L.chrm`), or the torso itself (`BAT_L.chrm` has `(270°, 0°, 90°)`, the usual rest turned 180° around Y, with the rest of the body turned with it). Bone 3 has a position in a single motion. The toes (`0x13`, `0x18`), the fingers and the faces of the models have no bones.
+
 **Section 0 — Keyframe counts.** One uint8 per channel (uint16 if `wide` is set): the number of keys of the channel besides the first and the last one, which always exist. If the next section uses uint16 and the size is odd, one padding byte follows.
 
 **Section 1 — Keyframe frames.** For each channel in order, the frames of its inner keys: uint8 if `frames` is 255 or less, uint16 otherwise. The first key is at frame 0 and the last one at frame `frames`; neither of them is stored. The frames grow, but two keys can have the same frame (683 channels), which makes a jump in the value.
@@ -147,12 +181,14 @@ The channels are numbered in the order of the list, and inside a bone from bit 8
 |-----:|-------:|-------------------------------------------------------------------------------|
 | 0    | 0      | No value. Channels with type 0 in all their keys (e.g. unused rotation axes) are common, so the value is probably 0 |
 | 1    | 1      | `value`                                                                       |
-| 2    | 2      | `unknown`, `value`. The unknown value is small (probably a tangent)            |
-| 3    | 3      | `unknown`, `unknown`, `value` (probably two tangents)                         |
+| 2    | 2      | `tangent`, `value`: the slope of the curve at the key                         |
+| 3    | 3      | `tangent`, `tangent`, `value` (probably the slopes before and after the key)  |
 
 Most inner keys are of type 2; the first and last keys are usually of type 1 or 2.
 
-**Section 3 — Values.** float16 (IEEE 754 half precision) values for each channel in order, and inside a channel for each key in order, as many as its type says. Section 3 ends exactly at the end of the motion. Rotations are in radians (99% under 1 in absolute value) and positions in the units of the models (meters).
+The tangents are in units per **second**, at 30 frames per second: over the 381980 inner keys of type 2 of the files, the tangent divided by the slope between the previous and the next key (in units per frame) has a median of 29.99. The curves between two keys are *probably* cubic Hermite curves with these tangents (and a slope of 0 at the keys of type 1).
+
+**Section 3 — Values.** float16 (IEEE 754 half precision) values for each channel in order, and inside a channel for each key in order, as many as its type says. Section 3 ends exactly at the end of the motion. Positions are in the units of the models (meters). Rotations are in **turns** (1 = 360°), around X, then Y, then Z, as the rotations of the nodes of the [MT5](MT5) models: the torso (bone 18) of the motions of Ryo is about `(0.25, 0, 0.25)`, the rotation (90°, 0°, 90°) of the node `0x01` of his model `YKB_M.MT5`, and the head (bone 21) about `(-0.25, 0, -0.25)`, like the node `0xFFBD` (270°, 0°, 270°). The same rotation can be written with other angles (e.g. `(-0.24, 0.48, -0.25)` for `(0.25, 0, 0.25)`).
 
 Example (`scene/01/jomo/common01.pks`, `M_TBLK`, motion 0 `AKI_KAIWA_LP_DENWA_HADUKIKE`, 60 frames):
 

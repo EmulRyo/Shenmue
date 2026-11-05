@@ -4,6 +4,7 @@
 #include "views/chrtView.h"
 #include "views/imageView.h"
 #include "views/mapinfoView.h"
+#include "views/motnView.h"
 #include "views/mt5View.h"
 #include "views/sndView.h"
 #include "views/xwmView.h"
@@ -26,6 +27,7 @@ static const View g_views[VIEW_COUNT] = {
     [VIEW_AUTH]  = { AUTHView_Close, AUTHView_IsOpen, AUTHView_Draw, AUTHView_Toolbar, AUTHView_Status },
     [VIEW_CHRT]  = { CHRTView_Close, CHRTView_IsOpen, CHRTView_Draw, CHRTView_Toolbar, CHRTView_Status },
     [VIEW_MAPINFO] = { MAPINFOView_Close, MAPINFOView_IsOpen, MAPINFOView_Draw, MAPINFOView_Toolbar, MAPINFOView_Status },
+    [VIEW_MOTN]  = { MOTNView_Close, MOTNView_IsOpen, MOTNView_Draw, MOTNView_Toolbar, MOTNView_Status },
 };
 
 void Views_CloseOthers(ViewID view) {

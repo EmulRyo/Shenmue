@@ -32,21 +32,6 @@ static float ReadFloat(const uint8_t* p) {
     return value;
 }
 
-// IEEE 754 binary16
-static float ReadHalf(const uint8_t* p) {
-    uint16_t half = Bytes_ReadU16(p);
-    int exponent = (half >> 10) & 0x1F;
-    int mantissa = half & 0x3FF;
-    float value;
-    if (exponent == 0)
-        value = ldexpf((float)mantissa, -24);
-    else if (exponent == 31)
-        value = mantissa != 0 ? NAN : INFINITY;
-    else
-        value = ldexpf((float)(mantissa | 0x400), exponent - 25);
-    return (half & 0x8000) ? -value : value;
-}
-
 static void CopyID(char id[MAPINFO_ID_SIZE], const uint8_t* p) {
     memcpy(id, p, 4);
     id[4] = '\0';
@@ -119,11 +104,11 @@ static bool ReadLights(MAPINFO_File* file, const MAPINFO_Chunk* chunk) {
             light->unknown = Bytes_ReadU16(p + 2);
             light->flags = Bytes_ReadU16(p + 4);
             for (int c = 0; c < 3; c++) {
-                light->color[c] = ReadHalf(p + 0x06 + c * 2);
-                light->position[c] = ReadHalf(p + 0x12 + c * 2);
-                light->direction[c] = ReadHalf(p + 0x18 + c * 2);
+                light->color[c] = Bytes_ReadF16(p + 0x06 + c * 2);
+                light->position[c] = Bytes_ReadF16(p + 0x12 + c * 2);
+                light->direction[c] = Bytes_ReadF16(p + 0x18 + c * 2);
             }
-            light->intensity = ReadHalf(p + 0x0C);
+            light->intensity = Bytes_ReadF16(p + 0x0C);
             light->angle = Bytes_ReadU16(p + 0x1E) * 360.0f / 65536.0f;
         }
         file->lightCount += count;

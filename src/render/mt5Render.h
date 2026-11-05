@@ -46,6 +46,8 @@ bool MT5Render_LoadModel(const char* filepath, MT5Render_Model* model);
 // Same with a file of a PKF/PKS file loaded in memory, whose textures are searched in the files of that PKF
 bool MT5Render_LoadPackedModel(const IPAC_File* file, const IPAC_FileList* files, MT5Render_Model* model);
 void MT5Render_FreeModel(MT5Render_Model* model);
+// Moves the model to the pose given by the world matrix of each node (see MT5Mesh_Pose), NULL for the pose of the file
+void MT5Render_Pose(MT5Render_Model* model, const Matrix* world);
 // Copies the vertices of the triangles of the model, placed with transform, to points (mesh.triangleCount * 3 of them).
 // Returns the number of vertices
 uint32_t MT5Render_Vertices(const MT5Render_Model* model, Matrix transform, Vector3* points);

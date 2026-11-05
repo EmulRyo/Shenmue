@@ -17,6 +17,7 @@
 #include "views/chrtView.h"
 #include "views/imageView.h"
 #include "views/mapinfoView.h"
+#include "views/motnView.h"
 #include "views/mt5View.h"
 #include "views/sndView.h"
 #include "views/xwmView.h"
@@ -75,6 +76,7 @@ static const Format g_formats[] = {
     { ".xwm",       "xwm",  "XWM",  XWMView_Open,       VIEW_XWM },
     { ".snd",       "snd",  "SND",  SNDView_Open,       VIEW_SND },
     { ".auth",      "auth", "AUTH", AUTHView_Open,      VIEW_AUTH },
+    { ".motn",      NULL,   "MOTN", MOTNView_Open,      VIEW_MOTN },
     { NULL,         NULL,   "MAPINFO", MAPINFOView_Open, VIEW_MAPINFO, "mapinfo.bin" },
 };
 
@@ -124,10 +126,10 @@ void FileOpen_Open(const char* filepath) {
 
 void FileOpen_Dialog(void) {
     nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[8] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Maps", "bin" } };
+    nfdu8filteritem_t filters[9] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Motions", "motn" }, { "Maps", "bin" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
-    args.filterCount = 8;
+    args.filterCount = 9;
     nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
     if (result == NFD_OKAY)
         FileOpen_Open(outPath);

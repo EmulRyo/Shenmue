@@ -15,6 +15,7 @@ typedef enum {
     VIEW_AUTH,
     VIEW_CHRT,
     VIEW_MAPINFO,
+    VIEW_MOTN,
     VIEW_COUNT,
 } ViewID;
 

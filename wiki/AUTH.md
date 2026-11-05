@@ -99,6 +99,8 @@ Characters are identified by a 4-character ID (`char[4]`, e.g. `AKIR` for Ryo, `
 | 3   | uint32  | Last frame of the motion (always ≥ arg 2)                                   |
 | 4   | uint32  | Always 0                                                                    |
 
+The frames of args 2 and 3 are frames of the motion (30 per second), played from the frame of the command. The position of the hips in the motion (bone 0, see [MOTN](MOTN#skeleton)) moves the character from the position of its curves, in the space of the character: while a motion moves the hips (e.g. 2.9 m for `0x100A` in `scene/01/d000/d0w0/SEQDATA4`), the curves of the character stay still, and while the curves move a character a long way (a character sitting in the bus of `scene/01/d000/buss/SEQDATA1`, 29 m), its motion keeps the hips in place.
+
 **4 — Unknown**
 
 | Arg | Type    | Description                                                      |

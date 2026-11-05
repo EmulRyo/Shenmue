@@ -75,6 +75,8 @@ set(SRC
     src/render/freeCamera.h
     src/render/mt5Mesh.c
     src/render/mt5Mesh.h
+    src/render/mt5Pose.c
+    src/render/mt5Pose.h
     src/render/mt5Render.c
     src/render/mt5Render.h
     src/render/scene3D.c
@@ -104,6 +106,8 @@ set(SRC
     src/views/mapinfoView.c
     src/views/mapinfoView.h
     src/views/mt5View.c
+    src/views/motnView.c
+    src/views/motnView.h
     src/views/mt5View.h
     src/views/sndView.c
     src/views/sndView.h
