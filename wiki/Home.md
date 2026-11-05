@@ -17,7 +17,7 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [SCNF](SCNF)       | — (`BIN`)     | `SCNF`           | Dialogue          | Voice and subtitle of each dialogue line     |
 | [Lip-sync](Lip-sync) | —           | —                | Dialogue          | Speaker, subtitle and mouth movements of each voice clip |
 | [AUTH](AUTH)       | `.auth`       | `TRCK`           | Cutscene          | Commands, camera and character movement of a cutscene |
-| [MOTN](MOTN)       | `.motn`       | —                | Animation         | Bank of named motions (skeletal animations) of the characters |
+| [MOTN](MOTN)       | `.motn` (`motion.bin`, `m_*.bin`) | —                | Animation         | Bank of named motions (skeletal animations) of the characters |
 | [XWM](XWM)         | `.xwm`        | `RIFF` .... `XWMA` | Audio           | xWMA audio clip (voices and music)           |
 | [SND](SND)         | `.snd`        | `DTPK`           | Audio             | Sound bank: instruments, sequences, DSP settings and samples |
 | [MT5 / CHRM](MT5)  | `.mt5` `.chrm` | `HRCM`          | Model             | 3D model (CHRM: textures stored in the PKF)  |
@@ -34,6 +34,7 @@ TAD/TAC
  │   │       └─ IPAC → CHRT, PVR, ...
  │   └─ PKS ─── IPAC → CHRT, CHRM (textures in the PKF), SCNF, AUTH, MOTN, PVR, ...
  ├─ MAPINFO → CHRT, AUTH, SCNF
+ ├─ MOTN (motion/motion.bin, m_*.bin of the maps)
  ├─ MT5 → TEXN → PVR / DDS
  ├─ PVR
  ├─ SPR → PVR

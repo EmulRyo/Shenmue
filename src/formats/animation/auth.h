@@ -72,7 +72,8 @@ typedef struct {
 // Loads an AUTH file (gzipped or not). Returns false if it is not a valid AUTH file
 bool AUTH_Load(const char* filepath, AUTH_Sequence* sequence);
 void AUTH_Free(AUTH_Sequence* sequence);
-// Value of a curve at a time in seconds, interpolated linearly between the keys. fallback if the curve has no key
+// Value of a curve at a time in seconds, interpolated linearly between the keys, except between keys one frame apart
+// whose value changes much more than around them, where it jumps at the second key. fallback if the curve has no key
 float AUTH_CurveValue(const AUTH_Curve* curve, float time, float fallback);
 // Index of the character with this ID (the first argument of the commands), -1 if none
 int AUTH_FindCharacter(const AUTH_Sequence* sequence, uint32_t idValue);

@@ -2,7 +2,7 @@
 
 An AUTH file describes a scripted cutscene: a timeline of commands (which characters take part, which motions they play, their voice clips and sound effects), the animation of the camera, the movement of each character in the scene and the names of the sounds used.
 
-They are stored in the [IPAC](IPAC) block of the [PKS](PKS) files of the scenes, with the `AUTH` extension and names such as `SEQDATA0`…`SEQDATAD` (also `SEQDATK0` and `SEQDATS1`). The same PKS holds the motions ([MOTN](MOTN)), the models ([CHRM](MT5)) and the character script ([CHRT](CHRT)) used by the cutscene. The game files contain 306 AUTH files, in 119 PKS files of `scene/01`, `scene/02` and `scene/03`, from 796 to 108052 bytes. The `SCEX` chunk of [MAPINFO](MAPINFO) files holds 259 more `TRCK` chunks, and its `ECAM` cameras use the same [curves](#animation-curves).
+They are stored in the [IPAC](IPAC) block of the [PKS](PKS) files of the scenes, with the `AUTH` extension and names such as `SEQDATA0`…`SEQDATAD` (also `SEQDATK0` and `SEQDATS1`). The same PKS holds the motions ([MOTN](MOTN); for a PKS named as a map, they are in the [map](MOTN#motions-of-the-maps)), the models ([CHRM](MT5)) and the character script ([CHRT](CHRT)) used by the cutscene. The game files contain 306 AUTH files, in 119 PKS files of `scene/01`, `scene/02` and `scene/03`, from 796 to 108052 bytes. The `SCEX` chunk of [MAPINFO](MAPINFO) files holds 259 more `TRCK` chunks, and its `ECAM` cameras use the same [curves](#animation-curves).
 
 - **Extension:** `.auth` (`AUTH` in the [IPAC](IPAC) dictionary)
 - **Magic:** `TRCK` (`54 52 43 4B`)
@@ -94,7 +94,7 @@ Characters are identified by a 4-character ID (`char[4]`, e.g. `AKIR` for Ryo, `
 | Arg | Type    | Description                                                                 |
 |----:|---------|-----------------------------------------------------------------------------|
 | 0   | char[4] | Character ID (always a declared one)                                        |
-| 1   | uint32  | [Motion ID](MOTN#motion-ids). Most values are `0x10xx`, `0x11xx` or `0x20xx` (e.g. `0x1003`, `0x2003`); a few are small (`0x59`, `0x2DF`, `0x55E`) |
+| 1   | uint32  | [Motion ID](MOTN#motion-ids). Most values are `0x10xx`, `0x11xx` or `0x20xx` (e.g. `0x1003`, `0x2003`), motions of the MOTN files of the same PKS (or of the [map](MOTN#motions-of-the-maps) with the name of the PKS); a few are small (`0x59`, `0x2DF`, `0x55E`), motions of the [common motions](MOTN#common-motions) of `motion/motion.bin` (e.g. `0x2DF`, the walk `AKI_AKI_WALK_SP1_LP`) |
 | 2   | uint32  | First frame of the motion                                                   |
 | 3   | uint32  | Last frame of the motion (always ≥ arg 2)                                   |
 | 4   | uint32  | Always 0                                                                    |
@@ -169,9 +169,11 @@ The persons (`Human` command) have the origin of their model at the hips; the po
 | 0x00      | 4       | uint32   | `count`    | Number of keys (can be 0: the curve is not used)         |
 | 0x04      | 4×count | float[]  | `times`    | Time of each key in seconds. The first one is 0, they only grow |
 | 0x04+4×count | 4×count | float[] | `values` | Value at each key                                        |
-| 0x04+8×count | 4×count | float[] | `tangents` | Unknown; 0 for the flat parts of the curve (probably the slope at each key) |
+| 0x04+8×count | 4×count | float[] | `tangents` | Slope of the curve at each key, in units per second (characters). Usually 0 in the camera curves |
 
-The size of a curve is `4 + 12 × count` bytes. Two keys with the same time make a jump in the value; the camera curves use it at the cuts.
+The size of a curve is `4 + 12 × count` bytes. Two keys with the same time make a jump in the value; the camera curves use it at the Two keys one frame apart (1/30 s) whose value changes much more than in a frame of the spans around them are also a jump: no frame of the cutscene falls between them, so the value changes from one frame to the next. The characters use them to be placed where their motion left them when the next motion starts: in `scene/01/d000/buss/SEQDATA5`, Ryo plays the walk `0x2DF` (frames 1–36) at the frames 166, 202 and 238, and between the frames 201 and 202 and 237 and 238 his position jumps 1.43 m forward, about as far as the hips move in the motion from frame 1 to frame 36 (1.44 m over the whole loop), while it stays still during each walk; in `buss/SEQDATA1` and `SEQDATA4` it jumps 1.47 m at frame 126, when his motion changes, while the spans around it move about 1 mm per frame. Keys one frame apart are also found inside a movement, as ordinary keys: the objects carried by a character have a key every 1 to 3 frames (e.g. the bottle `BIN_` of `scene/01/d000/yq14/SEQDATA2`, which stays at about 0.14 m from the wrist that the motion of `SMTH` gives to bone 29, see [MOTN](MOTN#skeleton)). In the 39 files of `scene/01` studied, the 1106 spans of one frame whose value changes in the curves of the characters split in two groups by the ratio between their change and the change per frame of the faster span around them: 853 change at most 8 times as much (most of them 1 to 2 times, the keys of a movement), and 253 more than 8 times, up to more than 1000 (194 of them between spans that keep their value, the jumps); between 4 and 8 there are only 6.
+
+Most keys are stored twice, with the same time, value and tangent; the two keys of a jump have the same time and different values. The tangents of the curves of the characters are the slope of the curve in units per second: at the keys between two others, the tangent divided by the slope between the previous and the next key has a median of 1.00 (2710 keys; half of them between 0.48 and 1.05). The curves are *probably* cubic Hermite curves with these tangents. In the camera curves the tangents are 0 (in at least three quarters of the 2508 keys measured).h walk.
 
 ## ACAM — Camera
 

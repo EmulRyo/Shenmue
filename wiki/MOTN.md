@@ -2,7 +2,13 @@
 
 A MOTN file is a bank of motions (skeletal animations) of characters, with a name for each motion. The motions animate the bones of the [MT5 / CHRM](MT5) models; the cutscenes ([AUTH](AUTH)) and the character scripts ([CHRT](CHRT)) play them by their [motion ID](#motion-ids).
 
-They are stored in the [IPAC](IPAC) block of the [PKS](PKS) files of the scenes, with the `MOTN` extension and names that start with `M_` (e.g. `M_01TE`, `M_D000`, `M_0000`). The game files contain 291 MOTN files (185 different ones: some are repeated in several scenes, e.g. `M_01JA` in `jomo/common01.pks` and `jomo/common03.pks`) in 207 PKS files of `scene/01`, `scene/02` and `scene/03`, from 528 to 1032292 bytes, with 1 to 513 motions each (4180 in total). Most PKS files hold one MOTN; a few hold up to 18.
+They are stored in the [IPAC](IPAC) block of the [PKS](PKS) files of the scenes, with the `MOTN` extension and names that start with `M_` (e.g. `M_01TE`, `M_D000`, `M_0000`). The game files contain 291 MOTN files (185 different ones: some are repeated in several scenes, e.g. `M_01JA` in `jomo/common01.pks` and `jomo/common03.pks`) in 207 PKS files of `scene/01`, `scene/02` and `scene/03`, from 528 to 1032292 bytes, with 1 to 513 motions each (4180 in total). Most PKS files hold one MOTN; a few hold up to 18. The motions shared by the whole game are in another MOTN file, `motion/motion.bin` (see [Common motions](#common-motions)), and each map has its own ones (see [Motions of the maps](#motions-of-the-maps)).
+
+## Motions of the maps
+
+The map folders (`scene/0N/<map>/`, those with a [MAPINFO](MAPINFO)) hold MOTN files with the `.bin` extension and a name that starts with `m_` (e.g. `scene/01/yq14/m_01114.bin`, `m_0114.bin` and `m_yq14.bin`): 154 files in 45 map folders (82 different ones), not compressed, from 980 to 2769320 bytes, with 17332 motions in total. Their `firstID` is usually `0x1000` (30 files) or `0x800` (16).
+
+The cutscenes of a PKS whose name is the name of a map play the motions of that map, not of the PKS: `scene/01/d000/yq14.pks` has no MOTN, and its `SEQDATA2` plays the motions `0x1001`, `0x1002` and `0x1003` of `scene/01/yq14/m_01114.bin` (`AKI_WHATS_0114`, `OTH_GIA_WHATS_0114` and `OTH_GIB_YOPPARAI_0114`, of 638, 642 and 1007 frames: the last frames played by the commands). The IDs of the files of a map overlap: `m_0114.bin` of the same map also has the IDs `0x1001` and `0x1002`, for other motions (`BKB_KAKOMU_AKIREN_B_0258`, 470 frames, and `BKC_KAKOMU_AKIREN_C_0258`, 296 frames), too short for the commands. The other cutscene of the PKS, `SEQDATA1`, plays the motion `0x1004` from frame 612 to frame 691, while `0x1004` of `m_01114.bin` (`AKI_AITU_MASAKA_0448`) has 80 frames, and no MOTN file of the game has a motion `0x1004` of Ryo that long.
 
 - **Extension:** `.motn` (`MOTN` in the [IPAC](IPAC) dictionary)
 - **Magic:** none
@@ -42,12 +48,21 @@ The motion names are in Japanese written in Latin letters, with a prefix for the
 | 0x0C   | 4    | uint32 | `lastID`      | End of the range of [motion IDs](#motion-ids): `firstID + count + 1` |
 | 0x10   | 4    | uint32 | `size`        | Size of the file                                                |
 | 0x14   | 4    | uint32 | `firstID`     | Start of the range of [motion IDs](#motion-ids) (e.g. `0x1000`, `0x1400`, `0x7000`, `0x7923`) |
-| 0x18   | 4    | uint32 | `lastID2`     | Always the same as `lastID`                                     |
+| 0x18   | 4    | uint32 | `lastID2`     | The same as `lastID`, except in `motion/motion.bin`, where it is 0 |
 | 0x1C   | 4    | uint32 | `unknown`     | Always 0                                                        |
 
 ## Motion IDs
 
 The motions are played by a number, not by their name: the motion `i` of the file (0-based) has the ID `firstID + 1 + i`, so the IDs of a file go from `firstID + 1` to `lastID - 1`. For example, `M_01TE` in `scene/01/d000/auth.pks` has `firstID = 0x1400` and 25 motions (IDs `0x1401` to `0x1419`, `lastID = 0x141A`); the cutscene `SEQDATA0` of the same PKS plays the motion `0x1418` (motion 23, `AKI_SIRABERU_DENWATYOU_ETC_TABACOYA_0100`, 925 frames) from frame 18 to frame 925.
+
+## Common motions
+
+`motion/motion.bin` (1826800 bytes, not compressed) is a MOTN file with the motions shared by the whole game: the walks, the stands, the doors... of Ryo and of the other characters. Its header has `firstID = 0`, `lastID = 0x618` and `lastID2 = 0`: it holds 1559 motions, with the IDs `0x1` to `0x617`, the small motion IDs of the cutscenes ([AUTH](AUTH)). For example, `scene/01/d000/buss/SEQDATA5` plays the motion `0x2DF` on Ryo three times (frames 1–36 of `AKI_AKI_WALK_SP1_LP`, 37 frames) while he walks away from the bus.
+
+- 108 entries are placeholders named `ERROR`, `ERROR_1`…, and the 1559 entries point to 1319 different motions.
+- The prefixes are mostly `AKI` (751) and `YKI` (207), then `AK`, `DMY`, `TA`, `RUF`…
+- Of the 1559 entries, 1531 are keyframe motions (1292 of [character type](#character-types) 0, 207 of type 13), 19 are sampled and 9 are raw.
+- It ends with the same [timestamp](#timestamp) as the other files (`Fri Nov 12 16:10:23 1999`).
 
 ## Motion table (8 bytes per motion)
 
@@ -168,6 +183,8 @@ Bones of the human set (the numbers of the second set in parentheses, when they 
 | 32 (30) | r | 31 | Upper arm | `0x05` | As bone 26 |
 | 35 (33) | p | | Wrist | `0xFFBF` | As bone 29 |
 | 36 (34) | r | — | Hand | `0xFFBF` | As bone 30 |
+
+**Swapped arms.** In the motions of the [character types](#character-types) 4 (`GAK`, `JAK`: Ryo as a child), 5 (`GEN`, `GIW`) and 7 (`JIJ`), the two arms are swapped: bones 25, 26, 29 and 30 are the arm of the +Z side and bones 31, 32, 35 and 36 the arm of the −Z side, while the legs keep their sides. Over the motions of `scene/01` and `motion/motion.bin` (taking the side from the direction the face looks, bone 23 from bone 20), the wrist of bone 29 is on the −Z side in 1213 of the 1292 motions of type 0, 280 of 314 of type 13 and 115 of 119 of type 10, and on the +Z side in all the 5 motions of type 4, all the 37 of type 7 and 13 of the 17 of type 5; the ankle of bone 8 is on the +Z side in almost all of them, whatever the type. The rotations follow: the median X rotation of the upper arm is positive for bone 26 and negative for bone 32 in types 0 and 13 (0.068 and −0.056 in type 0), and the opposite in types 4, 5 and 7 (−0.135 and 0.114 in type 7). The models of these characters (e.g. `JKB_M.chrm`, young Ryo, in `scene/01/yd01/sakr`) have the arms as the others.
 
 The rest of the pelvis differs from the models: the node `0x0E` is a child of the torso turned 180° around Z, while bone 1 is relative to the hips and is a quarter turn around Y in the same pose. The rotations of the motions don't depend on how the body is turned in the file: in a few models the nodes above the torso are turned (e.g. 180° around Y in `OGM_L.chrm`), or the torso itself (`BAT_L.chrm` has `(270°, 0°, 90°)`, the usual rest turned 180° around Y, with the rest of the body turned with it). Bone 3 has a position in a single motion. The toes (`0x13`, `0x18`), the fingers and the faces of the models have no bones.
 

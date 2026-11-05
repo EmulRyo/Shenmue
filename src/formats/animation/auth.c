@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 #include "core/bytes.h"
 #include "core/file.h"
 #include "formats/animation/auth.h"
@@ -176,6 +177,31 @@ bool AUTH_Load(const char* filepath, AUTH_Sequence* sequence) {
     return true;
 }
 
+// Longest span between two keys that is a jump: one frame, with a margin for the rounding of the times
+#define AUTH_JUMP_SPAN (1.5f / AUTH_FRAME_RATE)
+
+// A span of one frame is a jump when its value changes this many times more than in a frame of the spans around it: most
+// spans of one frame change 1 to 2 times as much as their neighbours, few 4 to 8 times, and the jumps more
+#define AUTH_JUMP_RATIO 8.0f
+
+// Change of the value per frame in the span that ends at the first key with the time of times[key], 0 if there is none
+static float RateBefore(const AUTH_Curve* curve, uint32_t key) {
+    while (key > 0 && curve->times[key - 1] == curve->times[key])
+        key--;
+    if (key == 0)
+        return 0.0f;
+    return fabsf(curve->values[key] - curve->values[key - 1]) / ((curve->times[key] - curve->times[key - 1]) * AUTH_FRAME_RATE);
+}
+
+// Change of the value per frame in the span that starts at the last key with the time of times[key], 0 if there is none
+static float RateAfter(const AUTH_Curve* curve, uint32_t key) {
+    while (key + 1 < curve->count && curve->times[key + 1] == curve->times[key])
+        key++;
+    if (key + 1 >= curve->count)
+        return 0.0f;
+    return fabsf(curve->values[key + 1] - curve->values[key]) / ((curve->times[key + 1] - curve->times[key]) * AUTH_FRAME_RATE);
+}
+
 float AUTH_CurveValue(const AUTH_Curve* curve, float time, float fallback) {
     if (curve->count == 0)
         return fallback;
@@ -194,7 +220,15 @@ float AUTH_CurveValue(const AUTH_Curve* curve, float time, float fallback) {
     if (key + 1 >= curve->count)
         return curve->values[key];
     float t0 = curve->times[key], t1 = curve->times[key + 1];
-    float t = t1 > t0 ? (time - t0) / (t1 - t0) : 0.0f;
+    // A span of one frame that changes much more than the spans around it is a jump at its end: there is no frame between
+    // its keys (e.g. a character placed where its motion left the hips when the next motion starts). Inside a movement,
+    // keys one frame apart are interpolated as the others (e.g. an object carried by a character)
+    if (t1 - t0 < AUTH_JUMP_SPAN) {
+        float change = fabsf(curve->values[key + 1] - curve->values[key]);
+        if (change > AUTH_JUMP_RATIO * fmaxf(RateBefore(curve, key), RateAfter(curve, key + 1)))
+            return curve->values[key];
+    }
+    float t = (time - t0) / (t1 - t0);
     return curve->values[key] + (curve->values[key + 1] - curve->values[key]) * t;
 }
 

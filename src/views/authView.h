@@ -6,10 +6,10 @@
 #include "views/views.h"
 
 // Player of AUTH cutscenes: the list of commands, the camera and the characters in 3D (seen from a free camera or from
-// the camera of the cutscene), and a timeline with the motions, voices and sounds. The names of the motions are taken
-// from the MOTN files in the folder of the cutscene. The characters are drawn with their models (in their rest pose:
-// the motions aren't played), found in the CHRT scripts of the folder, of the scene and of the map, and the voices and
-// sound effects are played (see authSounds.h)
+// the camera of the cutscene), and a timeline with the motions, voices and sounds. The motions are taken from the MOTN
+// files in the folder of the cutscene and from the common motions of the game (motion/motion.bin). The characters are
+// drawn with their models, in the pose of their motions, found in the CHRT scripts of the folder, of the scene and of
+// the map, and the voices and sound effects are played (see authSounds.h)
 
 // Loads a cutscene, replacing the current one, with the same camera (free or of the cutscene) and fly mode. Returns
 // false if the file can't be loaded

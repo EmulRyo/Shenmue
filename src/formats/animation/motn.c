@@ -35,7 +35,8 @@ static bool ReadTable(MOTN_Bank* bank) {
     uint32_t dataOffset = Bytes_ReadU32(data + 0x08);
     uint32_t lastID = Bytes_ReadU32(data + 0x0C);
     bank->firstID = Bytes_ReadU32(data + 0x14);
-    if (lastID <= bank->firstID || Bytes_ReadU32(data + 0x18) != lastID)
+    uint32_t lastID2 = Bytes_ReadU32(data + 0x18); // 0 in motion/motion.bin
+    if (lastID <= bank->firstID || (lastID2 != lastID && lastID2 != 0))
         return false;
     bank->count = lastID - bank->firstID - 1;
     if (namesOffset > bank->size || bank->count > (bank->size - namesOffset) / 4 ||

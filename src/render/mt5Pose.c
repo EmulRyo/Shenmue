@@ -27,6 +27,12 @@ static const BoneSet g_other = { 1, 16, 18, 19, 21, { { 5, 8, 9 }, { 11, 14, 15 
 
 #define MT5POSE_BONE_ROOT 0
 
+// The motions of a few character types (4: GAK, JAK; 5: GEN, GIW; 7: JIJ) have the bones of the two arms swapped: the
+// first arm of the set is the one of the +Z side, on the same side as the first leg
+static bool SwappedArms(const MOTN_Motion* motion) {
+    return motion->type == 4 || motion->type == 5 || motion->type == 7;
+}
+
 // Direction of the bend of the knees and the elbows in the space of the thigh and the upper arm: the knees bend to the
 // front, the elbows to the back
 static const Vector3 g_kneeAxis = { 0.0f, 1.0f, 0.0f };
@@ -246,6 +252,7 @@ bool MT5Pose_Compute(const MT5Mesh* mesh, const MT5Pose_Body* body, const MOTN_M
 
     Vector3 hips = BoneValue(motion, MT5POSE_BONE_ROOT, true, frame, NULL);
     Matrix root = Euler(BoneValue(motion, MT5POSE_BONE_ROOT, false, frame, NULL));
+    bool swappedArms = SwappedArms(motion);
     for (uint32_t i = 0; i < mesh->nodeCount; i++) {
         if (done[i])
             continue;
@@ -286,6 +293,7 @@ bool MT5Pose_Compute(const MT5Mesh* mesh, const MT5Pose_Body* body, const MOTN_M
         for (int side = 0; side < 2; side++) {
             const int32_t* leg = body->legs[side];
             const int32_t* arm = body->arms[side];
+            const uint8_t* armBones = bones->arms[swappedArms ? 1 - side : side];
             if (index == leg[0]) {
                 world[i] = Mul(parentWorld, LocalWith(node, BoneRotation(motion, bones->legs[side][0], frame, node)));
                 bool found;
@@ -300,18 +308,18 @@ bool MT5Pose_Compute(const MT5Mesh* mesh, const MT5Pose_Body* body, const MOTN_M
                 done[leg[1]] = done[leg[2]] = true;
             }
             else if (index == arm[0])
-                world[i] = Mul(parentWorld, LocalWith(node, BoneRotation(motion, bones->arms[side][0], frame, node)));
+                world[i] = Mul(parentWorld, LocalWith(node, BoneRotation(motion, armBones[0], frame, node)));
             else if (index == arm[1]) {
-                world[i] = Mul(parentWorld, LocalWith(node, BoneRotation(motion, bones->arms[side][1], frame, node)));
+                world[i] = Mul(parentWorld, LocalWith(node, BoneRotation(motion, armBones[1], frame, node)));
                 bool found;
-                Vector3 target = BoneValue(motion, bones->arms[side][2], true, frame, &found);
+                Vector3 target = BoneValue(motion, armBones[2], true, frame, &found);
                 if (found)
                     SolveLimb(mesh, world, arm[1], arm[2], arm[3], target, g_elbowAxis);
                 else
                     world[arm[2]] = Mul(world[i], MT5Mesh_NodeMatrix(&mesh->nodes[arm[2]]));
                 // The rotation of the hand is relative to the forearm
                 const MT5Mesh_Node* hand = &mesh->nodes[arm[3]];
-                world[arm[3]] = Mul(world[arm[2]], LocalWith(hand, BoneRotation(motion, bones->arms[side][3], frame, hand)));
+                world[arm[3]] = Mul(world[arm[2]], LocalWith(hand, BoneRotation(motion, armBones[3], frame, hand)));
                 done[arm[2]] = done[arm[3]] = true;
             }
         }

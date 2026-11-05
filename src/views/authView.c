@@ -32,6 +32,7 @@
 #define AUTHVIEW_SOUND_TIME     0.5f    // Seconds a sound with no length is shown
 #define AUTHVIEW_SCENE_MODELS   "model/chara" // Models of the characters in the folder of the scene
 #define AUTHVIEW_HUMANS         "stream/humans" // Folder of each character of the scene, with its script and models
+#define AUTHVIEW_COMMON_MOTIONS "/motion/motion.bin" // Motions shared by the whole game, from the parent of the scene folder
 
 // A model file, loaded for each character that uses it: each one is in the pose of its motion
 typedef struct {
@@ -46,10 +47,11 @@ typedef struct {
     bool            posed;      // In the pose of the motion of its character at the current frame
 } AUTHView_Model;
 
-// A motion played by the commands, decoded from the MOTN files of the folder
+// A motion played by the commands, decoded from the MOTN files
 typedef struct {
     uint32_t        id;
     bool            valid;      // Found and decoded
+    const char*     name;       // In its bank, NULL if not found
     MOTN_Motion     motion;
 } AUTHView_Motion;
 
@@ -168,6 +170,10 @@ static const char* SoundName(uint32_t sound) {
 }
 
 static const char* MotionName(uint32_t id) {
+    for (uint32_t i = 0; i < g_view.motionCount; i++) {
+        if (g_view.motions[i].id == id && g_view.motions[i].name != NULL)
+            return g_view.motions[i].name;
+    }
     for (uint32_t i = 0; i < g_view.bankCount; i++) {
         const char* name = MOTN_FindName(&g_view.banks[i], id);
         if (name != NULL)
@@ -232,18 +238,6 @@ static const char* CommandName(const AUTH_Command* command) {
     default:
         return TextFormat("Command %u", command->opcode);
     }
-}
-
-static void LoadMotionNames(const char* filepath) {
-    FilePathList files = LoadDirectoryFilesEx(GetDirectoryPath(filepath), ".motn", false);
-    g_view.banks = calloc(files.count + 1, sizeof(MOTN_Bank));
-    if (g_view.banks != NULL) {
-        for (unsigned int i = 0; i < files.count; i++) {
-            if (MOTN_Load(files.paths[i], &g_view.banks[g_view.bankCount]))
-                g_view.bankCount++;
-        }
-    }
-    UnloadDirectoryFiles(files);
 }
 
 // The frame and the name of the commands; the ID of the characters
@@ -328,6 +322,41 @@ static void FindSceneFolder(const char* filepath, char* folder, size_t size) {
             return;
     }
     folder[0] = '\0';
+}
+
+// The MOTN files of the folder of the file; the m_*.bin files of the map of the scene with the name of that folder, the
+// name of its PKS (e.g. scene/01/yq14/m_01114.bin for scene/01/d000/yq14/SEQDATA2.auth); then the common motions of the
+// game (motion/motion.bin, next to the scene folder), with the small motion IDs (e.g. 0x2DF, the walk of Ryo)
+static void LoadMotionBanks(const char* filepath) {
+    FilePathList files = LoadDirectoryFilesEx(GetDirectoryPath(filepath), ".motn", false);
+    FilePathList mapFiles = { 0 };
+    if (g_view.sceneFolder[0] != '\0') {
+        const char* map = TextFormat("%s/%s", g_view.sceneFolder, GetFileName(GetDirectoryPath(filepath)));
+        if (DirectoryExists(map))
+            mapFiles = LoadDirectoryFilesEx(map, ".bin", false);
+    }
+    g_view.banks = calloc(files.count + mapFiles.count + 2, sizeof(MOTN_Bank));
+    if (g_view.banks != NULL) {
+        for (unsigned int i = 0; i < files.count; i++) {
+            if (MOTN_Load(files.paths[i], &g_view.banks[g_view.bankCount]))
+                g_view.bankCount++;
+        }
+        for (unsigned int i = 0; i < mapFiles.count; i++) {
+            const char* name = GetFileName(mapFiles.paths[i]);
+            if ((name[0] == 'm' || name[0] == 'M') && name[1] == '_' && MOTN_Load(mapFiles.paths[i], &g_view.banks[g_view.bankCount]))
+                g_view.bankCount++;
+        }
+        char common[AUTHVIEW_PATH_SIZE];
+        snprintf(common, sizeof(common), "%s", g_view.sceneFolder);
+        if (common[0] != '\0' && ToParent(common) && ToParent(common)) {
+            strncat(common, AUTHVIEW_COMMON_MOTIONS, sizeof(common) - strlen(common) - 1);
+            if (FileExists(common) && MOTN_Load(common, &g_view.banks[g_view.bankCount]))
+                g_view.bankCount++;
+        }
+    }
+    UnloadDirectoryFiles(files);
+    if (mapFiles.paths != NULL)
+        UnloadDirectoryFiles(mapFiles);
 }
 
 // Path of a model file of the CHRT scripts in a folder: <name>.chrm or <name>.mt5, without the extension of the script
@@ -425,7 +454,20 @@ static int LoadModelFile(const char* path) {
     return model->loaded ? (int)(model - g_view.models) : -1;
 }
 
-// Decodes the motions of the motion commands
+// Last frame that the commands play of a motion
+static uint32_t LastPlayedFrame(uint32_t id) {
+    uint32_t last = 0;
+    for (uint32_t i = 0; i < g_view.sequence.commandCount; i++) {
+        const AUTH_Command* command = &g_view.sequence.commands[i];
+        if (command->opcode == AUTH_COMMAND_MOTION && Arg(command, 1) == id && Arg(command, 3) > last)
+            last = Arg(command, 3);
+    }
+    return last;
+}
+
+// Decodes the motions of the motion commands. Several banks can have the same ID (e.g. 0x1001 in m_01114.bin and
+// m_0114.bin of scene/01/yq14): the motion is the first one that lasts up to the last frame that the commands play, or
+// else the first one found
 static bool LoadMotions(void) {
     const AUTH_Sequence* sequence = &g_view.sequence;
     g_view.motions = calloc(sequence->commandCount + 1, sizeof(AUTHView_Motion));
@@ -443,10 +485,21 @@ static bool LoadMotions(void) {
             continue;
         AUTHView_Motion* motion = &g_view.motions[g_view.motionCount++];
         motion->id = id;
-        for (uint32_t b = 0; b < g_view.bankCount && !motion->valid; b++) {
+        uint32_t last = LastPlayedFrame(id);
+        for (uint32_t b = 0; b < g_view.bankCount && !(motion->valid && motion->motion.frames >= last); b++) {
             int32_t index = MOTN_FindMotion(&g_view.banks[b], id);
-            motion->valid = index >= 0 && MOTN_ReadMotion(&g_view.banks[b], (uint32_t)index, &motion->motion);
-        }
+            MOTN_Motion candidate;
+            if (index < 0 || !MOTN_ReadMotion(&g_view.banks[b], (uint32_t)index, &candidate))
+                continue;
+            if (motion->valid && candidate.frames < last) {
+                MOTN_FreeMotion(&candidate);
+                continue;
+            }
+            if (motion->valid)
+                MOTN_FreeMotion(&motion->motion);
+            motion->motion = candidate;
+            motion->valid = true;
+            motion->name = MOTN_FindName(&g_view.banks[b], id);        }
     }
     return true;
 }
@@ -558,10 +611,10 @@ bool AUTHView_Open(const char* filepath) {
             *c = '/';
     }
     FindSceneFolder(g_view.path, g_view.sceneFolder, sizeof(g_view.sceneFolder));
-    LoadMotionNames(filepath);
-    printf("%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files in the folder\n", GetFileName(g_view.path),
+    LoadMotionBanks(filepath);
+    printf("%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files\n", GetFileName(g_view.path),
         sequence.duration, sequence.characterCount, sequence.commandCount, sequence.soundCount, g_view.bankCount);
-    if (!CreateLabels() || !LoadCharacterModels() || !LoadMotions()) {
+    if (!LoadMotions() || !CreateLabels() || !LoadCharacterModels()) {
         fputs("[AUTHView_Open]: Memory error\n", stderr);
         AUTHView_Close();
         return false;

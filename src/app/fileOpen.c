@@ -77,6 +77,7 @@ static const Format g_formats[] = {
     { ".snd",       "snd",  "SND",  SNDView_Open,       VIEW_SND },
     { ".auth",      "auth", "AUTH", AUTHView_Open,      VIEW_AUTH },
     { ".motn",      NULL,   "MOTN", MOTNView_Open,      VIEW_MOTN },
+    { NULL,         NULL,   "MOTN", MOTNView_Open,      VIEW_MOTN, "motion.bin" },
     { NULL,         NULL,   "MAPINFO", MAPINFOView_Open, VIEW_MAPINFO, "mapinfo.bin" },
 };
 
@@ -126,7 +127,7 @@ void FileOpen_Open(const char* filepath) {
 
 void FileOpen_Dialog(void) {
     nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[9] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Motions", "motn" }, { "Maps", "bin" } };
+    nfdu8filteritem_t filters[9] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Motions", "motn,bin" }, { "Maps", "bin" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
     args.filterCount = 9;
