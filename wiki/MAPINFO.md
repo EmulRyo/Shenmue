@@ -88,6 +88,10 @@ The program of the map. In 119 files it is **native SH-4 machine code** (the CPU
 
 The data of 129 files contains the values `20.0, 800.0, 1.0, 0xFFFFFFFF`, the same as the default [fog](#fog--fog).
 
+### Strings of the code
+
+In version `0x20000`, the code loads the strings of the data with `mov.l @(disp,PC),Rn` (`Dndd`): the 32-bit literal at `(pc & ~3) + 4 + disp × 4` is the offset of the string from `dataStart`. Each function ends with an `rts` (`000B`), followed by its literals. The functions of `scene/01/d000` that load the cutscenes load, in this way, the path of the scene (`/scene/01/D000/`), the name of each PKS of the cutscenes, their `seqdataN.bin` files (e.g. `D0W0` and `seqdata1.bin`…`seqdataC.bin`), the name of the [AFS](AFS) of their voices (`E1020`) and the sound banks of the [AUTH](AUTH#sound-bank) files (`a1_yamaw.snd`, with the music `bgm085.snd` and `battle_1.snd`). The family of PKS `djhn_01`…`djhn_07` and `djhn_mot` is loaded by one function, its `seqdata1.bin`…`seqdata7.bin` by another one, and the bank `a1_yanji.snd` with the AFS `01JUCEA` by a third one.
+
 ### Door table
 
 The data of 97 files (96 of version `0x20000` and the bytecode of `scene/03/door`) contains a table with the doors of the map and other models placed with them: a list of models followed by the list of placements. No field of the header points to it; it is preceded by the names of its models. It has 1 to 36 models and 1 to 120 placements (`scene/0x/d000`); there are 861 placements in all.

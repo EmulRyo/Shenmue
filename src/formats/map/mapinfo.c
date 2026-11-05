@@ -443,3 +443,80 @@ bool MAPINFO_ChunkValue(const MAPINFO_File* file, const char* id, uint32_t* valu
     *value = Bytes_ReadU32(file->data + chunk->offset + 8);
     return true;
 }
+
+// Null-terminated string of the data of the SH-4 scene program loaded by the instruction at pc, if it is a
+// mov.l @(disp,PC),Rn whose literal is the offset of a string from the start of the data (3 or more printable
+// characters). NULL if none
+static const char* ProgramString(const uint8_t* scn, uint32_t size, uint32_t dataStart, uint32_t pc) {
+    uint16_t op = Bytes_ReadU16(scn + pc);
+    if ((op >> 12) != 0xD)
+        return NULL;
+    uint32_t address = (pc & ~3u) + 4 + (op & 0xFFu) * 4;
+    if (address + 4 > dataStart)
+        return NULL;
+    uint32_t value = Bytes_ReadU32(scn + address);
+    if (value >= size - dataStart)
+        return NULL;
+    const uint8_t* start = scn + dataStart + value;
+    if (value > 0 && isprint(start[-1]))
+        return NULL;
+    uint32_t length = 0;
+    while (dataStart + value + length < size && isprint(start[length]))
+        length++;
+    if (length < 3 || dataStart + value + length >= size || start[length] != '\0')
+        return NULL;
+    return (const char*)start;
+}
+
+static bool EqualsNoCase(const char* a, const char* b) {
+    while (*a != '\0' && tolower((unsigned char)*a) == tolower((unsigned char)*b)) {
+        a++;
+        b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+static bool IsBankName(const char* name) {
+    size_t length = strlen(name);
+    return length > 4 && EqualsNoCase(name + length - 4, ".snd");
+}
+
+uint32_t MAPINFO_ProgramBanks(const MAPINFO_File* file, const char* const* keys, uint32_t keyCount, const char** banks,
+    uint32_t maxBanks) {
+    const MAPINFO_Chunk* chunk = MAPINFO_FindChunk(file, "SCN3");
+    if (chunk == NULL || file->scnVersion != MAPINFO_SCN_SH4 || chunk->size < 0x30)
+        return 0;
+    const uint8_t* scn = file->data + chunk->offset;
+    uint32_t dataStart = Bytes_ReadU32(scn + 0x10);
+    if (dataStart > chunk->size || dataStart < 0x30)
+        return 0;
+    // The functions end with an rts (0x000B): each instruction is in the function of the next rts
+    uint32_t functionCount = 1;
+    for (uint32_t pc = 0x30; pc + 2 <= dataStart; pc += 2)
+        functionCount += Bytes_ReadU16(scn + pc) == 0x000B;
+    bool* selected = calloc(functionCount, sizeof(bool));
+    if (selected == NULL)
+        return 0;
+    uint32_t function = 0;
+    for (uint32_t pc = 0x30; pc + 2 <= dataStart; pc += 2) {
+        const char* string = ProgramString(scn, chunk->size, dataStart, pc);
+        for (uint32_t k = 0; string != NULL && k < keyCount; k++)
+            selected[function] |= EqualsNoCase(string, keys[k]);
+        function += Bytes_ReadU16(scn + pc) == 0x000B;
+    }
+    uint32_t count = 0;
+    function = 0;
+    for (uint32_t pc = 0x30; pc + 2 <= dataStart; pc += 2) {
+        const char* string = selected[function] ? ProgramString(scn, chunk->size, dataStart, pc) : NULL;
+        if (string != NULL && IsBankName(string)) {
+            bool known = false;
+            for (uint32_t b = 0; b < count && !known; b++)
+                known = EqualsNoCase(banks[b], string);
+            if (!known && count < maxBanks)
+                banks[count++] = string;
+        }
+        function += Bytes_ReadU16(scn + pc) == 0x000B;
+    }
+    free(selected);
+    return count;
+}

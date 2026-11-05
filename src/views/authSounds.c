@@ -7,16 +7,15 @@
 #include <math.h>
 #include <raylib.h>
 #include "formats/archive/afs.h"
+#include "formats/map/mapinfo.h"
 #include "formats/sound/snd.h"
 #include "formats/sound/xwm.h"
 #include "views/authSounds.h"
 
 #define AUTHSOUNDS_PATH_SIZE    1024
 #define AUTHSOUNDS_NAME_SIZE    64
-#define AUTHSOUNDS_EFFECTS      128     // Keys of the effect program
-#define AUTHSOUNDS_EFFECT_TYPE  0x04A9  // Low 16 bits of the sound ID of the effects of the cutscene banks
-#define AUTHSOUNDS_EXTRA        0.498f  // Seconds the length of a sound command adds to the length of its effect
-#define AUTHSOUNDS_TOLERANCE    0.02f   // Seconds of difference to that
+#define AUTHSOUNDS_PROGRAM_BANKS 16     // Banks and names of the cutscene compared in the program of the map
+#define AUTHSOUNDS_SEQUENCE_EVENTS 16   // Events read of an effect sequence
 #define AUTHSOUNDS_JUMP         0.25f   // Seconds: a bigger step of the time is a jump
 
 // A voice clip or an effect, played by one or more commands
@@ -26,25 +25,25 @@ typedef struct {
     bool    paused;
 } AUTHSound;
 
-// Lengths of the effects of a SND bank, kept between the cutscenes so the banks are read once
+// A sound started at a time with a volume, or stopped (volume 0): the voice of a command, or an effect of the sequence of
+// a sound command
 typedef struct {
-    char    path[AUTHSOUNDS_PATH_SIZE];
-    float   lengths[AUTHSOUNDS_EFFECTS];    // Seconds, 0 if the bank has no such effect
-} BankLengths;
+    float   time;
+    int     sound;
+    float   volume;
+} AUTHCue;
 
 static struct {
     uint32_t        soundCount;
     AUTHSound*      sounds;
     uint32_t        commandCount;
-    const AUTH_Command* commands;
-    int*            commandSounds;  // Sound of each command, -1 if none
-    float           lastTime;       // Time of the last update: the commands after it are played
+    int*            commandSounds;  // First sound of each command, -1 if none
+    uint32_t        cueCount;
+    AUTHCue*        cues;           // In order of time
+    float           lastTime;       // Time of the last update: the cues after it are played
     bool            wasPlaying;
     AUTHSounds_Info info;
 } g_sounds;
-
-static uint32_t g_bankCount;
-static BankLengths* g_banks;
 
 static uint32_t Arg(const AUTH_Command* command, uint32_t arg) {
     return arg < command->argCount ? command->args[arg] : 0;
@@ -107,7 +106,8 @@ static int16_t* DecodeVoice(const FilePathList* roots, const char* scene, const 
     for (int l = 0; l < 2; l++) {
         for (unsigned int r = 0; r < roots->count; r++) {
             char path[AUTHSOUNDS_PATH_SIZE];
-            snprintf(path, sizeof(path), "%s/scene/%s/stream/pc/%s/%s/%s.xwm", roots->paths[r], scene, languages[l], afs, clip);            if (FileExists(path))
+            snprintf(path, sizeof(path), "%s/scene/%s/stream/pc/%s/%s/%s.xwm", roots->paths[r], scene, languages[l], afs, clip);
+            if (FileExists(path))
                 return XWM_Decode(path, info);
             snprintf(path, sizeof(path), "%s/scene/%s/stream/pc/%s/%s.afs", roots->paths[r], scene, languages[l], afs);
             if (!FileExists(path))
@@ -198,17 +198,37 @@ static void LoadVoices(const AUTH_Sequence* sequence, const char* sceneFolder) {
     FreeRoots(&roots);
 }
 
-// Effect of a sound command of the cutscene bank, -1 if it plays another kind of sound
-static int CommandEffect(const AUTH_Command* command) {
+// Group and sequence of the sound of a sound command: the low and the high 16 bits of its sound ID. Returns false if the
+// command plays no sound (another command, or the sound ID 0xFFFFFFFF)
+static bool CommandSequence(const AUTH_Command* command, uint16_t* group, uint32_t* index) {
     uint32_t id = Arg(command, 1);
-    if (command->opcode != AUTH_COMMAND_SOUND || (id & 0xFFFF) != AUTHSOUNDS_EFFECT_TYPE || (id >> 16) >= AUTHSOUNDS_EFFECTS)
-        return -1;
-    return (int)(id >> 16);
+    if (command->opcode != AUTH_COMMAND_SOUND || command->argCount < 2 || id == 0xFFFFFFFF)
+        return false;
+    *group = (uint16_t)(id & 0xFFFF);
+    *index = id >> 16;
+    return true;
+}
+
+// Effect sequence of a bank with a group ID and an index in its group, NULL if none
+static const SND_Sequence* FindSequence(const SND_Bank* bank, uint16_t group, uint32_t index) {
+    for (uint32_t i = 0; i < bank->sequenceCount; i++) {
+        const SND_Sequence* sequence = &bank->sequences[i];
+        if (sequence->groupID == group && sequence->index == index)
+            return sequence->type == SND_SEQUENCE_EFFECT ? sequence : NULL;
+    }
+    return NULL;
+}
+
+// Effect sequence of a sound command in a bank, NULL if none
+static const SND_Sequence* CommandSoundSequence(const SND_Bank* bank, const AUTH_Command* command) {
+    uint16_t group;
+    uint32_t index;
+    return CommandSequence(command, &group, &index) ? FindSequence(bank, group, index) : NULL;
 }
 
 // Split of the effect program that plays an effect, NULL if none
 static const SND_Split* EffectSplit(const SND_Bank* bank, int effect) {
-    if (!bank->hasEffectProgram || bank->effectProgram.layerCount == 0)
+    if (!bank->hasEffectProgram || bank->effectProgram.layerCount == 0 || effect < 0 || effect > 127)
         return NULL;
     const SND_Layer* layer = &bank->effectProgram.layers[0];
     int split = layer->keyMap[effect];
@@ -217,116 +237,163 @@ static const SND_Split* EffectSplit(const SND_Bank* bank, int effect) {
     return &layer->splits[split];
 }
 
-// Lengths of the effects of a bank, read the first time
-static const BankLengths* GetBankLengths(const char* path) {
-    for (uint32_t i = 0; i < g_bankCount; i++) {
-        if (strcmp(g_banks[i].path, path) == 0)
-            return &g_banks[i];
-    }
-    BankLengths* banks = realloc(g_banks, (g_bankCount + 1) * sizeof(BankLengths));
-    if (banks == NULL)
-        return NULL;
-    g_banks = banks;
-    BankLengths* lengths = &g_banks[g_bankCount++];
-    memset(lengths, 0, sizeof(*lengths));
-    snprintf(lengths->path, sizeof(lengths->path), "%s", path);
-    SND_Bank bank;
-    if (!SND_Load(path, &bank))
-        return lengths;
-    for (int e = 0; e < AUTHSOUNDS_EFFECTS; e++) {
-        const SND_Split* split = EffectSplit(&bank, e);
-        const SND_Sample* sample = split != NULL ? &bank.samples[split->sample] : NULL;
-        if (sample != NULL && sample->sampleRate != 0 && sample->frameCount != 0)
-            lengths->lengths[e] = (float)sample->frameCount / sample->sampleRate;
-    }
-    SND_Free(&bank);
-    return lengths;
+// Path of a bank of the sound folder of the scene, as named by the program (e.g. "a1_yanji.snd"). Returns false if the
+// file doesn't exist
+static bool BankPath(const char* sceneFolder, const char* name, char* path, size_t size) {
+    snprintf(path, size, "%s/sound/%s", sceneFolder, name);
+    if (FileExists(path))
+        return true;
+    snprintf(path, size, "%s/sound/%s", sceneFolder, TextToLower(name));
+    return FileExists(path);
 }
 
-// The bank of the sound folder of the scene whose effects have the lengths of the most sound commands: the length of a
-// command with 9 arguments is the length of the sample of its effect plus AUTHSOUNDS_EXTRA. The bank has to match more
-// commands than any other bank. The commands with 3 arguments have no length, so the bank of a cutscene without
-// commands of 9 arguments isn't known. Returns false if there is no such bank
-static bool FindBank(const AUTH_Sequence* sequence, const char* sceneFolder, char* path, size_t size) {
-    int lengths = 0;
-    for (uint32_t i = 0; i < sequence->commandCount; i++)
-        lengths += CommandEffect(&sequence->commands[i]) >= 0 && sequence->commands[i].argCount >= 9;
-    char folder[AUTHSOUNDS_PATH_SIZE];
-    snprintf(folder, sizeof(folder), "%s/sound", sceneFolder);
-    if (lengths == 0 || !DirectoryExists(folder)) {
-        printf("[AUTHSounds_Load]: The bank of the sound effects isn't known (no sound command with a length)\n");
+// Names the program of the map loads with the cutscene: the name of its PKS (its folder, e.g. DJHN_07) and the names of
+// the AFS of its voices (e.g. 01JUCEA). Returns their number
+static uint32_t CutsceneKeys(const AUTH_Sequence* sequence, const char* filepath, char keys[][AUTHSOUNDS_NAME_SIZE], uint32_t maxKeys) {
+    uint32_t count = 0;
+    snprintf(keys[count++], AUTHSOUNDS_NAME_SIZE, "%s", GetFileName(GetDirectoryPath(filepath)));
+    for (uint32_t i = 0; i < sequence->commandCount && count < maxKeys; i++) {
+        const AUTH_Command* command = &sequence->commands[i];
+        char afs[AUTHSOUNDS_NAME_SIZE], clip[AUTHSOUNDS_NAME_SIZE];
+        if (command->opcode != AUTH_COMMAND_VOICE || Arg(command, 1) >= sequence->soundCount ||
+            !VoiceNames(sequence->sounds[Arg(command, 1)], afs, clip))
+            continue;
+        bool known = false;
+        for (uint32_t k = 0; k < count && !known; k++)
+            known = strcmp(keys[k], afs) == 0;
+        if (!known)
+            snprintf(keys[count++], AUTHSOUNDS_NAME_SIZE, "%s", afs);
+    }
+    return count;
+}
+
+// Loads the bank of the sounds of the cutscene: among the banks loaded by the functions of the program of its map (the
+// mapinfo.bin of the parent folder of its folder) that also load the name of its PKS or of the AFS of its voices, the
+// one with a sequence for the most sound commands (the group with the ID of the low 16 bits of their sound ID); it has
+// to have more than any other one. Returns false if there is none
+static bool LoadProgramBank(const AUTH_Sequence* sequence, const char* sceneFolder, const char* filepath, SND_Bank* bank, char* name, size_t size) {
+    char keys[AUTHSOUNDS_PROGRAM_BANKS][AUTHSOUNDS_NAME_SIZE];
+    const char* keyPointers[AUTHSOUNDS_PROGRAM_BANKS];
+    uint32_t keyCount = CutsceneKeys(sequence, filepath, keys, AUTHSOUNDS_PROGRAM_BANKS);
+    for (uint32_t k = 0; k < keyCount; k++)
+        keyPointers[k] = keys[k];
+    char mapinfo[AUTHSOUNDS_PATH_SIZE];
+    snprintf(mapinfo, sizeof(mapinfo), "%s/mapinfo.bin", GetPrevDirectoryPath(GetDirectoryPath(filepath)));
+    MAPINFO_File map;
+    if (!FileExists(mapinfo) || !MAPINFO_Load(mapinfo, &map)) {
+        printf("[AUTHSounds_Load]: The bank of the sounds isn't known: no mapinfo.bin in the parent folder\n");
         return false;
     }
-    FilePathList files = LoadDirectoryFilesEx(folder, ".snd", false);
-    int best = -1, bestScore = 0, secondScore = 0;
-    for (unsigned int f = 0; f < files.count; f++) {
-        const BankLengths* bank = GetBankLengths(files.paths[f]);
-        if (bank == NULL)
+    const char* names[AUTHSOUNDS_PROGRAM_BANKS];
+    uint32_t nameCount = MAPINFO_ProgramBanks(&map, keyPointers, keyCount, names, AUTHSOUNDS_PROGRAM_BANKS);
+    int bestScore = 0, secondScore = 0;
+    bool found = false;
+    for (uint32_t n = 0; n < nameCount; n++) {
+        char path[AUTHSOUNDS_PATH_SIZE];
+        SND_Bank candidate;
+        if (!BankPath(sceneFolder, names[n], path, sizeof(path)) || !SND_Load(path, &candidate))
             continue;
         int score = 0;
-        for (uint32_t i = 0; i < sequence->commandCount; i++) {
-            const AUTH_Command* command = &sequence->commands[i];
-            int effect = CommandEffect(command);
-            if (effect >= 0 && command->argCount >= 9 && bank->lengths[effect] > 0.0f)
-                score += fabsf(bank->lengths[effect] + AUTHSOUNDS_EXTRA - AUTH_ArgFloat(command, 8)) <= AUTHSOUNDS_TOLERANCE;
-        }
+        for (uint32_t i = 0; i < sequence->commandCount; i++)
+            score += CommandSoundSequence(&candidate, &sequence->commands[i]) != NULL;
         if (score > bestScore) {
             secondScore = bestScore;
             bestScore = score;
-            best = (int)f;
+            if (found)
+                SND_Free(bank);
+            *bank = candidate;
+            found = true;
+            snprintf(name, size, "%s", names[n]);
         }
-        else if (score > secondScore)
-            secondScore = score;
+        else {
+            secondScore = score > secondScore ? score : secondScore;
+            SND_Free(&candidate);
+        }
     }
-    bool found = best >= 0 && bestScore > secondScore;
-    if (best >= 0)
-        printf("[AUTHSounds_Load]: %s %s for the sound effects: %d of %d lengths match (%d in the next bank)\n", GetFileName(files.paths[best]),
-            found ? "chosen" : "rejected", bestScore, lengths, secondScore);
-    if (found)
-        snprintf(path, size, "%s", files.paths[best]);
-    UnloadDirectoryFiles(files);
+    printf("[AUTHSounds_Load]: %u banks loaded with %s by the program of the map: %s, %d commands with a sequence (%d in the next bank)\n",
+        nameCount, keys[0], found ? name : "none", bestScore, secondScore);
+    MAPINFO_Free(&map);
+    if (found && bestScore <= secondScore) {
+        SND_Free(bank);
+        found = false;
+    }
     return found;
 }
 
-static void LoadEffects(const AUTH_Sequence* sequence, const char* sceneFolder) {
+// Adds a cue. Returns false if there is no memory
+static bool AddCue(float time, int sound, float volume) {
+    AUTHCue* cues = realloc(g_sounds.cues, (g_sounds.cueCount + 1) * sizeof(AUTHCue));
+    if (cues == NULL)
+        return false;
+    g_sounds.cues = cues;
+    g_sounds.cues[g_sounds.cueCount++] = (AUTHCue) { time, sound, volume };
+    return true;
+}
+
+// Sound of an effect of the effect program, uploaded the first time. -1 if the bank doesn't have it
+static int EffectSound(const SND_Bank* bank, int effect, float* level) {
+    const SND_Split* split = EffectSplit(bank, effect);
+    if (split == NULL)
+        return -1;
+    // The level of the split, in steps of 3 dB from 15
+    *level = split->level != SND_UNSET ? powf(10.0f, -3.0f * (15 - (split->level & 15)) / 20.0f) : 1.0f;
+    char key[AUTHSOUNDS_NAME_SIZE];
+    snprintf(key, sizeof(key), "#%d", effect);
+    int sound = FindSound(key);
+    if (sound < 0) {
+        const SND_Sample* sample = &bank->samples[split->sample];
+        sound = AddSound(key, sample->pcm, sample->frameCount, sample->sampleRate);
+    }
+    return sound;
+}
+
+// Adds the cues of the events of an effect sequence played at a time: each event Dx starts an effect of the effect
+// program with a volume (0 stops it), after the delays of the events before it. Returns the first sound, -1 if none
+static int AddSequenceCues(const SND_Bank* bank, const SND_Sequence* sequence, float time) {
+    uint8_t runningStatus = 0;
+    uint32_t pos = sequence->offset + 1; // After the header byte
+    int first = -1;
+    for (int e = 0; e < AUTHSOUNDS_SEQUENCE_EVENTS && pos != 0; e++) {
+        SND_Event event;
+        pos = SND_ReadEvent(bank, pos, true, &runningStatus, &event);
+        if (pos == 0 || event.status == SND_EVENT_END)
+            break;
+        if ((event.status & 0xF0) == 0xD0) {
+            float level;
+            int sound = EffectSound(bank, event.data[0], &level);
+            if (sound >= 0 && AddCue(time, sound, level * event.data[1] / 127.0f) && first < 0 && event.data[1] > 0)
+                first = sound;
+        }
+        time += event.delta / 1000.0f;
+    }
+    return first;
+}
+
+static void LoadEffects(const AUTH_Sequence* sequence, const char* sceneFolder, const char* filepath) {
     bool any = false;
     for (uint32_t i = 0; i < sequence->commandCount; i++) {
+        uint16_t group;
+        uint32_t index;
         g_sounds.info.effectCommands += sequence->commands[i].opcode == AUTH_COMMAND_SOUND;
-        any |= CommandEffect(&sequence->commands[i]) >= 0;
+        any |= CommandSequence(&sequence->commands[i], &group, &index);
     }
-    char path[AUTHSOUNDS_PATH_SIZE];
     SND_Bank bank;
-    if (!any || !FindBank(sequence, sceneFolder, path, sizeof(path)) || !SND_Load(path, &bank))
+    if (!any || filepath == NULL || !LoadProgramBank(sequence, sceneFolder, filepath, &bank, g_sounds.info.bank, sizeof(g_sounds.info.bank)))
         return;
-    snprintf(g_sounds.info.bank, sizeof(g_sounds.info.bank), "%s", GetFileName(path));
-    // Only the effects with the length of a command are played: the others can be in another bank
-    bool verified[AUTHSOUNDS_EFFECTS] = { false };
-    const BankLengths* lengths = GetBankLengths(path);
-    for (uint32_t i = 0; i < sequence->commandCount && lengths != NULL; i++) {
-        int effect = CommandEffect(&sequence->commands[i]);
-        if (effect >= 0 && sequence->commands[i].argCount >= 9 && lengths->lengths[effect] > 0.0f &&
-            fabsf(lengths->lengths[effect] + AUTHSOUNDS_EXTRA - AUTH_ArgFloat(&sequence->commands[i], 8)) <= AUTHSOUNDS_TOLERANCE)
-            verified[effect] = true;
-    }
     for (uint32_t i = 0; i < sequence->commandCount; i++) {
-        int effect = CommandEffect(&sequence->commands[i]);
-        if (effect < 0 || !verified[effect])
+        const SND_Sequence* effects = CommandSoundSequence(&bank, &sequence->commands[i]);
+        if (effects == NULL)
             continue;
-        char key[AUTHSOUNDS_NAME_SIZE];
-        snprintf(key, sizeof(key), "#%d", effect);
-        int sound = FindSound(key);
-        const SND_Split* split = EffectSplit(&bank, effect);
-        if (sound < 0 && split != NULL) {
-            const SND_Sample* sample = &bank.samples[split->sample];
-            sound = AddSound(key, sample->pcm, sample->frameCount, sample->sampleRate);
-            // The level of the split, in steps of 3 dB from 15
-            if (sound >= 0 && split->level != SND_UNSET)
-                SetSoundVolume(g_sounds.sounds[sound].sound, powf(10.0f, -3.0f * (15 - (split->level & 15)) / 20.0f));
-        }
+        int sound = AddSequenceCues(&bank, effects, sequence->commands[i].frame / AUTH_FRAME_RATE);
         g_sounds.commandSounds[i] = sound;
         g_sounds.info.effects += sound >= 0;
     }
     SND_Free(&bank);
+}
+
+static int CompareCues(const void* a, const void* b) {
+    float ta = ((const AUTHCue*)a)->time, tb = ((const AUTHCue*)b)->time;
+    return ta < tb ? -1 : ta > tb;
 }
 
 void AUTHSounds_Free(void) {
@@ -334,16 +401,16 @@ void AUTHSounds_Free(void) {
         UnloadSound(g_sounds.sounds[i].sound);
     free(g_sounds.sounds);
     free(g_sounds.commandSounds);
+    free(g_sounds.cues);
     memset(&g_sounds, 0, sizeof(g_sounds));
 }
 
-void AUTHSounds_Load(const char* sceneFolder, const AUTH_Sequence* sequence) {
+void AUTHSounds_Load(const char* sceneFolder, const char* filepath, const AUTH_Sequence* sequence) {
     AUTHSounds_Free();
     g_sounds.lastTime = -1.0f / AUTH_FRAME_RATE;
     g_sounds.commandCount = sequence->commandCount;
-    g_sounds.commands = sequence->commands;
     g_sounds.commandSounds = malloc((sequence->commandCount + 1) * sizeof(int));
-    g_sounds.sounds = calloc(sequence->commandCount + 1, sizeof(AUTHSound));
+    g_sounds.sounds = calloc(sequence->commandCount * AUTHSOUNDS_SEQUENCE_EVENTS + 1, sizeof(AUTHSound));
     if (g_sounds.commandSounds == NULL || g_sounds.sounds == NULL) {
         AUTHSounds_Free();
         return;
@@ -357,7 +424,14 @@ void AUTHSounds_Load(const char* sceneFolder, const AUTH_Sequence* sequence) {
         InitAudioDevice();
     double start = GetTime();
     LoadVoices(sequence, sceneFolder);
-    LoadEffects(sequence, sceneFolder);
+    for (uint32_t i = 0; i < sequence->commandCount; i++) {
+        if (g_sounds.commandSounds[i] >= 0)
+            AddCue(sequence->commands[i].frame / AUTH_FRAME_RATE, g_sounds.commandSounds[i], 1.0f);
+    }
+    LoadEffects(sequence, sceneFolder, filepath);
+    // The events of a sequence can come after the next commands
+    if (g_sounds.cues != NULL)
+        qsort(g_sounds.cues, g_sounds.cueCount, sizeof(AUTHCue), CompareCues);
     printf("[AUTHSounds_Load]: %u/%u voices, %u/%u sound effects in %.2f s\n", g_sounds.info.voices, g_sounds.info.voiceCommands,
         g_sounds.info.effects, g_sounds.info.effectCommands, GetTime() - start);
 }
@@ -374,7 +448,7 @@ void AUTHSounds_Update(float time, bool playing, bool jumped) {
         return;
     jumped |= time < g_sounds.lastTime || time - g_sounds.lastTime > AUTHSOUNDS_JUMP;
     if (jumped) {
-        // The commands at the new time are played when it plays
+        // The cues at the new time are played when it plays
         StopAll();
         g_sounds.lastTime = time - 0.5f / AUTH_FRAME_RATE;
         g_sounds.wasPlaying = playing;
@@ -399,12 +473,17 @@ void AUTHSounds_Update(float time, bool playing, bool jumped) {
         }
     }
     g_sounds.wasPlaying = true;
-    for (uint32_t i = 0; i < g_sounds.commandCount; i++) {
-        float start = g_sounds.commands[i].frame / AUTH_FRAME_RATE;
-        if (start > time)
-            break;
-        if (start > g_sounds.lastTime && g_sounds.commandSounds[i] >= 0)
-            PlaySound(g_sounds.sounds[g_sounds.commandSounds[i]].sound);
+    for (uint32_t i = 0; i < g_sounds.cueCount && g_sounds.cues[i].time <= time; i++) {
+        const AUTHCue* cue = &g_sounds.cues[i];
+        if (cue->time <= g_sounds.lastTime)
+            continue;
+        Sound sound = g_sounds.sounds[cue->sound].sound;
+        if (cue->volume <= 0.0f)
+            StopSound(sound);
+        else {
+            SetSoundVolume(sound, cue->volume);
+            PlaySound(sound);
+        }
     }
     g_sounds.lastTime = time;
 }

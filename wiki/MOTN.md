@@ -4,6 +4,21 @@ A MOTN file is a bank of motions (skeletal animations) of characters, with a nam
 
 They are stored in the [IPAC](IPAC) block of the [PKS](PKS) files of the scenes, with the `MOTN` extension and names that start with `M_` (e.g. `M_01TE`, `M_D000`, `M_0000`). The game files contain 291 MOTN files (185 different ones: some are repeated in several scenes, e.g. `M_01JA` in `jomo/common01.pks` and `jomo/common03.pks`) in 207 PKS files of `scene/01`, `scene/02` and `scene/03`, from 528 to 1032292 bytes, with 1 to 513 motions each (4180 in total). Most PKS files hold one MOTN; a few hold up to 18. The motions shared by the whole game are in another MOTN file, `motion/motion.bin` (see [Common motions](#common-motions)), and each map has its own ones (see [Motions of the maps](#motions-of-the-maps)).
 
+## Motions of a family of PKS
+
+Some cutscenes are split in several PKS files named `<family>_<suffix>`, next to a PKS with the name of the family. In `scene/01/d000`, `djhn_01.pks` to `djhn_07.pks` hold one cutscene each (`SEQDATA1` to `SEQDATA7`), and only `djhn_01.pks` has a MOTN (`M_JUCE1`, IDs `0x1001`–`0x1004`); `djhn_mot.pks` holds only motions (`M_JUCE2`, IDs `0x1011`–`0x1014`, and `M_JUCE3`, `0x1021`–`0x1024`). The cutscenes without a MOTN play the motions of the other PKS of the family:
+
+| PKS | Motions played | MOTN |
+|-----|----------------|------|
+| `djhn_02` | `0x1011`, `0x1013` | `M_JUCE2` (`djhn_mot`) |
+| `djhn_03` | `0x1021`–`0x1024` | `M_JUCE3` (`djhn_mot`) |
+| `djhn_04` | `0x1022`, `0x1023` | `M_JUCE3` (`djhn_mot`) |
+| `djhn_05` | `0x1002`, `0x1004` | `M_JUCE1` (`djhn_01`) |
+| `djhn_06` | `0x1012`, `0x1014` | `M_JUCE2` (`djhn_mot`) |
+| `djhn_07` | `0x1002`, `0x1004` | `M_JUCE1` (`djhn_01`) |
+
+In each case the motions have the length of the last frame played by the commands, and their names are those of the scene and of the characters (e.g. `AKI_AT5A_MISERU_TEGAMI_WANTOJIDOUHANBAIKI_0100`, 1315 frames, and `JIJ_WAN_AT5A_MISERU_TEGAMI_WANTOJIDOUHANBAIKI_0100`, 1252, for Ryo and the shopkeeper `YKHI` in `djhn_05` and `djhn_07`). The PKS of the family name, `djhn.pks`, holds the same motions and the cutscenes `SEQDATA1`–`SEQDATA7` too, in a single MOTN (`M_01JUCE`, `0x1001`–`0x101A`) with other IDs: there, `0x1002` and `0x1004` are `AKI_AT2_SEIKOU_TOUKIYA_YANJIHANKI_0100` and `AKI_IRERU_COIN`.
+
 ## Motions of the maps
 
 The map folders (`scene/0N/<map>/`, those with a [MAPINFO](MAPINFO)) hold MOTN files with the `.bin` extension and a name that starts with `m_` (e.g. `scene/01/yq14/m_01114.bin`, `m_0114.bin` and `m_yq14.bin`): 154 files in 45 map folders (82 different ones), not compressed, from 980 to 2769320 bytes, with 17332 motions in total. Their `firstID` is usually `0x1000` (30 files) or `0x800` (16).

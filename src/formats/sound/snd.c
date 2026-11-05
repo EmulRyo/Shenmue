@@ -399,6 +399,7 @@ static void ReadSequences(SND_Bank* bank, uint32_t section) {
         for (uint32_t i = 0; i < count; i++) {
             SND_Sequence* sequence = &bank->sequences[bank->sequenceCount++];
             sequence->group = g;
+            sequence->groupID = (uint16_t)(bank->data[section + 4 + g * 4 + 2] << 8 | bank->data[section + 4 + g * 4 + 3]);
             sequence->index = i;
             sequence->offset = section + Bytes_ReadU32(bank->data + group + 4 + i * 4);
             ReadSequence(bank, sequence);

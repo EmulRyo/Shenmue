@@ -95,6 +95,7 @@ typedef enum {
 
 typedef struct {
     uint32_t            group;
+    uint16_t            groupID;    // Bytes 2 and 3 of the reference of the group, as a big-endian number (e.g. 0x04A9)
     uint32_t            index;
     SND_SequenceType    type;
     uint32_t            offset; // In the file

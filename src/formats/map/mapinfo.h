@@ -12,6 +12,7 @@
 // data, the cutscenes (SCEX) and the chunks of a single value. See the MAPINFO page of the wiki
 
 #define MAPINFO_ID_SIZE 5
+#define MAPINFO_SCN_SH4 0x20000 // Version of the scene programs of SH-4 code
 #define MAPINFO_CAMERA_FROM_CURRENT 0x400000 // Flag of the cameras whose keys at time 0 are a placeholder (all zero) of the
                                              // camera at the start: a transition from the current camera
 #define MAPINFO_CAMERA_RELATIVE     0x200    // Flag of the cameras whose positions are probably relative to a character
@@ -135,6 +136,12 @@ void MAPINFO_Free(MAPINFO_File* file);
 const MAPINFO_Chunk* MAPINFO_FindChunk(const MAPINFO_File* file, const char* id);
 // Value of a chunk of a single 4-byte value (MAPR, MAPT, DIRT, SCRL, SCOF, BLKS). Returns false if there is none
 bool MAPINFO_ChunkValue(const MAPINFO_File* file, const char* id, uint32_t* value);
+// Names of the sound banks (strings of the data ending in ".snd") loaded by the functions of the SH-4 scene program that
+// also load one of the keys (compared ignoring case): the code loads the offsets of the strings from the start of the
+// data with mov.l @(disp,PC), and each function ends with an rts. Up to maxBanks names, pointers into the data of the
+// file. Returns their number, 0 if the program isn't SH-4 code
+uint32_t MAPINFO_ProgramBanks(const MAPINFO_File* file, const char* const* keys, uint32_t keyCount, const char** banks,
+    uint32_t maxBanks);
 // Name of a COLS group, e.g. "COLI"
 const char* MAPINFO_GroupName(MAPINFO_Group group);
 

@@ -250,8 +250,9 @@ The sequences (the songs, and the sound effects requested by the game) are group
 | Offset | Size | Type   | Name       | Description                                              |
 |-------:|-----:|--------|------------|----------------------------------------------------------|
 | 0x00   | 2    | uint16 | `offset`   | Offset of the group                                      |
-| 0x02   | 1    | uint8  | `unknown1` | Unknown, 0 to 127 (`3F` and 4 are the most common)       |
-| 0x03   | 1    | uint8  | `unknown2` | Unknown: `A8`, `A9`, `AB` or `AA`                        |
+| 0x02   | 2    | uint8[2] | `id`     | ID of the group, read with byte 2 as the high byte: `04 A9` is `0x04A9`. Byte 2 is 0 to 127 (`3F` and 4 are the most common), byte 3 `A8`, `A9`, `AB` or `AA` |
+
+The sound commands of the cutscenes ([AUTH](AUTH#sound-bank), command 6) play a sequence by the ID of its group (the low 16 bits of their sound ID) and its index in the group (the high 16 bits). The banks of the cutscenes of `scene/01/d000` (`a1_busno.snd`, `a1_yanji.snd`, `a1_yamaw.snd`...) have a single group, `0x04A9`, of effect sequences; the music banks have groups `xxA8` (`3FA8` in `bgm085.snd`, `25A8` in `bgm013.snd`) and `battle_1.snd` has `76AB` and `77AB`.
 
 ### Group
 
@@ -318,7 +319,7 @@ All the channels in a single stream of [events](#events), ending with the MIDI e
 
 A single [program](#program) (flags 2, one layer without key map) with one split per sound effect, played by the [effect sequences](#effect-sequence). The first byte of each split is its index instead of a key, and the effects play at the rate of their recording, whatever the [pitch](#pitch) of the note.
 
-The sound effects of the cutscenes ([AUTH](AUTH#commands), command 6) are effects of this program, by index, in the banks of the `sound` folder of the scene (e.g. `scene/01/sound/a1_busno.snd` for the bus cutscenes of `scene/01/d000`).
+The sound effects of the cutscenes ([AUTH](AUTH#sound-bank), command 6) are effects of this program, started by the effect sequences of the group of the command, in the banks of the `sound` folder of the scene (e.g. `scene/01/sound/a1_busno.snd` for the bus cutscenes of `scene/01/d000`). The index of the sequence is usually the index of the effect, but not always: in `a1_busno.snd` sequence 28 stops effect 27 and sequences 31 to 38 play effects 29 to 36.
 
 ## Section 5: Unknown table
 

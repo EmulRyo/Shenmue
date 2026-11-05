@@ -2,7 +2,7 @@
 
 An AUTH file describes a scripted cutscene: a timeline of commands (which characters take part, which motions they play, their voice clips and sound effects), the animation of the camera, the movement of each character in the scene and the names of the sounds used.
 
-They are stored in the [IPAC](IPAC) block of the [PKS](PKS) files of the scenes, with the `AUTH` extension and names such as `SEQDATA0`…`SEQDATAD` (also `SEQDATK0` and `SEQDATS1`). The same PKS holds the motions ([MOTN](MOTN); for a PKS named as a map, they are in the [map](MOTN#motions-of-the-maps)), the models ([CHRM](MT5)) and the character script ([CHRT](CHRT)) used by the cutscene. The game files contain 306 AUTH files, in 119 PKS files of `scene/01`, `scene/02` and `scene/03`, from 796 to 108052 bytes. The `SCEX` chunk of [MAPINFO](MAPINFO) files holds 259 more `TRCK` chunks, and its `ECAM` cameras use the same [curves](#animation-curves).
+They are stored in the [IPAC](IPAC) block of the [PKS](PKS) files of the scenes, with the `AUTH` extension and names such as `SEQDATA0`…`SEQDATAD` (also `SEQDATK0` and `SEQDATS1`). The same PKS holds the motions ([MOTN](MOTN); for a PKS named as a map, they are in the [map](MOTN#motions-of-the-maps); for some PKS split in a family, in [another PKS of the family](MOTN#motions-of-a-family-of-pks)), the models ([CHRM](MT5)) and the character script ([CHRT](CHRT)) used by the cutscene. The game files contain 306 AUTH files, in 119 PKS files of `scene/01`, `scene/02` and `scene/03`, from 796 to 108052 bytes. The `SCEX` chunk of [MAPINFO](MAPINFO) files holds 259 more `TRCK` chunks, and its `ECAM` cameras use the same [curves](#animation-curves).
 
 - **Extension:** `.auth` (`AUTH` in the [IPAC](IPAC) dictionary)
 - **Magic:** `TRCK` (`54 52 43 4B`)
@@ -125,7 +125,7 @@ The frames of args 2 and 3 are frames of the motion (30 per second), played from
 | Arg | Type    | Description                                                                 |
 |----:|---------|-----------------------------------------------------------------------------|
 | 0   | char[4] | Character that makes the sound                                              |
-| 1   | uint32  | Sound ID: low 16 bits `0x04A9` (or `0x0FA9` in 13 commands), high 16 bits a number from 0 to 38 that changes from one file to another for the same sound. `0xFFFFFFFF` in 33 commands. With `0x04A9`, the number is the index of the effect in the [effect program](SND#section-4-effect-program) of a [SND](SND) bank of the `sound` folder of the scene (see below) |
+| 1   | uint32  | Sound ID: the low 16 bits are the ID of a group of the [sequence bank](SND#section-3-sequence-bank) of a [SND](SND) bank (`0x04A9`, or `0x0FA9` in 13 commands), the high 16 bits the index of an [effect sequence](SND#effect-sequence) in that group (0 to 38). `0xFFFFFFFF` in 33 commands, which play no sound. See [Sound bank](#sound-bank) |
 | 2   | uint32  | Sound number (index in `ASTR`)                                              |
 | 3   | char[4] | *9 arguments only.* A declared character, or a value `0x1000xxxx` / `0x1001xxxx` (160 commands) |
 | 4   | uint32  | *9 arguments only.* Always `0x7F` (127)                                     |
@@ -134,7 +134,7 @@ The frames of args 2 and 3 are frames of the motion (30 per second), played from
 | 7   | uint32  | *9 arguments only.* Always 0                                                |
 | 8   | float   | *9 arguments only.* Length of the sound in seconds (the same for every use of a sound name): the length of the sample of the effect plus about 0.5 s (0.498) |
 
-The bank of the effects is not named in the file. With the lengths of the 9-argument commands it can be recognized among the banks of the scene: e.g. in `scene/01/d000`, the effects of `buss/SEQDATA1` are those of `scene/01/sound/a1_busno.snd` (7 of the 8 lengths match), those of `drauth/SEQDATA1` and `SEQDATA2` of `a1_senfk.snd` (32 of 33, 14 of 15), and those of `ybhn/SEQDATA0` of `a1_yobi.snd` (14 of 15). Some commands of a file use effects that the bank doesn't have, or with another length (e.g. the indices 37 and 38 of `buss/SEQDATA2`). The 3-argument commands have no length, so the bank of a file with only 3-argument commands (e.g. `auth`, `d0w0` and `djhn` of `scene/01/d000`) is not known.
+See [Sound bank](#sound-bank) for the bank of the sequences.
 
 Example (`scene/01/d000/auth.pks`, `SEQDATA0`):
 
@@ -149,6 +149,21 @@ frame 489  5 Voice        AKIR sound 6 3.30 s     (SOUND/01TELA001.aiff)
 frame 856  6 Sound        AKIR 0x000104A9 sound 9  (smallobject/bookcl.aiff)
 end
 ```
+
+### Sound bank
+
+The bank of the sound commands is not named in the AUTH file: the [program](MAPINFO#scn3--scene-program) of the map that contains the cutscene (the `mapinfo.bin` of the parent folder of its PKS) loads it with the cutscene. In `scene/01/d000`, one or more functions of the program load the name of the PKS of the cutscenes, their `seqdataN.bin` files, the name of the [AFS](AFS) of their voices and the banks of the `sound` folder of the scene (see [Strings of the code](MAPINFO#strings-of-the-code)). Of the banks loaded by the functions that load the name of the PKS or of the AFS of the voices, a single one has a group with the ID of the sound commands (`0x04A9`), the bank of the cutscene; the others are music banks (groups `xxA8`, e.g. `3FA8` in `bgm085.snd`) or other banks (`76AB` and `77AB` in `battle_1.snd`):
+
+| PKS | Names loaded with the bank | Banks loaded | Bank of the cutscene |
+|-----|----------------------------|--------------|----------------------|
+| `auth` | `AUTH`, `seqdata0.bin`, `01TEL` | `a1_telp.snd` | `a1_telp.snd` |
+| `buss` | `BUSS`, `seqdata1.bin`, `seqdata2.bin`, `seqdata4.bin`, `seqdata5.bin` | `a1_busno.snd` | `a1_busno.snd` |
+| `d0w0` | `D0W0`, `seqdata1.bin`…`seqdataC.bin`, `E1020` | `battle_1.snd`, `a1_yamaw.snd`, `bgm085.snd` | `a1_yamaw.snd` |
+| `djhn`, `djhn_01`…`djhn_07` | `01JUCEA` (the PKS are loaded by other functions) | `a1_yanji.snd` | `a1_yanji.snd` |
+| `drauth` | `DRAUTH`, `01REV` | `battle_1.snd`, `a1_senfk.snd`, `bgm013.snd` | `a1_senfk.snd` |
+| `ybhn` | `YBHN`, `seqdata0.bin`, `DR15_012` | `bgm018.snd`, `a1_yobi.snd` | `a1_yobi.snd` |
+
+With these banks, every sound command with a sound ID of the 33 files of these PKS with sound commands has an effect sequence in the bank, also those of the files with only 3-argument commands. The sequence is not always the effect with the same index: in `a1_busno.snd`, sequences 0 to 27 play effects 0 to 27, sequence 28 stops effect 27 (volume 0), 29 plays effect 28 and 30 stops it, and sequences 31 to 38 play effects 29 to 36 (the commands of sequences 37 and 38 of `buss/SEQDATA2` have the length of effects 35 and 36). The functions that load `YQ14` (`d000/yq14`, sound ID `0x0FA9`) load no bank, and the program of `scene/01/yd01` (`sakr`) is a bytecode.
 
 ## Characters
 

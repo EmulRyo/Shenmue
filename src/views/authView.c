@@ -324,39 +324,90 @@ static void FindSceneFolder(const char* filepath, char* folder, size_t size) {
     folder[0] = '\0';
 }
 
-// The MOTN files of the folder of the file; the m_*.bin files of the map of the scene with the name of that folder, the
-// name of its PKS (e.g. scene/01/yq14/m_01114.bin for scene/01/d000/yq14/SEQDATA2.auth); then the common motions of the
-// game (motion/motion.bin, next to the scene folder), with the small motion IDs (e.g. 0x2DF, the walk of Ryo)
-static void LoadMotionBanks(const char* filepath) {
-    FilePathList files = LoadDirectoryFilesEx(GetDirectoryPath(filepath), ".motn", false);
-    FilePathList mapFiles = { 0 };
-    if (g_view.sceneFolder[0] != '\0') {
-        const char* map = TextFormat("%s/%s", g_view.sceneFolder, GetFileName(GetDirectoryPath(filepath)));
-        if (DirectoryExists(map))
-            mapFiles = LoadDirectoryFilesEx(map, ".bin", false);
-    }
-    g_view.banks = calloc(files.count + mapFiles.count + 2, sizeof(MOTN_Bank));
-    if (g_view.banks != NULL) {
-        for (unsigned int i = 0; i < files.count; i++) {
-            if (MOTN_Load(files.paths[i], &g_view.banks[g_view.bankCount]))
-                g_view.bankCount++;
-        }
-        for (unsigned int i = 0; i < mapFiles.count; i++) {
-            const char* name = GetFileName(mapFiles.paths[i]);
-            if ((name[0] == 'm' || name[0] == 'M') && name[1] == '_' && MOTN_Load(mapFiles.paths[i], &g_view.banks[g_view.bankCount]))
-                g_view.bankCount++;
-        }
-        char common[AUTHVIEW_PATH_SIZE];
-        snprintf(common, sizeof(common), "%s", g_view.sceneFolder);
-        if (common[0] != '\0' && ToParent(common) && ToParent(common)) {
-            strncat(common, AUTHVIEW_COMMON_MOTIONS, sizeof(common) - strlen(common) - 1);
-            if (FileExists(common) && MOTN_Load(common, &g_view.banks[g_view.bankCount]))
-                g_view.bankCount++;
-        }
-    }
+// Loads a MOTN file at the end of the banks. Returns false if there is no memory
+static bool AddMotionBank(const char* path) {
+    MOTN_Bank* banks = realloc(g_view.banks, (g_view.bankCount + 1) * sizeof(MOTN_Bank));
+    if (banks == NULL)
+        return false;
+    g_view.banks = banks;
+    if (MOTN_Load(path, &g_view.banks[g_view.bankCount]))
+        g_view.bankCount++;
+    return true;
+}
+
+// Loads the MOTN files (.motn) of a folder
+static void AddFolderMotionBanks(const char* folder) {
+    FilePathList files = LoadDirectoryFilesEx(folder, ".motn", false);
+    for (unsigned int i = 0; i < files.count; i++)
+        AddMotionBank(files.paths[i]);
     UnloadDirectoryFiles(files);
-    if (mapFiles.paths != NULL)
-        UnloadDirectoryFiles(mapFiles);
+}
+
+static int CompareFolders(const void* a, const void* b) {
+    return strcmp(*(const char* const*)a, *(const char* const*)b);
+}
+
+// Loads the MOTN files of the folders of the other PKS of the family of a folder named <family>_<suffix> (e.g. djhn_07):
+// the folders <family>_* of the same parent, first <family>_mot, then the others in order. The cutscenes of such a PKS
+// without motions play those of its family (scene/01/d000/djhn_07/SEQDATA7 plays the motions of djhn_01/M_JUCE1)
+static void AddFamilyMotionBanks(const char* folder) {
+    const char* name = GetFileName(folder);
+    const char* underscore = strrchr(name, '_');
+    if (underscore == NULL || underscore == name)
+        return;
+    int familyLength = (int)(underscore - name + 1); // With the underscore
+    char parent[AUTHVIEW_PATH_SIZE];
+    snprintf(parent, sizeof(parent), "%s", GetPrevDirectoryPath(folder));
+    FilePathList folders = LoadDirectoryFilesEx(parent, "DIRS*", false); // Only the folders
+    const char** family = calloc(folders.count + 1, sizeof(const char*));
+    unsigned int count = 0;
+    for (unsigned int i = 0; family != NULL && i < folders.count; i++) {
+        const char* other = GetFileName(folders.paths[i]);
+        if (DirectoryExists(folders.paths[i]) && strncmp(other, name, familyLength) == 0 && strcmp(other, name) != 0)
+            family[count++] = folders.paths[i];
+    }
+    if (family != NULL) {
+        qsort(family, count, sizeof(const char*), CompareFolders);
+        for (int mot = 1; mot >= 0; mot--) {
+            for (unsigned int i = 0; i < count; i++) {
+                if (EqualsIgnoreCase(GetFileName(family[i]) + familyLength, "mot") == (mot == 1))
+                    AddFolderMotionBanks(family[i]);
+            }
+        }
+    }
+    free(family);
+    UnloadDirectoryFiles(folders);
+}
+
+// The MOTN files of the folder of the file; if it has none, those of the other PKS of its family (see
+// AddFamilyMotionBanks); the m_*.bin files of the map of the scene with the name of that folder, the name of its PKS
+// (e.g. scene/01/yq14/m_01114.bin for scene/01/d000/yq14/SEQDATA2.auth); then the common motions of the game
+// (motion/motion.bin, next to the scene folder), with the small motion IDs (e.g. 0x2DF, the walk of Ryo)
+static void LoadMotionBanks(const char* filepath) {
+    char folder[AUTHVIEW_PATH_SIZE];
+    snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(filepath));
+    AddFolderMotionBanks(folder);
+    if (g_view.bankCount == 0)
+        AddFamilyMotionBanks(folder);
+    if (g_view.sceneFolder[0] != '\0') {
+        const char* map = TextFormat("%s/%s", g_view.sceneFolder, GetFileName(folder));
+        if (DirectoryExists(map)) {
+            FilePathList mapFiles = LoadDirectoryFilesEx(map, ".bin", false);
+            for (unsigned int i = 0; i < mapFiles.count; i++) {
+                const char* name = GetFileName(mapFiles.paths[i]);
+                if ((name[0] == 'm' || name[0] == 'M') && name[1] == '_')
+                    AddMotionBank(mapFiles.paths[i]);
+            }
+            UnloadDirectoryFiles(mapFiles);
+        }
+    }
+    char common[AUTHVIEW_PATH_SIZE];
+    snprintf(common, sizeof(common), "%s", g_view.sceneFolder);
+    if (common[0] != '\0' && ToParent(common) && ToParent(common)) {
+        strncat(common, AUTHVIEW_COMMON_MOTIONS, sizeof(common) - strlen(common) - 1);
+        if (FileExists(common))
+            AddMotionBank(common);
+    }
 }
 
 // Path of a model file of the CHRT scripts in a folder: <name>.chrm or <name>.mt5, without the extension of the script
@@ -499,8 +550,8 @@ static bool LoadMotions(void) {
                 MOTN_FreeMotion(&motion->motion);
             motion->motion = candidate;
             motion->valid = true;
-            motion->name = MOTN_FindName(&g_view.banks[b], id);        }
-    }
+            motion->name = MOTN_FindName(&g_view.banks[b], id);
+        }    }
     return true;
 }
 
@@ -621,7 +672,7 @@ bool AUTHView_Open(const char* filepath) {
     }
     MT5Render_Init(&g_view.render);
     g_view.open = true;
-    AUTHSounds_Load(g_view.sceneFolder[0] != '\0' ? g_view.sceneFolder : NULL, &g_view.sequence);
+    AUTHSounds_Load(g_view.sceneFolder[0] != '\0' ? g_view.sceneFolder : NULL, g_view.path, &g_view.sequence);
     ComputeBounds();
     ResetCamera();
     FreeCamera_SetFly(&g_view.camera, g_options.fly);
