@@ -52,6 +52,9 @@ set(SRC
     src/formats/animation/motn.c
     src/formats/animation/motn.h
 
+    src/formats/font/fon.c
+    src/formats/font/fon.h
+
     src/formats/map/mapinfo.c
     src/formats/map/mapinfo.h
 
@@ -103,6 +106,8 @@ set(SRC
     src/views/authView.h
     src/views/chrtView.c
     src/views/chrtView.h
+    src/views/fonView.c
+    src/views/fonView.h
     src/views/imageView.c
     src/views/imageView.h
     src/views/mapinfoView.c

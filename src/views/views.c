@@ -2,6 +2,7 @@
 #include <raylib.h>
 #include "views/authView.h"
 #include "views/chrtView.h"
+#include "views/fonView.h"
 #include "views/imageView.h"
 #include "views/mapinfoView.h"
 #include "views/motnView.h"
@@ -28,6 +29,7 @@ static const View g_views[VIEW_COUNT] = {
     [VIEW_CHRT]  = { CHRTView_Close, CHRTView_IsOpen, CHRTView_Draw, CHRTView_Toolbar, CHRTView_Status },
     [VIEW_MAPINFO] = { MAPINFOView_Close, MAPINFOView_IsOpen, MAPINFOView_Draw, MAPINFOView_Toolbar, MAPINFOView_Status },
     [VIEW_MOTN]  = { MOTNView_Close, MOTNView_IsOpen, MOTNView_Draw, MOTNView_Toolbar, MOTNView_Status },
+    [VIEW_FON]   = { FONView_Close, FONView_IsOpen, FONView_Draw, FONView_Toolbar, FONView_Status },
 };
 
 void Views_CloseOthers(ViewID view) {

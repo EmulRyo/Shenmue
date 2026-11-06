@@ -23,6 +23,7 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [MT5 / CHRM](MT5)  | `.mt5` `.chrm` | `HRCM`          | Model             | 3D model (CHRM: textures stored in the PKF)  |
 | [PVR](PVR)         | `.pvr`        | `GBIX` / `PVRT`  | Texture           | PowerVR texture                              |
 | [SPR](SPR)         | `.spr`        | `TEXN`           | Texture           | TEXN block with a PVR texture                |
+| [FON](FON)         | `.fon`        | —                | Font              | Bitmap font: kana and ASCII, or JIS X 0208 kanji |
 
 ## How the formats are nested
 
@@ -39,6 +40,7 @@ TAD/TAC
  ├─ PVR
  ├─ SPR → PVR
  ├─ SND
+ ├─ FON (misc/*.fon)
  └─ ...
 ```
 
