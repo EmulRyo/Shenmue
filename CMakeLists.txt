@@ -36,6 +36,12 @@ if (WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE mfplat mfuuid ole32 wmcodecdspuuid)
 endif()
 
+# The threads of the TAD extraction
+if (NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
+endif()
+
 # Checks if OSX and links appropriate frameworks (only required on MacOS)
 if (APPLE)
     target_link_libraries(${PROJECT_NAME} "-framework IOKit")

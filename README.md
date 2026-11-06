@@ -35,7 +35,7 @@ If the repository was cloned without `--recursive`, run `git submodule update --
 
 Run the program from the repository folder (it reads `resources/FilenameDatabase.json`).
 
-- **Extract TAD files**: select the folder that contains the `.tad`/`.tac` files of the game. All of them are extracted to the `content` folder.
+- **Extract TAD files**: select one or several `.tad` files of the game (each next to its `.tac`), then the output folder. The files of all of them are extracted to the same tree in that folder, at their path in the game (`scene/01/...`). When it ends, the status bar shows how many files were extracted and where: click it to open the folder, right click to close it.
 - **Open files**: open one of the supported files. Files can also be dragged and dropped onto the window.
   - Textures (`.pvr`, `.spr`) are shown in the window.
   - Containers (`.afs`, `.idx`, `.pkf`, `.pks`) are extracted to a folder with the name of the file, next to it.

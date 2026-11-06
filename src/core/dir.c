@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -7,11 +8,16 @@
 #endif
 
 #include "core/dir.h"
+#include "core/hashTable.h"
 
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <shellapi.h>
 #include <direct.h>
 #define MKDIR(path) _mkdir(path)
 #else
+#include <stdlib.h>
 #include <unistd.h>
 #define MKDIR(path) mkdir(path, 0755)
 #endif
@@ -83,8 +89,8 @@ int MakeDirs(const char *path) {
 
         struct stat st;
         if (stat(subpath, &st) != 0) {
-            // Directory does not exist, try to create it
-            if (MKDIR(subpath) != 0) {
+            // Directory does not exist, try to create it. Another thread may have created it since the stat
+            if (MKDIR(subpath) != 0 && errno != EEXIST) {
                 perror("mkdir failed");
                 return -1;
             }
@@ -98,4 +104,48 @@ int MakeDirs(const char *path) {
     }
 
     return 0;
+}
+
+int OpenDir(const char* path) {
+#ifdef _WIN32
+    // The path is UTF-8
+    wchar_t widePath[MAX_PATH * 4];
+    if (MultiByteToWideChar(CP_UTF8, 0, path, -1, widePath, (int)(sizeof(widePath) / sizeof(widePath[0]))) == 0)
+        return -1;
+    HINSTANCE result = ShellExecuteW(NULL, L"open", widePath, NULL, NULL, SW_SHOWNORMAL);
+    return (INT_PTR)result > 32 ? 0 : -1;
+#else
+    if (strchr(path, '\'') != NULL)
+        return -1;
+    char command[1100];
+#ifdef __APPLE__
+    snprintf(command, sizeof(command), "open '%s'", path);
+#else
+    snprintf(command, sizeof(command), "xdg-open '%s' &", path);
+#endif
+    return system(command) == 0 ? 0 : -1;
+#endif
+}
+
+// The longest folder kept in a DirCache; longer ones are created every time
+#define DIRCACHE_PATH 512
+
+HashTable DirCache_Create(void) {
+    return HT_Create(1024, DIRCACHE_PATH, 1, Hash_djb2);
+}
+
+int MakeDirsCached(const char* path, HashTable cache) {
+    size_t length = strlen(path);
+    if (cache == NULL || length >= DIRCACHE_PATH)
+        return MakeDirs(path);
+    char key[DIRCACHE_PATH] = { 0 }; // The whole key is compared: the rest must be zeros
+    memcpy(key, path, length);
+    if (HT_ContainsKey(cache, key))
+        return 0;
+    int result = MakeDirs(path);
+    if (result == 0) {
+        char created = 1;
+        HT_Set(cache, key, &created);
+    }
+    return result;
 }

@@ -71,7 +71,7 @@ static void DrawStatusBar(Rectangle area) {
     TADBatch_Progress progress = TADBatch_GetProgress();
     float fileWidth = 280.0f;
     float fpsWidth = 64.0f;
-    float progressWidth = progress.running ? 300.0f : 0.0f;
+    float progressWidth = progress.running || progress.finished ? 300.0f : 0.0f;
     float infoWidth = floorf(fmaxf(area.width - fileWidth - fpsWidth - progressWidth, 0.0f) * 0.5f);
     float hintWidth = fmaxf(area.width - fileWidth - fpsWidth - progressWidth - infoWidth, 0.0f);
 
@@ -82,14 +82,33 @@ static void DrawStatusBar(Rectangle area) {
     x += infoWidth;
     DrawField((Rectangle) { x, area.y, hintWidth, area.height }, status.hint, false);
     x += hintWidth;
+    Rectangle progressBounds = { x, area.y, progressWidth, area.height };
+    bool overProgress = CheckCollisionPointRec(GetMousePosition(), progressBounds);
     if (progress.running) {
-        // The text over a bar of the entries extracted of the current file
+        // The text over a bar of the entries extracted of all the files
         float padding = (float)GuiGetStyle(STATUSBAR, TEXT_PADDING);
-        GuiStatusBar((Rectangle) { x, area.y, progressWidth, area.height }, NULL);
-        float ratio = progress.entryCount > 0 ? (float)(progress.entry + 1) / progress.entryCount : 0.0f;
+        GuiStatusBar(progressBounds, NULL);
+        float ratio = progress.total > 0 ? (float)progress.extracted / progress.total : 0.0f;
         DrawRectangleRec((Rectangle) { x + 1, area.y + 1, ratio * (progressWidth - 2), area.height - 2 }, (Color) { 40, 110, 60, 255 });
         GuiLabel((Rectangle) { x + padding, area.y, progressWidth - 2.0f * padding, area.height },
-            TextFormat("TAD %u/%u, entry %zu/%zu", progress.file + 1, progress.fileCount, progress.entry + 1, progress.entryCount));
+            TextFormat("TAD %u/%u, file %zu/%zu", progress.file + 1, progress.fileCount, progress.extracted, progress.total));
+        if (overProgress)
+            Tooltip_Set(progressBounds, TextFormat("Extracting to %s (%.0f s)", progress.outputPath, progress.seconds));
+        x += progressWidth;
+    }
+    else if (progress.finished) {
+        // The result stays until it is clicked: left to open the folder, right to close it
+        DrawField(progressBounds, TextFormat("Extracted %zu files to %s", progress.extracted, progress.outputPath), false);
+        if (overProgress) {
+            Tooltip_Set(progressBounds, TextFormat("Extracted %zu files in %.1f s to %s\nClick to open the folder, right click to close",
+                progress.extracted, progress.seconds, progress.outputPath));
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                TADBatch_OpenOutput();
+                TADBatch_Dismiss();
+            }
+            else if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
+                TADBatch_Dismiss();
+        }
         x += progressWidth;
     }
     DrawField((Rectangle) { x, area.y, area.x + area.width - x, area.height }, TextFormat("%d fps", GetFPS()), false);
@@ -139,6 +158,7 @@ int main(int argc, char** argv) {
         EndDrawing();
     }
 
+    TADBatch_Stop();
     Views_CloseAll();
     if (IsAudioDeviceReady())
         CloseAudioDevice();

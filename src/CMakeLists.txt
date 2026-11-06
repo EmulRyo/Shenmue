@@ -29,6 +29,8 @@ set(SRC
     src/core/hashTable.h
     src/core/stringBuilder.c
     src/core/stringBuilder.h
+    src/core/thread.c
+    src/core/thread.h
 
     src/formats/archive/afs.c
     src/formats/archive/afs.h

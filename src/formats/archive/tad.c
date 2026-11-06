@@ -10,15 +10,6 @@
 #include "core/file.h"
 #include "formats/archive/tad.h"
 
-size_t TAD_GetBasename(const char* filepath, StringBuilder sb) {
-    char* lastSlash = strrchr(filepath, '\\');
-    size_t length = (filepath + strlen(filepath)) - lastSlash;
-    size_t offset = SB_Count(sb);
-    SB_AppendSubstring(sb, filepath, (lastSlash + 1) - filepath, length - 5);
-    SB_AppendChar(sb, '\0');
-    return offset;
-}
-
 TADFileEntry* TAD_GetEntry(uint8_t* buffer, size_t entryID) {
     TADFileEntry* entry = (TADFileEntry*)(buffer + 0x3C + entryID * 0x20);
     return entry;
@@ -110,16 +101,14 @@ uint64_t TAD_GetFileCount(uint8_t* buffer) {
     return header->fileCount;
 }
 
-void TAD_ExtractFile(TADFileEntry* entry, HashTable filenameDB, StringBuilder sb, FILE* tacFile, const char* outputPath, const char* basename) {
+bool TAD_SaveEntry(TADFileEntry* entry, const uint8_t* data, HashTable filenameDB, StringBuilder sb, const char* outputPath,
+                   HashTable dirCache) {
     size_t relPathOffset = TAD_GetEntryRelPath(entry, filenameDB, sb);
-    printf("    Path: %s\n", SB_CStrOffset(sb, relPathOffset));
 
     size_t outputFilenameOffset = SB_Count(sb);
     if (outputPath != NULL && strlen(outputPath) > 0) {
         SB_AppendStr(sb, outputPath);
     }
-    if (basename)
-        SB_AppendFormat(sb, "/%s", basename);
 
     SB_AppendStr(sb, SB_CStrOffset(sb, relPathOffset));
     SB_AppendChar(sb, '\0');
@@ -132,19 +121,27 @@ void TAD_ExtractFile(TADFileEntry* entry, HashTable filenameDB, StringBuilder sb
         SB_AppendSubstringFromSB(sb, outputFilenameOffset, lastSlash - outputFilename);
         SB_AppendChar(sb, '\0');
         const char* dir = SB_CStrOffset(sb, dirOffset);
-        int success = MakeDirs(dir);
+        MakeDirsCached(dir, dirCache);
     }
     outputFilename = SB_CStrOffset(sb, outputFilenameOffset);
-    TAC_SaveFile(tacFile, entry, outputFilename, sb);
+    bool saved = TAC_WriteFile(data, entry->size, outputFilename);
     SB_Clear(sb);
+    return saved;
 }
 
-void TAD_ContextInit(TAD_Context* ctx, const char* tadFilepath, HashTable filenameDB, const char* outputPath, bool appendBasename) {
+void TAD_ExtractFile(TADFileEntry* entry, HashTable filenameDB, StringBuilder sb, FILE* tacFile, const char* outputPath) {
+    if (entry->size == 0)
+        return;
+    uint8_t* data = TAC_GetFile(tacFile, entry);
+    TAD_SaveEntry(entry, data, filenameDB, sb, outputPath, NULL);
+    free(data);
+}
+
+void TAD_ContextInit(TAD_Context* ctx, const char* tadFilepath, HashTable filenameDB, const char* outputPath) {
     memset(ctx, 0, sizeof(TAD_Context));
     ctx->tadFilepath = tadFilepath;
     ctx->filenameDB = filenameDB;
     ctx->outputPath = outputPath;
-    ctx->appendBasename = appendBasename;
 }
 
 size_t TAD_ExtractAllFilesStart(TAD_Context* ctx) {
@@ -174,14 +171,7 @@ size_t TAD_ExtractAllFilesNext(TAD_Context* ctx) {
 
     TADFileEntry* entry = (TADFileEntry*)(ctx->buffer + 0x3C + ctx->entryID * 0x20);
 
-    TAD_PrintEntry(entry, ctx->entryID, header->fileCount, ctx->buffer);
-
-    const char* basename = NULL;
-    if (ctx->appendBasename) {
-        size_t basenameOffset = TAD_GetBasename(ctx->tadFilepath, ctx->sb);
-        basename = SB_CStrOffset(ctx->sb, basenameOffset);
-    }
-    TAD_ExtractFile(entry, ctx->filenameDB, ctx->sb, ctx->tacFile, ctx->outputPath, basename);
+    TAD_ExtractFile(entry, ctx->filenameDB, ctx->sb, ctx->tacFile, ctx->outputPath);
 
     ctx->entryID++;
     return ctx->entryID; // Successfully processed the entry
@@ -196,9 +186,9 @@ void TAD_ExtractAllFilesEnd(TAD_Context* ctx) {
     ctx->sb = NULL;
 }
 
-void TAD_ExtractAllFiles(const char* tadFilepath, HashTable filenameDB, const char* outputPath, bool appendBasename) {
+void TAD_ExtractAllFiles(const char* tadFilepath, HashTable filenameDB, const char* outputPath) {
     TAD_Context ctx;
-    TAD_ContextInit(&ctx, tadFilepath, filenameDB, outputPath, appendBasename);
+    TAD_ContextInit(&ctx, tadFilepath, filenameDB, outputPath);
 
     TAD_ExtractAllFilesStart(&ctx);
     while (TAD_ExtractAllFilesNext(&ctx) != SIZE_MAX) { }
