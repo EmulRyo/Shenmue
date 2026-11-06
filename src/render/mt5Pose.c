@@ -27,10 +27,10 @@ static const BoneSet g_other = { 1, 16, 18, 19, 21, { { 5, 8, 9 }, { 11, 14, 15 
 
 #define MT5POSE_BONE_ROOT 0
 
-// The motions of a few character types (4: GAK, JAK; 5: GEN, GIW; 7: JIJ) have the bones of the two arms swapped: the
-// first arm of the set is the one of the +Z side, on the same side as the first leg
+// The motions of a few character types (4: GAK, JAK; 5: GEN, GIW; 7: JIJ; 19: PNW) have the bones of the two arms
+// swapped: the first arm of the set is the one of the +Z side, on the same side as the first leg
 static bool SwappedArms(const MOTN_Motion* motion) {
-    return motion->type == 4 || motion->type == 5 || motion->type == 7;
+    return motion->type == 4 || motion->type == 5 || motion->type == 7 || motion->type == 19;
 }
 
 // Direction of the bend of the knees and the elbows in the space of the thigh and the upper arm: the knees bend to the
@@ -85,6 +85,18 @@ static Matrix Swing(Vector3 from, Vector3 to) {
         return MatrixRotate(Vector3Normalize(axis), PI);
     }
     return QuaternionToMatrix(QuaternionFromVector3ToVector3(from, to));
+}
+
+// Rotation whose X axis is x and whose Y axis is y made perpendicular to x
+static Matrix Basis(Vector3 x, Vector3 y) {
+    x = Vector3Normalize(x);
+    y = Vector3Normalize(Vector3Subtract(y, Vector3Scale(x, Vector3DotProduct(x, y))));
+    Vector3 z = Vector3CrossProduct(x, y);
+    Matrix m = MatrixIdentity();
+    m.m0 = x.x; m.m1 = x.y; m.m2 = x.z;
+    m.m4 = y.x; m.m5 = y.y; m.m6 = y.z;
+    m.m8 = z.x; m.m9 = z.y; m.m10 = z.z;
+    return m;
 }
 
 // Local matrix of a node with another rotation: scale, rotation, translation
@@ -200,17 +212,37 @@ static void SolveLimb(const MT5Mesh* mesh, Matrix* world, int32_t upper, int32_t
     float distance = Vector3Length(toTarget);
     Vector3 direction = distance > 1e-5f ? Vector3Scale(toTarget, 1.0f / distance) : Vector3Normalize(Rotate(rotation, midLocal));
     distance = Clamp(distance, fabsf(a - b) + 1e-4f, a + b - 1e-4f);
-    // The bend goes to the axis, without its part along the direction to the target
-    Vector3 bend = Rotate(Mul(Swing(Rotate(rotation, midLocal), direction), rotation), bendAxis);
-    bend = Vector3Subtract(bend, Vector3Scale(direction, Vector3DotProduct(bend, direction)));
-    if (Vector3Length(bend) < 1e-4f)
-        bend = Vector3Perpendicular(direction);
-    bend = Vector3Normalize(bend);
+    // The limb bends around the hinge axis of the upper node, perpendicular to the limb and to the bend axis. Only that
+    // axis of the rotation counts: the motions turn the upper arm by any angle around it (e.g. about 0 instead of the
+    // usual half turn in JIJ_WAN_AT1_WANTOJIDOUHANBAIKI_0100), which would twist the limb if it were swung to the target
+    Vector3 limbLocal = Vector3Normalize(midLocal);
+    Vector3 hingeLocal = Vector3CrossProduct(limbLocal, bendAxis);
+    Vector3 hinge = Rotate(rotation, hingeLocal);
+    hinge = Vector3Subtract(hinge, Vector3Scale(direction, Vector3DotProduct(hinge, direction)));
+    bool hinged = Vector3Length(hingeLocal) > 1e-4f && Vector3Length(hinge) > 1e-4f;
+    Vector3 bend;
+    if (hinged) {
+        hinge = Vector3Normalize(hinge);
+        bend = Vector3CrossProduct(hinge, direction);
+    }
+    else {
+        // The hinge points to the target: the bend goes to the axis, without its part along the direction to the target
+        bend = Rotate(Mul(Swing(Rotate(rotation, midLocal), direction), rotation), bendAxis);
+        bend = Vector3Subtract(bend, Vector3Scale(direction, Vector3DotProduct(bend, direction)));
+        if (Vector3Length(bend) < 1e-4f)
+            bend = Vector3Perpendicular(direction);
+        bend = Vector3Normalize(bend);
+    }
     float along = (a * a - b * b + distance * distance) / (2.0f * distance);
     float height = sqrtf(fmaxf(a * a - along * along, 0.0f));
     Vector3 knee = Vector3Add(joint, Vector3Add(Vector3Scale(direction, along), Vector3Scale(bend, height)));
 
-    rotation = Mul(Swing(Rotate(rotation, midLocal), Vector3Subtract(knee, joint)), rotation);
+    // The upper node points to the knee, with its hinge axis on the hinge
+    if (hinged)
+        rotation = Mul(Mul(Basis(Vector3Subtract(knee, joint), hinge),
+            MatrixTranspose(Basis(Rotate(rotation, limbLocal), Rotate(rotation, hingeLocal)))), rotation);
+    else
+        rotation = Mul(Swing(Rotate(rotation, midLocal), Vector3Subtract(knee, joint)), rotation);
     world[upper] = Place(joint, Mul(rotation, MatrixScale(mesh->nodes[upper].scale.x, mesh->nodes[upper].scale.y, mesh->nodes[upper].scale.z)));
     Vector3 midPosition = Vector3Add(joint, Rotate(rotation, midLocal));
     Matrix midRotation = Mul(rotation, LocalRotation(&mesh->nodes[mid]));
