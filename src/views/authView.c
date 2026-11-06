@@ -111,11 +111,13 @@ typedef struct {
     bool            fly;
     bool            expanded[GROUP_COUNT];
     bool            charactersShown;
+    bool            labels;         // Name, sound and motion over the characters
 } AUTHView_Options;
 
 static AUTHView_State g_view;
 static AUTHView_Options g_options = {
     .cutsceneCamera = true,
+    .labels = true,
     .expanded = { true, true, true, true, true },
     .charactersShown = true,
 };
@@ -769,6 +771,7 @@ void AUTHView_Toolbar(void) {
         FreeCamera_SetFly(&g_view.camera, fly);
         g_options.cutsceneCamera = false;
     }
+    Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the name, sound and motion over the characters", KEY_L, &g_options.labels);
 }
 
 static void UpdateInput(Rectangle scene) {
@@ -1016,7 +1019,12 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     }
     DrawCharacters(camera);
     FreeCamera_End3D();
-    DrawCharacterLabels(camera, view, font, fontSize);
+    if (g_options.labels) {
+        // Clipped to the rendered view, inside the letterbox of the cutscene camera
+        BeginScissorMode((int)view.x, (int)view.y, (int)view.width, (int)view.height);
+        DrawCharacterLabels(camera, view, font, fontSize);
+        EndScissorMode();
+    }
     DrawRectangleLinesEx(view, 1.0f, (Color) { 112, 112, 112, 255 });
 }
 
