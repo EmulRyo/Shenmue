@@ -5,8 +5,9 @@
 #include <raylib.h>
 #include "views/views.h"
 
-// Viewer of textures: shows the image over a checkered pattern, scaled to fit. The SPR files with several textures show
-// them in a list at the left, with the properties of the selected one below it
+// Viewer of textures: shows the image over a checkered pattern, scaled to fit or at its real size. The wheel zooms on the
+// pixel under the mouse and a drag moves the image. The SPR files with several textures show them in a list at the left,
+// with the properties of the selected one below it
 
 // Loads a texture to show it, replacing the current one. Returns false if the file can't be decoded
 bool ImageView_OpenPVR(const char* filepath);

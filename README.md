@@ -37,7 +37,7 @@ Run the program from the repository folder (it reads `resources/FilenameDatabase
 
 - **Extract TAD files**: select one or several `.tad` files of the game (each next to its `.tac`), then the output folder. The files of all of them are extracted to the same tree in that folder, at their path in the game (`scene/01/...`). When it ends, the status bar shows how many files were extracted and where: click it to open the folder, right click to close it.
 - **Open files**: open one of the supported files. Files can also be dragged and dropped onto the window.
-  - Textures (`.pvr`, `.spr`) are shown in the window.
+  - Textures (`.pvr`, `.spr`) are shown in the window, fitted to it or at their real size (`Z` switches between both). The wheel zooms on the pixel under the mouse and dragging with the left or middle button moves the image; the status bar shows the zoom and the pixel under the mouse.
   - Containers (`.afs`, `.idx`, `.pkf`, `.pks`) are extracted to a folder with the name of the file, next to it.
   - Scripts (`.chrt`) are decoded to the console.
   - Dialogues (`.scnf`, or `.bin` files that start with `SCNF`, e.g. `scene/01/stream/humans/AKMI/AKMI.bin`) are printed to the console.

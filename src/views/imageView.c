@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
+#include <math.h>
 #include <raylib.h>
 #include "raygui.h"
 #include "formats/texture/pvr.h"
@@ -15,6 +17,35 @@
 static Image g_image;
 static Texture g_texture;
 static char g_path[1024];
+
+// Zooms of the wheel, in pixels of the screen per pixel of the image: whole numbers above 1, so that all the pixels of the
+// image are drawn with the same size
+static const float g_zooms[] = { 0.125f, 0.25f, 0.5f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f, 12.0f, 16.0f, 24.0f, 32.0f };
+#define IMAGEVIEW_ZOOM_COUNT ((int)(sizeof(g_zooms) / sizeof(g_zooms[0])))
+
+typedef enum {
+    ZOOM_CUSTOM = -1,   // Chosen with the wheel
+    ZOOM_FIT,           // As large as fits in the view
+    ZOOM_ACTUAL,        // A pixel of the screen per pixel of the image
+} ZoomMode;
+
+// How the image is shown. It is kept when another texture of the same SPR file is selected
+static struct {
+    int         mode;       // ZoomMode
+    float       zoom;       // Pixels of the screen per pixel of the image
+    Vector2     center;     // Point of the image at the center of the view, in pixels of the image
+    bool        dragging;
+    Vector2     dragStart;  // Mouse position when the drag started, and the center then
+    Vector2     dragCenter;
+    int         filter;     // Filter of the texture, -1 if not set yet
+    int         hoveredX;   // Pixel of the image under the mouse, -1 if none
+    int         hoveredY;
+} g_zoom = { .mode = ZOOM_FIT, .zoom = 1.0f, .filter = -1, .hoveredX = -1, .hoveredY = -1 };
+
+static void ResetZoom(void) {
+    g_zoom.mode = ZOOM_FIT;
+    g_zoom.dragging = false;
+}
 
 // The textures of the open SPR file, shown in a list when it has several
 static struct {
@@ -50,6 +81,9 @@ static void Show(uint32_t* pixels, uint16_t width, uint16_t height) {
     ImageDrawImage(&img2, g_image, 0, 0, WHITE);
     g_texture = LoadTextureFromImage(img2);
     UnloadImage(img2);
+    g_zoom.filter = -1;
+    g_zoom.center = (Vector2) { width / 2.0f, height / 2.0f };
+    g_zoom.hoveredX = g_zoom.hoveredY = -1;
 }
 
 static bool HasList(void) {
@@ -86,6 +120,7 @@ bool ImageView_OpenPVR(const char* filepath) {
     if (!PVR_Load(filepath, &width, &height, &data))
         return false;
     CloseSPR();
+    ResetZoom();
     Show(data, width, height);
     snprintf(g_path, sizeof(g_path), "%s", filepath);
     return true;
@@ -104,6 +139,7 @@ bool ImageView_OpenSPR(const char* filepath) {
         return false;
     }
     CloseSPR();
+    ResetZoom();
     g_spr.file = file;
     SelectTexture((int)first, false);
     if (g_spr.failed && !HasList()) {
@@ -124,12 +160,15 @@ bool ImageView_IsOpen(void) {
 }
 
 bool ImageView_HasToolbar(void) {
-    return HasList();
+    return true;
 }
 
 void ImageView_Toolbar(void) {
+    if (Toolbar_Choice("Fit;1:1", "Fit the image to the view or show it at its real size", KEY_Z, &g_zoom.mode))
+        g_zoom.dragging = false;
     if (!HasList())
         return;
+    Toolbar_Separator();
     if (Toolbar_Button(ICON_ARROW_UP_FILL, NULL, "Previous texture", TOOLBAR_REPEAT | KEY_UP))
         SelectTexture(g_spr.selected - 1, true);
     if (Toolbar_Button(ICON_ARROW_DOWN_FILL, NULL, "Next texture", TOOLBAR_REPEAT | KEY_DOWN))
@@ -183,35 +222,114 @@ static void DrawProperties(Rectangle bounds) {
     Properties_End(properties);
 }
 
+// Keeps the view inside the image: centered on the axes where the image is smaller than the view. scale is in window
+// coordinates per pixel of the image
+static void ClampCenter(Rectangle area, float scale) {
+    float halfWidth = area.width / scale / 2.0f, halfHeight = area.height / scale / 2.0f;
+    float width = (float)g_texture.width, height = (float)g_texture.height;
+    if (width <= 2.0f * halfWidth)
+        g_zoom.center.x = width / 2.0f;
+    else
+        g_zoom.center.x = fminf(fmaxf(g_zoom.center.x, halfWidth), width - halfWidth);
+    if (height <= 2.0f * halfHeight)
+        g_zoom.center.y = height / 2.0f;
+    else
+        g_zoom.center.y = fminf(fmaxf(g_zoom.center.y, halfHeight), height - halfHeight);
+}
+
+// Goes to the next zoom of g_zooms in the direction of the wheel, keeping the pixel of the image under the mouse
+static void WheelZoom(Rectangle area, float dpi, float wheel) {
+    float zoom = g_zoom.zoom;
+    if (wheel > 0.0f) {
+        for (int i = 0; i < IMAGEVIEW_ZOOM_COUNT; i++) {
+            if (g_zooms[i] > g_zoom.zoom * 1.001f) {
+                zoom = g_zooms[i];
+                break;
+            }
+        }
+    }
+    else {
+        for (int i = IMAGEVIEW_ZOOM_COUNT - 1; i >= 0; i--) {
+            if (g_zooms[i] < g_zoom.zoom * 0.999f) {
+                zoom = g_zooms[i];
+                break;
+            }
+        }
+    }
+    if (zoom == g_zoom.zoom)
+        return;
+    Vector2 mouse = GetMousePosition();
+    float dx = mouse.x - (area.x + area.width / 2.0f), dy = mouse.y - (area.y + area.height / 2.0f);
+    float oldScale = g_zoom.zoom / dpi, newScale = zoom / dpi;
+    g_zoom.center.x += dx / oldScale - dx / newScale;
+    g_zoom.center.y += dy / oldScale - dy / newScale;
+    g_zoom.zoom = zoom;
+    g_zoom.mode = zoom == 1.0f ? ZOOM_ACTUAL : ZOOM_CUSTOM;
+}
+
 static void DrawImage(Rectangle area) {
-    if (g_texture.id == 0)
+    g_zoom.hoveredX = g_zoom.hoveredY = -1;
+    if (g_texture.id == 0 || area.width <= 0.0f || area.height <= 0.0f)
         return;
 
-    float ar = (float)g_texture.width / (float)g_texture.height;
-    float height = area.height;
-    float width = ar * height;
+    // The zoom is in pixels of the screen: with a scale of the display (e.g. 125%), the coordinates of the window are scaled
+    float dpi = GetWindowScaleDPI().x;
+    if (dpi <= 0.0f)
+        dpi = 1.0f;
+    float width = (float)g_texture.width, height = (float)g_texture.height;
+    if (g_zoom.mode == ZOOM_FIT)
+        g_zoom.zoom = fminf(area.width / width, area.height / height) * dpi;
+    else if (g_zoom.mode == ZOOM_ACTUAL)
+        g_zoom.zoom = 1.0f;
 
-    if (width > area.width) {
-        width = area.width;
-        height = width / ar;
+    // The wheel zooms and a drag with the left or middle button moves the image
+    Vector2 mouse = GetMousePosition();
+    bool mouseInArea = CheckCollisionPointRec(mouse, area);
+    float wheel = mouseInArea ? GetMouseWheelMove() : 0.0f;
+    if (wheel != 0.0f)
+        WheelZoom(area, dpi, wheel);
+    float scale = g_zoom.zoom / dpi;
+    if (mouseInArea && (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE))) {
+        g_zoom.dragging = true;
+        g_zoom.dragStart = mouse;
+        g_zoom.dragCenter = g_zoom.center;
+    }
+    if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))
+        g_zoom.dragging = false;
+    if (g_zoom.dragging) {
+        g_zoom.center.x = g_zoom.dragCenter.x - (mouse.x - g_zoom.dragStart.x) / scale;
+        g_zoom.center.y = g_zoom.dragCenter.y - (mouse.y - g_zoom.dragStart.y) / scale;
+    }
+    ClampCenter(area, scale);
+
+    // Sharp pixels when enlarged, smoothed when reduced
+    int filter = g_zoom.zoom < 1.0f ? TEXTURE_FILTER_BILINEAR : TEXTURE_FILTER_POINT;
+    if (filter != g_zoom.filter) {
+        SetTextureFilter(g_texture, filter);
+        g_zoom.filter = filter;
     }
 
-    if (height > area.height) {
-        height = area.height;
-        width = ar * height;
-    }
-
-    float x = area.x + (area.width - width) / 2.0f;
-    float y = area.y + (area.height - height) / 2.0f;
-
+    // The corner of the image on a pixel of the screen
+    float x = roundf((area.x + area.width / 2.0f - g_zoom.center.x * scale) * dpi) / dpi;
+    float y = roundf((area.y + area.height / 2.0f - g_zoom.center.y * scale) * dpi) / dpi;
+    BeginScissorMode((int)area.x, (int)area.y, (int)area.width, (int)area.height);
     DrawTexturePro(
         g_texture,
-        (Rectangle) { 0, 0, (float)g_texture.width, (float)g_texture.height },
-        (Rectangle) { x, y, width, height },
+        (Rectangle) { 0, 0, width, height },
+        (Rectangle) { x, y, width * scale, height * scale },
         (Vector2)   { 0, 0 },
         0,
         WHITE
     );
+    EndScissorMode();
+
+    if (mouseInArea) {
+        int px = (int)floorf((mouse.x - x) / scale), py = (int)floorf((mouse.y - y) / scale);
+        if (px >= 0 && py >= 0 && px < g_texture.width && py < g_texture.height) {
+            g_zoom.hoveredX = px;
+            g_zoom.hoveredY = py;
+        }
+    }
 }
 
 void ImageView_Draw(Rectangle area) {
@@ -240,11 +358,20 @@ bool ImageView_Export(const char* filepath) {
 
 void ImageView_Status(ViewStatus* status) {
     snprintf(status->file, sizeof(status->file), "%s", g_path);
+    char image[64];
+    snprintf(image, sizeof(image), "%dx%d pixels, %g%%", g_image.width, g_image.height, roundf(g_zoom.zoom * 1000.0f) / 10.0f);
     if (HasList() && g_spr.selected >= 0) {
         const SPR_Texture* texture = &g_spr.file.textures[g_spr.selected];
-        snprintf(status->info, sizeof(status->info), "%u textures, %d: %s, %dx%d pixels", g_spr.file.count, g_spr.selected, texture->name,
-            g_image.width, g_image.height);
+        snprintf(status->info, sizeof(status->info), "%u textures, %d: %s, %s", g_spr.file.count, g_spr.selected, texture->name, image);
     }
     else
-        snprintf(status->info, sizeof(status->info), "%dx%d pixels", g_image.width, g_image.height);
+        snprintf(status->info, sizeof(status->info), "%s", image);
+    // The pixel under the mouse, from the image without the checkered pattern
+    if (g_image.data != NULL && g_zoom.hoveredX >= 0 && g_zoom.hoveredX < g_image.width && g_zoom.hoveredY < g_image.height) {
+        const uint8_t* pixel = (const uint8_t*)g_image.data + ((size_t)g_zoom.hoveredY * g_image.width + g_zoom.hoveredX) * 4;
+        size_t length = strlen(status->info);
+        snprintf(status->info + length, sizeof(status->info) - length, ", pixel %d, %d: RGBA %u, %u, %u, %u", g_zoom.hoveredX,
+            g_zoom.hoveredY, pixel[0], pixel[1], pixel[2], pixel[3]);
+    }
+    snprintf(status->hint, sizeof(status->hint), "Wheel: zoom, drag: move");
 }
