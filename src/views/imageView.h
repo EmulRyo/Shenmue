@@ -5,13 +5,17 @@
 #include <raylib.h>
 #include "views/views.h"
 
-// Viewer of textures: shows the image over a checkered pattern, scaled to fit
+// Viewer of textures: shows the image over a checkered pattern, scaled to fit. The SPR files with several textures show
+// them in a list at the left, with the properties of the selected one below it
 
 // Loads a texture to show it, replacing the current one. Returns false if the file can't be decoded
 bool ImageView_OpenPVR(const char* filepath);
 bool ImageView_OpenSPR(const char* filepath);
 void ImageView_Close(void);
 bool ImageView_IsOpen(void);
+// Adds the actions to choose the texture of an SPR file with several
+void ImageView_Toolbar(void);
+bool ImageView_HasToolbar(void);
 void ImageView_Draw(Rectangle area);
 // Fills the texts of the status bar
 void ImageView_Status(ViewStatus* status);

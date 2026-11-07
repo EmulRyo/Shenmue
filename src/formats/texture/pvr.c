@@ -3,9 +3,10 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include "core/file.h"
 #include "formats/texture/pvr.h"
 
-static char* PVR_PixelFormatToString(PVR_PixelFormat pf) {
+const char* PVR_PixelFormatToString(PVR_PixelFormat pf) {
     switch (pf) {
         case PVR_PF_ARGB1555: return "ARGB1555";
         case PVR_PF_RGB565:   return "RGB565";
@@ -18,7 +19,7 @@ static char* PVR_PixelFormatToString(PVR_PixelFormat pf) {
     }
 }
 
-static char* PVR_DataFormatToString(PVR_DataFormat df) {
+const char* PVR_DataFormatToString(PVR_DataFormat df) {
     switch (df) {
         case PVR_DF_RAW:                             return "RAW";
         case PVR_DF_SQUARE_TWIDDLED:                 return "SQUARE_TWIDDLED";
@@ -194,24 +195,15 @@ static void DecodeVQ(const PVR_Header* pvrHeader, uint32_t* outPixels) {
 
 bool PVR_Load(const char* filepath, uint16_t* width, uint16_t* height, uint32_t** pixels) {
     printf("[PVR_Load]: Loading PVR file: %s\n", filepath);
-    FILE* file = fopen(filepath, "rb");
-    if (file == NULL) {
-        fputs("[PVR_Load] Open file error", stderr);
-        exit(1);
+    size_t size = 0;
+    uint8_t* buffer = File_LoadToMemoryDecompressed(filepath, &size);
+    if (buffer == NULL)
+        return false;
+    if (size < 32) {
+        fprintf(stderr, "[PVR_Load]: File too small: %zu bytes\n", size);
+        free(buffer);
+        return false;
     }
-    // obtain file size:
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    rewind(file);
-    // allocate memory to contain the whole file:
-    uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * size);
-    if (buffer == NULL) {
-        fputs("[PVR_Load]: Memory allocation error", stderr);
-        exit(2);
-    }
-    // copy the file into the buffer:
-    size_t result = fread(buffer, sizeof(uint8_t), size, file);
-    fclose(file);
 
     bool success = PVR_LoadFromMemory(buffer, width, height, pixels);
 

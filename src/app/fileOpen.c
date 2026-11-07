@@ -65,14 +65,14 @@ static bool OpenCHRT(const char* filepath) {
 }
 
 static const Format g_formats[] = {
-    { ".pvr",       NULL,   "PVR",  ImageView_OpenPVR,  VIEW_IMAGE },
-    { ".spr",       NULL,   "SPR",  ImageView_OpenSPR,  VIEW_IMAGE },
+    { ".pvr",       "pvr",  "PVR",  ImageView_OpenPVR,  VIEW_IMAGE },
+    { ".spr",       "spr",  "SPR",  ImageView_OpenSPR,  VIEW_IMAGE },
     { ".afs",       NULL,   "AFS",  ExtractAFS,         VIEW_NONE },
     { ".idx",       NULL,   "IDX",  ExtractIDX,         VIEW_NONE },
-    { ".pkf",       NULL,   "PKF",  ExtractPKF,         VIEW_NONE },
-    { ".pks",       NULL,   "PKS",  ExtractPKS,         VIEW_NONE },
-    { ".mt5;.chrm", NULL,   "MT5",  OpenMT5,            VIEW_MT5 },
-    { ".chrt",      NULL,   "CHRT", OpenCHRT,           VIEW_CHRT },
+    { ".pkf",       "pkf",  "PKF",  ExtractPKF,         VIEW_NONE },
+    { ".pks",       "pks",  "PKS",  ExtractPKS,         VIEW_NONE },
+    { ".mt5;.chrm", "mt5",  "MT5",  OpenMT5,            VIEW_MT5 },
+    { ".chrt",      "chrt", "CHRT", OpenCHRT,           VIEW_CHRT },
     { ".scnf",      "scnf", "SCNF", SCNF_Print,         VIEW_NONE },
     { ".xwm",       "xwm",  "XWM",  XWMView_Open,       VIEW_XWM },
     { ".snd",       "snd",  "SND",  SNDView_Open,       VIEW_SND },
@@ -103,7 +103,8 @@ static const Format* FindFormat(const char* filepath) {
         if (g_formats[i].filename != NULL && strcmp(TextToLower(GetFileName(filepath)), g_formats[i].filename) == 0)
             return &g_formats[i];
     }
-    // Files with a generic extension (e.g. ".bin") are opened by their magic
+    // Files with a generic extension (e.g. ".bin") are opened by their magic, and the gzipped ones (".gz", the
+    // textures of misc and sprite) by the magic of their decompressed content
     const char* ext = GetExtensionFromMagic(filepath);
     for (size_t i = 0; i < FORMAT_COUNT && ext != NULL; i++) {
         if (g_formats[i].magic != NULL && strcmp(ext, g_formats[i].magic) == 0)
@@ -129,7 +130,7 @@ void FileOpen_Open(const char* filepath) {
 
 void FileOpen_Dialog(void) {
     nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[10] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Motions", "motn,bin" }, { "Maps", "bin" }, { "Fonts", "fon" } };
+    nfdu8filteritem_t filters[10] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds,gz" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Motions", "motn,bin" }, { "Maps", "bin" }, { "Fonts", "fon" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
     args.filterCount = 10;

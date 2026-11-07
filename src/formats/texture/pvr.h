@@ -64,5 +64,8 @@ typedef enum PVR_DataFormat {
 
 bool PVR_Load(const char* filepath, uint16_t* width, uint16_t* height, uint32_t** pixels);
 bool PVR_LoadFromMemory(uint8_t* buffer, uint16_t* width, uint16_t* height, uint32_t** pixels);
+// Names of the formats, "UNKNOWN" for the unknown ones
+const char* PVR_PixelFormatToString(PVR_PixelFormat pf);
+const char* PVR_DataFormatToString(PVR_DataFormat df);
 
 #endif

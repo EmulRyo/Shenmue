@@ -22,7 +22,8 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [SND](SND)         | `.snd`        | `DTPK`           | Audio             | Sound bank: instruments, sequences, DSP settings and samples |
 | [MT5 / CHRM](MT5)  | `.mt5` `.chrm` | `HRCM`          | Model             | 3D model (CHRM: textures stored in the PKF)  |
 | [PVR](PVR)         | `.pvr`        | `GBIX` / `PVRT`  | Texture           | PowerVR texture                              |
-| [SPR](SPR)         | `.spr`        | `TEXN`           | Texture           | TEXN block with a PVR texture                |
+| [SPR](SPR)         | `.spr`        | `TEXN` / `SCRL`  | Texture           | TEXN blocks with a PVR texture each          |
+| [GZ](GZ)           | `.gz`         | `1F 8B 08`       | Texture           | Gzipped SPR file                             |
 | [FON](FON)         | `.fon`        | —                | Font              | Bitmap font: kana and ASCII, or JIS X 0208 kanji |
 
 ## How the formats are nested
@@ -39,6 +40,7 @@ TAD/TAC
  ├─ MT5 → TEXN → PVR / DDS
  ├─ PVR
  ├─ SPR → PVR
+ ├─ GZ → SPR → PVR (misc/battle*.gz, sprite/*.gz)
  ├─ SND
  ├─ FON (misc/*.fon)
  └─ ...
@@ -68,11 +70,13 @@ Most formats can be identified by their first bytes. This is useful in container
 | `PAKF`                        | `.pkf`    | [PKF](PKF)              |
 | `PAKS`                        | `.pks`    | [PKS](PKS)              |
 | `TEXN`                        | `.spr`    | [SPR](SPR)              |
+| `SCRL`                        | `.spr`    | [SPR](SPR) (`scroll*.spr`) |
 | `GBIX` / `PVRT`               | `.pvr`    | [PVR](PVR)              |
 | `DDS`                         | `.dds`    | DirectDraw Surface      |
 | `AFS`                         | `.afs`    | [AFS](AFS)              |
 | `IDX`                         | `.idx`    | [IDX](IDX)              |
+| `1F 8B 08`                    | `.gz`     | gzip ([GZ](GZ), [Compression](#compression)) |
 
 ## Compression
 
-[PKF](PKF), [PKS](PKS), [CHRT](CHRT), [MT5](MT5) files and [IPAC](IPAC) entries can be compressed with **gzip** (RFC 1952). A compressed file starts with the bytes `1F 8B 08`. The uncompressed size is the last 4 bytes of the file (gzip trailer).
+[PKF](PKF), [PKS](PKS), [CHRT](CHRT), [MT5](MT5) files and [IPAC](IPAC) entries can be compressed with **gzip** (RFC 1952), and the [GZ](GZ) files are gzipped [SPR](SPR) files. A compressed file starts with the bytes `1F 8B 08`. The uncompressed size is the last 4 bytes of the file (gzip trailer).

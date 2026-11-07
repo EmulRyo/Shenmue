@@ -56,6 +56,7 @@ const char* File_ExtensionFromMagic(const uint8_t* buffer, size_t size) {
         if (memcmp(buffer, "PAKF", 4) == 0) return "pkf";
         if (memcmp(buffer, "PAKS", 4) == 0) return "pks";
         if (memcmp(buffer, "TEXN", 4) == 0) return "spr";
+        if (memcmp(buffer, "SCRL", 4) == 0) return "spr";
         if (memcmp(buffer, "GBIX", 4) == 0) return "pvr";
         if (memcmp(buffer, "PVRT", 4) == 0) return "pvr";
     }

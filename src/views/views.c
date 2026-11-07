@@ -18,10 +18,11 @@ typedef struct {
     void    (*draw)(Rectangle area);
     void    (*toolbar)(void);   // Adds the actions of the view to the toolbar, NULL if it has none
     void    (*status)(ViewStatus* status);
+    bool    (*hasToolbar)(void); // If it adds actions now, NULL if it always does
 } View;
 
 static const View g_views[VIEW_COUNT] = {
-    [VIEW_IMAGE] = { ImageView_Close, ImageView_IsOpen, ImageView_Draw, NULL, ImageView_Status },
+    [VIEW_IMAGE] = { ImageView_Close, ImageView_IsOpen, ImageView_Draw, ImageView_Toolbar, ImageView_Status, ImageView_HasToolbar },
     [VIEW_MT5]   = { MT5View_Close, MT5View_IsOpen, MT5View_Draw, MT5View_Toolbar, MT5View_Status },
     [VIEW_XWM]   = { XWMView_Close, XWMView_IsOpen, XWMView_Draw, XWMView_Toolbar, XWMView_Status },
     [VIEW_SND]   = { SNDView_Close, SNDView_IsOpen, SNDView_Draw, SNDView_Toolbar, SNDView_Status },
@@ -55,7 +56,7 @@ void Views_Draw(Rectangle area) {
 void Views_Toolbar(void) {
     for (int i = 0; i < VIEW_COUNT; i++) {
         if (g_views[i].isOpen()) {
-            if (g_views[i].toolbar != NULL) {
+            if (g_views[i].toolbar != NULL && (g_views[i].hasToolbar == NULL || g_views[i].hasToolbar())) {
                 Toolbar_Separator();
                 g_views[i].toolbar();
             }

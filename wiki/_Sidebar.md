@@ -34,6 +34,7 @@
 **Textures**
 - [PVR](PVR)
 - [SPR](SPR)
+- [GZ](GZ)
 
 **Fonts**
 - [FON](FON)
