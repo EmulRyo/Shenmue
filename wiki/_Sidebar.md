@@ -36,6 +36,7 @@
 - [PVR](PVR)
 - [SPR](SPR)
 - [GZ](GZ)
+- [DDS](DDS)
 
 **Fonts**
 - [FON](FON)

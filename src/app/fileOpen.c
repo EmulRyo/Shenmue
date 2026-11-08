@@ -67,6 +67,7 @@ static bool OpenCHRT(const char* filepath) {
 static const Format g_formats[] = {
     { ".pvr",       "pvr",  "PVR",  ImageView_OpenPVR,  VIEW_IMAGE },
     { ".spr",       "spr",  "SPR",  ImageView_OpenSPR,  VIEW_IMAGE },
+    { ".dds;.png;.tga", "dds", "DDS", ImageView_OpenDDS, VIEW_IMAGE },
     { ".afs",       NULL,   "AFS",  ExtractAFS,         VIEW_NONE },
     { ".idx",       NULL,   "IDX",  ExtractIDX,         VIEW_NONE },
     { ".pkf",       "pkf",  "PKF",  ExtractPKF,         VIEW_NONE },
@@ -130,7 +131,7 @@ void FileOpen_Open(const char* filepath) {
 
 void FileOpen_Dialog(void) {
     nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[10] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds,gz" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Motions", "motn,bin" }, { "Maps", "bin" }, { "Fonts", "fon" } };
+    nfdu8filteritem_t filters[10] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds,png,tga,gz" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Motions", "motn,bin" }, { "Maps", "bin" }, { "Fonts", "fon" } };
     nfdopendialogu8args_t args = { 0 };
     args.filterList = filters;
     args.filterCount = 10;

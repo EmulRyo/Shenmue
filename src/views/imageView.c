@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <nfd.h>
 #include <raylib.h>
 #include "raygui.h"
 #include "core/file.h"
+#include "formats/texture/dds.h"
 #include "formats/texture/pvr.h"
 #include "formats/texture/spr.h"
 #include "ui/properties.h"
@@ -44,9 +46,28 @@ static struct {
     int         hoveredY;
 } g_zoom = { .mode = ZOOM_FIT, .zoom = 1.0f, .filter = -1, .hoveredX = -1, .hoveredY = -1 };
 
+// For a new image: the fit and 1:1 modes are kept, a zoom of the wheel goes back to fit
 static void ResetZoom(void) {
-    g_zoom.mode = ZOOM_FIT;
+    if (g_zoom.mode == ZOOM_CUSTOM)
+        g_zoom.mode = ZOOM_FIT;
     g_zoom.dragging = false;
+}
+
+// The image is shown flipped vertically. It is set when a file is opened, on for the textures of textureoverride (stored
+// upside down), and kept when another texture of the same file is selected
+static bool g_flip;
+
+// If the textures of the file are stored upside down: those of the folder textureoverride of the PC version
+static bool IsUpsideDown(const char* filepath) {
+    const char* path = TextToLower(filepath);
+    const char* name = "textureoverride";
+    size_t length = strlen(name);
+    for (const char* folder = strstr(path, name); folder != NULL; folder = strstr(folder + 1, name)) {
+        bool start = folder == path || folder[-1] == '/' || folder[-1] == '\\';
+        if (start && (folder[length] == '/' || folder[length] == '\\'))
+            return true;
+    }
+    return false;
 }
 
 // The textures of the open SPR file, shown in a list when it has several
@@ -59,6 +80,21 @@ static struct {
     Properties  properties;
 } g_spr = { .selected = -1, .expanded = true };
 
+#define IMAGEVIEW_DDS_CANDIDATES 8
+
+// The open DDS texture. The data without header is kept to decode it again with another of the formats and sizes that
+// fit its size
+static struct {
+    bool        open;
+    DDS_Info    info;           // Of the shown texture
+    uint8_t*    data;           // Only the data without header
+    size_t      size;
+    DDS_Info    candidates[IMAGEVIEW_DDS_CANDIDATES];
+    uint32_t    count;
+    int         selected;
+    char        options[IMAGEVIEW_DDS_CANDIDATES * 24]; // Of the candidates, for the toolbar
+} g_dds;
+
 static void Unload(void) {
     if (g_image.data != NULL)
         UnloadImage(g_image);
@@ -66,6 +102,34 @@ static void Unload(void) {
     if (g_texture.id > 0)
         UnloadTexture(g_texture);
     g_texture = (Texture) { 0 };
+}
+
+// Swaps the rows of g_image
+static void FlipImage(void) {
+    uint32_t* pixels = (uint32_t*)g_image.data;
+    size_t width = (size_t)g_image.width;
+    for (int y = 0; y < g_image.height / 2; y++) {
+        uint32_t* top = pixels + y * width;
+        uint32_t* bottom = pixels + (g_image.height - 1 - y) * width;
+        for (size_t x = 0; x < width; x++) {
+            uint32_t pixel = top[x];
+            top[x] = bottom[x];
+            bottom[x] = pixel;
+        }
+    }
+}
+
+// Makes the texture of g_image, drawn on top of the checkered pattern
+static void LoadImageTexture(void) {
+    if (g_texture.id > 0)
+        UnloadTexture(g_texture);
+    int width = g_image.width, height = g_image.height;
+    float ar = (float)width / (float)height;
+    Image img2 = GenImageChecked(width, height, width / 8, (int)(ar * height / 8), (Color) { 100, 100, 100, 255 }, (Color) { 150, 150, 150, 255 });
+    ImageDrawImage(&img2, g_image, 0, 0, WHITE);
+    g_texture = LoadTextureFromImage(img2);
+    UnloadImage(img2);
+    g_zoom.filter = -1;
 }
 
 // Takes the ownership of pixels
@@ -76,16 +140,16 @@ static void Show(uint32_t* pixels, uint16_t width, uint16_t height) {
     g_image.height = height;
     g_image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
     g_image.mipmaps = 1;
-
-    float ar = (float)width / (float)height;
-    // Draw the image on top of the checkered pattern
-    Image img2 = GenImageChecked(width, height, width / 8, (int)(ar * height / 8), (Color) { 100, 100, 100, 255 }, (Color) { 150, 150, 150, 255 });
-    ImageDrawImage(&img2, g_image, 0, 0, WHITE);
-    g_texture = LoadTextureFromImage(img2);
-    UnloadImage(img2);
-    g_zoom.filter = -1;
+    if (g_flip)
+        FlipImage();
+    LoadImageTexture();
     g_zoom.center = (Vector2) { width / 2.0f, height / 2.0f };
     g_zoom.hoveredX = g_zoom.hoveredY = -1;
+}
+
+static void CloseDDS(void) {
+    free(g_dds.data);
+    memset(&g_dds, 0, sizeof(g_dds));
 }
 
 static bool HasList(void) {
@@ -122,7 +186,9 @@ bool ImageView_OpenPVR(const char* filepath) {
     if (!PVR_Load(filepath, &width, &height, &data))
         return false;
     CloseSPR();
+    CloseDDS();
     ResetZoom();
+    g_flip = false;
     Show(data, width, height);
     snprintf(g_path, sizeof(g_path), "%s", filepath);
     return true;
@@ -141,7 +207,9 @@ bool ImageView_OpenSPR(const char* filepath) {
         return false;
     }
     CloseSPR();
+    CloseDDS();
     ResetZoom();
+    g_flip = false;
     g_spr.file = file;
     SelectTexture((int)first, false);
     if (g_spr.failed && !HasList()) {
@@ -152,9 +220,100 @@ bool ImageView_OpenSPR(const char* filepath) {
     return true;
 }
 
+// Decodes the DDS texture described by info. Returns false on error, without changing the shown image
+static bool ShowDDS(const uint8_t* data, size_t size, const DDS_Info* info) {
+    uint32_t* pixels = NULL;
+    uint32_t width = 0, height = 0;
+    if (!DDS_Decode(data, size, info, &width, &height, &pixels))
+        return false;
+    if (width > UINT16_MAX || height > UINT16_MAX) {
+        free(pixels);
+        return false;
+    }
+    Show(pixels, (uint16_t)width, (uint16_t)height);
+    g_dds.info = *info;
+    return true;
+}
+
+// Shows the candidate index of the data without header
+static void SelectCandidate(int index) {
+    if (index < 0 || index >= (int)g_dds.count)
+        return;
+    if (ShowDDS(g_dds.data, g_dds.size, &g_dds.candidates[index]))
+        g_dds.selected = index;
+}
+
+bool ImageView_OpenDDS(const char* filepath) {
+    size_t size = 0;
+    uint8_t* data = File_LoadToMemoryDecompressed(filepath, &size);
+    if (data == NULL)
+        return false;
+
+    // Some textures with a DDS header have the extension .png or .tga, and the real PNG images are opened too
+    static const uint8_t pngMagic[8] = { 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A };
+    if (size >= 8 && memcmp(data, pngMagic, 8) == 0) {
+        Image image = LoadImageFromMemory(".png", data, (int)size);
+        free(data);
+        if (image.data == NULL || image.width > UINT16_MAX || image.height > UINT16_MAX) {
+            UnloadImage(image);
+            return false;
+        }
+        ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        CloseSPR();
+        CloseDDS();
+        ResetZoom();
+        g_flip = false;
+        Show((uint32_t*)image.data, (uint16_t)image.width, (uint16_t)image.height);
+        snprintf(g_path, sizeof(g_path), "%s", filepath);
+        return true;
+    }
+
+    // With a DDS header, or only BC blocks whose format and size are guessed from the size of the file
+    DDS_Info candidates[IMAGEVIEW_DDS_CANDIDATES];
+    uint32_t count = 0;
+    bool header = size >= 4 && memcmp(data, "DDS ", 4) == 0;
+    if (header)
+        count = DDS_ReadInfo(data, size, &candidates[0]) ? 1 : 0;
+    else
+        count = DDS_GuessRaw(data, size, candidates, IMAGEVIEW_DDS_CANDIDATES);
+    if (count == 0) {
+        if (!header)
+            fprintf(stderr, "[ImageView_OpenDDS]: No DDS header, and 0x%zX bytes aren't BC1/BC3 blocks of any size\n", size);
+        free(data);
+        return false;
+    }
+
+    CloseSPR();
+    CloseDDS();
+    ResetZoom();
+    g_flip = IsUpsideDown(filepath);
+    if (!ShowDDS(data, size, &candidates[0])) {
+        free(data);
+        Unload();
+        return false;
+    }
+    g_dds.open = true;
+    if (header)
+        free(data);
+    else {
+        g_dds.data = data;
+        g_dds.size = size;
+        g_dds.count = count;
+        memcpy(g_dds.candidates, candidates, count * sizeof(DDS_Info));
+        for (uint32_t i = 0; i < count; i++) {
+            size_t length = strlen(g_dds.options);
+            snprintf(g_dds.options + length, sizeof(g_dds.options) - length, "%s%s %ux%u", i > 0 ? ";" : "",
+                DDS_FormatToString(candidates[i].format), candidates[i].width, candidates[i].height);
+        }
+    }
+    snprintf(g_path, sizeof(g_path), "%s", filepath);
+    return true;
+}
+
 void ImageView_Close(void) {
     Unload();
     CloseSPR();
+    CloseDDS();
 }
 
 bool ImageView_IsOpen(void) {
@@ -168,6 +327,19 @@ bool ImageView_HasToolbar(void) {
 void ImageView_Toolbar(void) {
     if (Toolbar_Choice("Fit;1:1", "Fit the image to the view or show it at its real size", KEY_Z, &g_zoom.mode))
         g_zoom.dragging = false;
+    if (Toolbar_Toggle(ICON_SYMMETRY_VERTICAL, "Flip", "Flip the image vertically (on when opening the textures of textureoverride, stored upside down)", KEY_V, &g_flip) && g_image.data != NULL) {
+        // The same part of the image stays in the view
+        FlipImage();
+        LoadImageTexture();
+        g_zoom.center.y = g_image.height - g_zoom.center.y;
+    }
+    if (g_dds.count > 1) {
+        // The formats and sizes that fit the data without header, the most likely first
+        Toolbar_Separator();
+        int selected = g_dds.selected;
+        if (Toolbar_Choice(g_dds.options, "Format and size of the texture without header, guessed from its size", KEY_L, &selected))
+            SelectCandidate(selected);
+    }
     if (!HasList())
         return;
     Toolbar_Separator();
@@ -402,6 +574,15 @@ void ImageView_Status(ViewStatus* status) {
     if (HasList() && g_spr.selected >= 0) {
         const SPR_Texture* texture = &g_spr.file.textures[g_spr.selected];
         snprintf(status->info, sizeof(status->info), "%u textures, %d: %s, %s", g_spr.file.count, g_spr.selected, texture->name, image);
+    }
+    else if (g_dds.open) {
+        const DDS_Info* info = &g_dds.info;
+        const char* format = info->format == DDS_FORMAT_RGB ? TextFormat("%u bits", info->bitCount)
+            : info->fourCC[0] != '\0' && strcmp(info->fourCC, "DX10") != 0 ? TextFormat("%s (%s)", DDS_FormatToString(info->format), info->fourCC)
+            : DDS_FormatToString(info->format);
+        snprintf(status->info, sizeof(status->info), "%s %s%s, %ux%u, %u level%s, %s", info->raw ? "No header," : "DDS",
+            format, info->cubeFaces != 0 ? TextFormat(" cube map of %u faces", info->faces) : "", info->width, info->height,
+            info->mipmaps, info->mipmaps != 1 ? "s" : "", image);
     }
     else
         snprintf(status->info, sizeof(status->info), "%s", image);

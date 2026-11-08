@@ -25,6 +25,7 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [PVR](PVR)         | `.pvr`        | `GBIX` / `PVRT`  | Texture           | PowerVR texture                              |
 | [SPR](SPR)         | `.spr`        | `TEXN` / `SCRL`  | Texture           | TEXN blocks with a PVR texture each          |
 | [GZ](GZ)           | `.gz`         | `1F 8B 08`       | Texture           | Gzipped SPR file                             |
+| [DDS](DDS)         | `.dds` (`.png`, `.tga`) | `DDS ` / — | Texture       | DirectDraw Surface texture of the PC version (BC1, BC3, cube maps), also without header |
 | [FON](FON)         | `.fon`        | —                | Font              | Bitmap font: kana and ASCII, or JIS X 0208 kanji |
 
 ## How the formats are nested
@@ -45,6 +46,7 @@ TAD/TAC
  ├─ GZ → SPR → PVR (misc/battle*.gz, sprite/*.gz)
  ├─ SND
  ├─ FON (misc/*.fon)
+ ├─ DDS (tex/assets/*: .dds, .png, .tga; .png without header in modeloverride)
  └─ ...
 ```
 
@@ -74,7 +76,7 @@ Most formats can be identified by their first bytes. This is useful in container
 | `TEXN`                        | `.spr`    | [SPR](SPR)              |
 | `SCRL`                        | `.spr`    | [SPR](SPR) (`scroll*.spr`) |
 | `GBIX` / `PVRT`               | `.pvr`    | [PVR](PVR)              |
-| `DDS`                         | `.dds`    | DirectDraw Surface      |
+| `DDS `                        | `.dds`    | [DDS](DDS)              |
 | `AFS`                         | `.afs`    | [AFS](AFS)              |
 | `IDX`                         | `.idx`    | [IDX](IDX)              |
 | `1F 8B 08`                    | `.gz`     | gzip ([GZ](GZ), [Compression](#compression)) |

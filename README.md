@@ -7,7 +7,7 @@ Tool to explore and extract the files of Shenmue I & II (PC version). It is writ
 - Extract the `.tad`/`.tac` archives of the game, restoring the original filenames from `resources/FilenameDatabase.json`.
 - Extract the files contained in `AFS`/`IDX`, `PKF` and `PKS` containers, detecting the extension of every file from its magic number.
 - Decompress gzip compressed files automatically.
-- View `PVR` and `SPR` textures and save them as PNG, JPG or BMP.
+- View `PVR`, `SPR` and `DDS` textures and save them as PNG, JPG or BMP. The DDS textures that the game stores with the extension `.png` or `.tga` are opened too, also those without header (their format and size are guessed from the size of the file), the cube maps are shown as a cross of their 6 faces, and the textures of `textureoverride`, stored upside down, are flipped.
 - Decode the commands of `CHRT` character scripts.
 - Print the dialogue lines of `SCNF` files: voice, speaker, duration and subtitle (converted from EUC-JP), and disassemble the script that chooses them.
 - View `MT5`/`CHRM` models in 3D, with their textures, print their node tree, meshes and textures, and export them to glTF (`.glb`) or OBJ.
@@ -37,7 +37,7 @@ Run the program from the repository folder (it reads `resources/FilenameDatabase
 
 - **Extract TAD files**: select one or several `.tad` files of the game (each next to its `.tac`), then the output folder. The files of all of them are extracted to the same tree in that folder, at their path in the game (`scene/01/...`). When it ends, the status bar shows how many files were extracted and where: click it to open the folder, right click to close it.
 - **Open files**: open one of the supported files. Files can also be dragged and dropped onto the window.
-  - Textures (`.pvr`, `.spr`) are shown in the window, fitted to it or at their real size (`Z` switches between both). The wheel zooms on the pixel under the mouse and dragging with the left or middle button moves the image; the status bar shows the zoom and the pixel under the mouse.
+  - Textures (`.pvr`, `.spr`, `.dds`, `.png`, `.tga`) are shown in the window, fitted to it or at their real size (`Z` switches between both). The wheel zooms on the pixel under the mouse and dragging with the left or middle button moves the image; the status bar shows the zoom and the pixel under the mouse. The fit or 1:1 mode is kept when another image is opened. `V` flips the image vertically (on when opening a texture of `textureoverride`). For a DDS texture without header that fits several formats or sizes, the toolbar shows all of them, the most likely selected (`L` selects the next one).
   - Containers (`.afs`, `.idx`, `.pkf`, `.pks`) are extracted to a folder with the name of the file, next to it.
   - Scripts (`.chrt`) are decoded to the console.
   - Dialogues (`.scnf`, or `.bin` files that start with `SCNF`, e.g. `scene/01/stream/humans/AKMI/AKMI.bin`) are printed to the console.

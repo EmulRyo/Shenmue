@@ -71,6 +71,8 @@ set(SRC
     src/formats/sound/xwm.c
     src/formats/sound/xwm.h
 
+    src/formats/texture/dds.c
+    src/formats/texture/dds.h
     src/formats/texture/pvr.c
     src/formats/texture/pvr.h
     src/formats/texture/spr.c

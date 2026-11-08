@@ -7,11 +7,14 @@
 
 // Viewer of textures: shows the image over a checkered pattern, scaled to fit or at its real size. The wheel zooms on the
 // pixel under the mouse and a drag moves the image. The SPR files with several textures show them in a list at the left,
-// with the properties of the selected one below it
+// with the properties of the selected one below it. The DDS textures without header can be shown with each of the formats
+// and sizes that fit the size of their data
 
 // Loads a texture to show it, replacing the current one. Returns false if the file can't be decoded
 bool ImageView_OpenPVR(const char* filepath);
 bool ImageView_OpenSPR(const char* filepath);
+// DDS textures, also with the extensions .png and .tga, or without header (BC blocks), and the real PNG images
+bool ImageView_OpenDDS(const char* filepath);
 void ImageView_Close(void);
 bool ImageView_IsOpen(void);
 // Adds the actions to choose the texture of an SPR file with several
