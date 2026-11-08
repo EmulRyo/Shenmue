@@ -7,7 +7,8 @@
 
 // MOTN: a bank of motions of characters (no magic). The motion i has the ID firstID + 1 + i, the number the cutscenes
 // and the character scripts play it by. The keyframe motions are curves of keys for each channel (one axis of the
-// position or the rotation of a bone); the sampled and raw motions are not decoded
+// position or the rotation of a bone); the raw and the sampled motions store the value of each channel at every frame,
+// read as one key per frame. The "bones" of the sampled motions are the nodes of the model, in the order of the file
 
 #define MOTN_FRAME_RATE 30.0f // The tangents of the keys are in units per second
 
@@ -22,8 +23,8 @@ typedef struct {
 
 typedef enum {
     MOTN_KEYFRAME,
-    MOTN_SAMPLED,   // Values for every frame (objects and animals)
-    MOTN_RAW,       // A block of unknown values for every frame
+    MOTN_SAMPLED,   // Values of the nodes of the model for every frame (objects and animals)
+    MOTN_RAW,       // The values of the channels at every frame, with the bend of the knees and the elbows
 } MOTN_Kind;
 
 // Axis of a channel
@@ -57,7 +58,7 @@ typedef struct {
     uint32_t        frames;     // Last frame: the keys go from 0 to frames
     uint32_t        type;       // Character type of the keyframe and raw motions
     uint32_t        channelCount;
-    MOTN_Channel*   channels;   // Empty if the kind is not MOTN_KEYFRAME
+    MOTN_Channel*   channels;   // Empty if the layout of the motion is not known
     MOTN_Key*       keys;
 } MOTN_Motion;
 

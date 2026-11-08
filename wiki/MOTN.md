@@ -74,7 +74,7 @@ The motions are played by a number, not by their name: the motion `i` of the fil
 
 `motion/motion.bin` (1826800 bytes, not compressed) is a MOTN file with the motions shared by the whole game: the walks, the stands, the doors... of Ryo and of the other characters. Its header has `firstID = 0`, `lastID = 0x618` and `lastID2 = 0`: it holds 1559 motions, with the IDs `0x1` to `0x617`, the small motion IDs of the cutscenes ([AUTH](AUTH)). For example, `scene/01/d000/buss/SEQDATA5` plays the motion `0x2DF` on Ryo three times (frames 1–36 of `AKI_AKI_WALK_SP1_LP`, 37 frames) while he walks away from the bus.
 
-- 108 entries are placeholders named `ERROR`, `ERROR_1`…, and the 1559 entries point to 1319 different motions.
+- 108 entries are placeholders named `ERROR`, `ERROR_1`… up to `ERROR_142` (the numbers have gaps), scattered through the table (the first is motion 0). They all point to the same data (a keyframe motion of 55 frames) and to the same attribute block, which no named entry uses. The 1559 entries point to 1319 different motions.
 - The prefixes are mostly `AKI` (751) and `YKI` (207), then `AK`, `DMY`, `TA`, `RUF`…
 - Of the 1559 entries, 1531 are keyframe motions (1292 of [character type](#character-types) 0, 207 of type 13), 19 are sampled and 9 are raw.
 - It ends with the same [timestamp](#timestamp) as the other files (`Fri Nov 12 16:10:23 1999`).
@@ -167,6 +167,12 @@ The channels are numbered in the order of the list, and inside a bone from bit 8
 
 (Counts of different motions, without the repeated files. One motion of type 20 is in the second set but with the bones of the quadruped one.)
 
+The bones left out are not always the same, and the highest bone of a motion is not always the last of its set. In the 1559 entries of `motion/motion.bin`:
+
+- 370 leave out the shoulders (bones 25 and 31), e.g. `AKIRA_BPK_MISS`.
+- 11 leave out the rotations of the hands (30 and 36), e.g. `AKI_AKI_L_STAND`, so their highest bone is 35. 4 more (`TA_NG_IP_NA_WA`) also leave out the rotation of the head (21).
+- 13 are motions of a part of the body, without the hips (bone 0) or the legs: one arm (`AKI_UDE_AISATU`: `31r 32r 35p 36r`; `AKI_AKI_BAG_L`: `26r 29p 30r`), the upper body (`AKI_PART_HARAU_R`: `18r 20p … 36r`), or one arm of the second set (`SIN_NOZ_YS00_R_ST`, type 15: `29r 30r 33p 34r`). Their positions are those of a character standing (e.g. the wrist of `AKI_UDE_AISATU` at the height of the head when the hand is raised), so they are *probably* played over another motion that moves the rest of the body.
+
 #### Skeleton
 
 The motions don't animate the nodes of the models one by one: they give the hips, the rotations of a few parts of the body, and the **positions that the head, the hands and the feet reach** (inverse kinematics). The knees and the elbows are not in the motions: their bones (e.g. 6, 7, 27, 28) are never used, and their bend comes from the distance between the hip or the shoulder and the position of the foot or the hand. The meaning of the bones below was found by comparing the motions of Ryo (`AKI_*`) with his model `YKB_M.MT5`, in which the legs measure 0.838 (thigh 0.393, shin 0.445) and the arms 0.492 (upper arm 0.243, forearm 0.249).
@@ -177,7 +183,7 @@ Bones of the human set (the numbers of the second set in parentheses, when they 
 
 | Bone | Channels | Parent | Part | Node of the bodies | Description |
 |-----:|----------|-------:|------|--------------------|-------------|
-| 0    | p, r | — | Hips | — | Position of the hips (y ≈ 1.13 for Ryo standing, 0.56 in the motions of characters sitting on a seat that is not in the motion, e.g. `OTH_TKA_KAIWA_LP_HB_A`) and rotation of the whole body. The position moves the character in the walks, up to several meters |
+| 0    | p, r | — | Hips | — | Position of the hips (y ≈ 1.13 for Ryo standing, 0.56 in the motions of characters sitting on a seat that is not in the motion, e.g. `OTH_TKA_KAIWA_LP_HB_A`) and rotation of the whole body. The position moves the character in the walks, up to several meters. The rotation can change from one frame to the next between two ways of writing the same rotation, `(x, y, z)` and `(x + 0.5, 0.5 - y, z + 0.5)` turns, with keys whose tangents are of about 25 turns per second: in `AK_KOUTEN_KI_01` it is `(-0.09, -0.444, -0.029)` at frame 6 and `(0.41, -0.056, 0.471)` at frame 7, the same rotation, and the curves between both frames go through other ones |
 | 1    | r | 0 | Pelvis | `0x0E` | About a quarter turn around Y (`(0, 0.25, 0)`, or other angles of the same rotation such as `(0.25, 0.25, 0.25)`) when the pelvis is as in the models. With this rotation, the positions of the feet are within reach of the legs of `YKB_M` in 199 of the 204 motions of Ryo; with the pelvis turned as the torso, only in 106 |
 | 4, 11 | r | | Unknown | | In 211 motions only |
 | 5    | r | 1 | Thigh | `0x10` | Rotation of the thigh, which is not the direction of the leg: in `AKI_QOK_QOK_HIGHKICK_HB_QTE` it only turns around the axis of the thigh (X) while the ankle goes from the floor to above the head. It *probably* gives the plane in which the knee bends, once the leg points to the ankle position |
@@ -186,9 +192,9 @@ Bones of the human set (the numbers of the second set in parentheses, when they 
 | 12 (11) | r | 1 | Thigh | `0x15` | As bone 5, for the other leg |
 | 15 (14) | p | | Ankle | `0x17` | As bone 8 |
 | 16 (15) | r | | Foot | `0x17` | As bone 9 |
-| 18 (16) | r | 0 | Torso | `0x01` | Rotation of the torso, with the angles of the node `0x01` of the models |
-| 20 (18) | p | | Head | `0xFFBD` | Position of the head. It is at 0.380 from the hips (median), the length of the torso of Ryo (0.381), but the rotation of bone 18 alone doesn't always bring the head there (it ends more than 0.5 away in 10% of the frames): *probably* the torso turns to reach it |
-| 21 (19) | r | 18 | Head | `0xFFBD` | Rotation of the head, with the angles of the node `0xFFBD` |
+| 18 (16) | r | 0 | Torso | `0x01` | Rotation of the torso. In `motion/motion.bin` it starts at `(0, 0.25, 0)` in 694 motions, the rest of the pelvis (bone 1), and at about `(0.25, 0, 0.25)`, the angles of the node `0x01` of the models, in 149 (other values in the rest, mostly `(0, y, 0)` with y from 0.1 to 0.45, e.g. 0.38 in `AK_TA_SY_F`). The two are a quarter turn apart, but both have the Z axis (the side of the torso) along the same axis, so the direction of the torso *probably* comes from the position of the head (bone 20) |
+| 20 (18) | p | | Head | `0xFFBD` | Position of the head. It is at 0.380 from the hips (median), the length of the torso of Ryo (0.381), but the rotation of bone 18 alone doesn't always bring the head there (it ends more than 0.5 away in 10% of the frames): *probably* the torso turns to reach it. In some fast motions it gets much closer to the hips, also at a key of both: in `AK_TA_SY_F` (10 frames) it is at 0.38 at frames 0 and 10 but at 0.25 at frame 4 (hips `(0, 0.88, -0.42)`, head `(-0.06, 1.05, -0.60)`), so the torso *probably* bends |
+| 21 (19) | r | 18 | Head | `0xFFBD` | Rotation of the head, with the angles of the node `0xFFBD`. In `motion/motion.bin` it starts at `(0.5, -0.25, 0)` in 562 motions, `(0.25, 0, 0.25)` in 326, `(-0.25, 0, -0.25)` in 315 and `(-0.25, -0.5, -0.25)` in 71, whatever the rotation of the torso: they are quarter or half turns apart around the Z axis of the head (its top), which is the same in all of them, and the face looks to the front, a side or the back. E.g. `AKI_AKI_PORI_ST` starts at `(0.25, 0, 0.25)`, the face to the back of `(-0.25, 0, -0.25)`, `AKI_AKI_PORI_ST` starts there and goes to `(0.226, 0.475, 0.052)` (head bowed, held by `AKI_AKI_PORI_LP`), and `AKI_AKI_PORI_EN` goes back; their look position (bone 23) stays in front of the face all along, so the face *probably* follows the look position and this rotation only gives the tilt. The look position can jump from one frame to the next (e.g. from the left to the right of the head between frames 0 and 1 of `AKI_AKI_LOW_S1`) |
 | 23 (21) | p | | Look | — | A point 0.2 in front of the face, on the X axis of the head (where the face looks): *probably* the point the head looks at |
 | 25 (23) | r | 18 | Shoulder | `0x09` | Small rotation of the shoulder (under 0.06 turns) |
 | 26 (24) | r | 25 | Upper arm | `0x0A` | Rotation of the upper arm (around Z about ±0.5, the 180° of the node `0x0A`), as bone 5 for the elbow. A few motions have about 0 around Z instead, half a turn away, for the whole motion and for both arms (e.g. `JIJ_WAN_AT1_WANTOJIDOUHANBAIKI_0100` in `djhn`, while the other `JIJ_WAN_*` motions of the same cutscenes have about −0.46): Z is the axis around which the elbow bends, so *probably* only the X and Y rotations count, giving the plane of the bend |
@@ -252,21 +258,38 @@ Node entry (32 bytes):
 |-------:|-----:|------------|------------|----------------------------------------------------------------------|
 | 0x00   | 2    | uint16     | `unknown`  | Usually 0                                                            |
 | 0x02   | 6    | float16[3] | `scale`    | Probably the scale X, Y, Z. Usually (1, 1, 1)                        |
-| 0x08   | 24   | —          | channels   | 6 channels of 4 bytes: uint16 `offset` of the samples (0 if the channel is constant) and uint16 `value` (the constant value, or the first sample) |
+| 0x08   | 24   | —          | channels   | 6 channels of 4 bytes: uint16 `offset` of the samples (0 if the channel is constant) and uint16 `value` (the constant value, or the first sample). The channels are the rotation X, Y, Z (int16, `0x10000` = 1 turn) and the position X, Y, Z (float16, relative to the parent node) |
 
-The first three channels are animated in almost all the nodes, and they look like rotations (`0x10000` = 360°); the last three are rarely animated. 3 of the 58 sampled motions (motion 22 of `M_01JAN` in `jhd0/kakg.pks`, motions 5 and 6 of `M_TORI` in `op02/shdr.pks`) don't follow this layout: in `M_01JAN` the first entry has more channels and the next entry is shifted.
+The rotations are animated in almost all the nodes; the positions rarely (e.g. `TMN_GART_02` and `TMN_HURU_KATANA_SAYS` in `jhd0/jhd0.pks`), and their samples are float16 too.
+
+The entries are the nodes of the [MT5 / CHRM](MT5) model of the object, in the order of the file, and the values replace their rotation and position. E.g. `TMN_NOBORI`, `TMN_NOBORI_HARD` and `TMN_NOBORI_BIG` in `motion/motion.bin` (4 entries) animate `NOBA001G.chrm` of `ju00/nbri.pks`, a *nobori* banner: 4 nodes, the top of the pole at `(0.01, 2.36, 0)` and 3 nodes hanging 0.305 below each other, which are the constant positions of the motions, while the rotation around Y of each node waves the cloth (up to about 8 degrees in `TMN_NOBORI_HARD`). The `TMN_*` motions of `motion/motion.bin` are all sampled motions of objects (e.g. `TMN_A_MEMO*`, 8 or 9 nodes; `TMN_NEWBAG_*`, 21 nodes; `TMN_BENM1`–`4`, 5 nodes). 3 of the 58 sampled motions (motion 22 of `M_01JAN` in `jhd0/kakg.pks`, motions 5 and 6 of `M_TORI` in `op02/shdr.pks`) don't follow this layout: in `M_01JAN` the first entry has more channels and the next entry is shifted.
 
 ### Raw motions
 
-Bit 31 of the first word is set. The motion stores a block of the same size for each frame, with no keys.
+Bit 31 of the first word is set. The motion stores the value of every channel at each frame, with no keys: `frames` blocks of the same size (not `frames + 1` as the keys of the other motions), one after the other. Unlike the keyframe motions, they give the bend of the knees and the elbows instead of the positions that the feet, the hands and the head reach (forward kinematics).
 
 | Offset | Size          | Type      | Name        | Description                                                |
 |-------:|--------------:|-----------|-------------|------------------------------------------------------------|
 | 0x00   | 4             | uint32    | `frames`    | [Frame count](#motion-data); bit 31 set                     |
-| 0x04   | 2             | uint16    | `frameSize` | Size of each frame in bytes: `0x62` (98) in 67 motions, `0x56` or `0x76` in the others |
-| 0x06   | 6             | uint16[3] | `unknown`   | Unknown, probably a mask of the stored channels: `0x52A2, 0xD625, 0x0015` with `frameSize = 0x62` |
+| 0x04   | 2             | uint16    | `frameSize` | Size of each frame in bytes                                |
+| 0x06   | 6             | uint16[3] | `bones`     | Mask of the bones stored, one bit per bone: bit `b % 16` of word `b / 16` for bone `b` (0 to 47) |
 | 0x0C   | 2             | uint16    | `unknown`   | Always 0                                                    |
-| 0x0E   | frames × size | —         | frames      | 16-bit values for each frame (meaning unknown)              |
+| 0x0E   | frames × frameSize | —    | frames      | One block per frame                                        |
+
+**Frame block.** The values of the hips, then those of each bone of the mask in increasing order:
+
+| Values | Type      | Description |
+|-------:|-----------|-------------|
+| 3      | float16   | Position of the hips (bone 0), as in the keyframe motions (e.g. y = 1.15 for Ryo standing in `AKI_AKI_YS00_R_ST`) |
+| 3      | int16     | Rotation of the hips, in turns (`0x10000` = 1 turn) |
+| 3      | int16     | For each bone of the mask: its rotation X, Y, Z, in turns, as in the keyframe motions (e.g. the torso about `(0.25, 0, 0.25)` and the head about `(-0.25, 0, -0.25)`) |
+| 1      | int16     | For bones 7, 14, 28 and 34 (the knees and the elbows, which the keyframe motions never use): the bend of the joint, a rotation around Z in turns: negative for the knees (e.g. -0.104, 37 degrees, in `EXB_YKI_AKI_STANDBY1`), positive for the elbows |
+
+The size of the block is then `2 × (6 + 3 × rotations + joints)`. In the human bone set the masks are `52A2 D625 0015` (98 bytes: bones 1, 5, 7, 9, 12, 14, 16, 18, 21, 25, 26, 28, 30, 31, 32, 34, 36, i.e. every rotation of the [set](#keyframe-motions) and the four joints), `52A2 D627 0015` (104 bytes, with bone 17), `52A2 5425 0015` (86 bytes, without bones 25 and 31) or `0000 8000 0015` (32 bytes: bones 31, 32, 34 and 36, one arm, in the `AKI_AKI_YS*` motions of `motion/motion.bin`, where Ryo points with his arm). With these values the ankles of `YKB_M` stay at 0.12 from the floor, as when standing.
+
+The raw motions are in `motion/motion.bin` (9), in the MOTN files `M_EXBS` (`mfbt/mpk00.pks`), `M_CTER` (`d000/cterbase.pks`) and `M_0000` (`jd00/koji.pks`), and in the MOTN files of the maps (e.g. `free/m_exbf.bin`): 995 in the game files counting the repeated files, all with the layout above except the 7 of the cat (`EXB_CAT_CAT_RUN_LP`, `EXB_CAT_CAT_STAND`: mask `AAA2 8936 0575`, 118 bytes), a quadruped with other joints.
+
+A few motions whose first word has bit 31 set are [sampled motions](#sampled-motions): their type is `0xFFFF` (e.g. the `TMN_*` motions of `motion/motion.bin`).
 
 ## Character types
 

@@ -28,6 +28,7 @@
 #define MOTNVIEW_TIMELINE_HEIGHT 24.0f
 #define MOTNVIEW_FOVY           45.0f
 #define MOTNVIEW_RYO            "model/chara/ykb_m.mt5" // In the folder of the scene
+#define MOTNVIEW_SCENES         "scene/01;scene/02;scene/03" // Searched for Ryo from the root of the game files
 #define MOTNVIEW_RYO_PREFIX     "AKI_"
 
 typedef enum {
@@ -49,8 +50,9 @@ typedef struct {
     float           frame;
     bool            playing;
     bool            seeking;
-    // The models that can show the motions: those of the folder, and Ryo
+    // The models that can show the motions: those of the folder, Ryo and those loaded by hand
     uint32_t        modelCount;
+    uint32_t        modelCapacity;
     char            (*modelPaths)[MOTNVIEW_PATH_SIZE];
     int             model;          // Loaded one, -1 if none
     bool            modelLoaded;
@@ -132,34 +134,139 @@ static void OpenModel(int index) {
     g_view.pose = malloc((g_view.render3D.mesh.nodeCount + 1) * sizeof(Matrix));
 }
 
-// The models of the folder of the file, then Ryo
-static bool FindModels(void) {
-    FilePathList files = LoadDirectoryFilesEx(GetDirectoryPath(g_view.path), ".mt5;.chrm", false);
-    g_view.modelPaths = calloc(files.count + 2, sizeof(*g_view.modelPaths));
-    if (g_view.modelPaths == NULL) {
-        UnloadDirectoryFiles(files);
-        return false;
+// Adds a model to the list and returns its index, or that of the same path if it is already there. -1 if out of memory
+static int AddModel(const char* path) {
+    for (uint32_t i = 0; i < g_view.modelCount; i++) {
+        if (EqualsIgnoreCase(g_view.modelPaths[i], path))
+            return (int)i;
     }
-    for (unsigned int i = 0; i < files.count; i++)
-        snprintf(g_view.modelPaths[g_view.modelCount++], MOTNVIEW_PATH_SIZE, "%s", files.paths[i]);
-    UnloadDirectoryFiles(files);
+    if (g_view.modelCount == g_view.modelCapacity) {
+        uint32_t capacity = g_view.modelCapacity > 0 ? g_view.modelCapacity * 2 : 8;
+        void* paths = realloc(g_view.modelPaths, capacity * sizeof(*g_view.modelPaths));
+        if (paths == NULL)
+            return -1;
+        g_view.modelPaths = paths;
+        g_view.modelCapacity = capacity;
+    }
+    snprintf(g_view.modelPaths[g_view.modelCount], MOTNVIEW_PATH_SIZE, "%s", path);
+    return (int)g_view.modelCount++;
+}
+
+// Ryo of the scene of the file. For a file outside the scenes (e.g. motion/motion.bin), Ryo of the first scene found
+// from a folder that contains the file (the root of the game files). Empty if not found
+static void FindRyo(char* ryo, size_t size) {
     char scene[MOTNVIEW_PATH_SIZE];
     FindSceneFolder(g_view.path, scene, sizeof(scene));
     if (scene[0] != '\0') {
-        char ryo[MOTNVIEW_PATH_SIZE];
-        snprintf(ryo, sizeof(ryo), "%s/%s", scene, MOTNVIEW_RYO);
-        if (FileExists(ryo))
-            snprintf(g_view.modelPaths[g_view.modelCount++], MOTNVIEW_PATH_SIZE, "%s", ryo);
+        snprintf(ryo, size, "%s/%s", scene, MOTNVIEW_RYO);
+        if (!FileExists(ryo))
+            ryo[0] = '\0';
+        return;
     }
-    return true;
+    char folder[MOTNVIEW_PATH_SIZE];
+    snprintf(folder, sizeof(folder), "%s", g_view.path);
+    for (char* c = folder; *c != '\0'; c++) {
+        if (*c == '\\')
+            *c = '/';
+    }
+    for (char* slash = strrchr(folder, '/'); slash != NULL; slash = strrchr(folder, '/')) {
+        *slash = '\0';
+        int count = 0;
+        char** scenes = TextSplit(MOTNVIEW_SCENES, ';', &count);
+        for (int i = 0; i < count; i++) {
+            snprintf(ryo, size, "%s/%s/%s", folder, scenes[i], MOTNVIEW_RYO);
+            if (FileExists(ryo))
+                return;
+        }
+    }
+    ryo[0] = '\0';
+}
+
+// The models of the folder of the file, then Ryo
+static bool FindModels(void) {
+    FilePathList files = LoadDirectoryFilesEx(GetDirectoryPath(g_view.path), ".mt5;.chrm", false);
+    bool added = true;
+    for (unsigned int i = 0; i < files.count && added; i++)
+        added = AddModel(files.paths[i]) >= 0;
+    UnloadDirectoryFiles(files);
+    char ryo[MOTNVIEW_PATH_SIZE];
+    FindRyo(ryo, sizeof(ryo));
+    if (added && ryo[0] != '\0')
+        added = AddModel(ryo) >= 0;
+    return added;
+}
+
+// Asks for a model (MT5/CHRM) to show the motions, adds it to the list and loads it
+static void LoadModelDialog(void) {
+    static char lastFolder[MOTNVIEW_PATH_SIZE];
+    char folder[MOTNVIEW_PATH_SIZE];
+    snprintf(folder, sizeof(folder), "%s", lastFolder[0] != '\0' ? lastFolder : GetDirectoryPath(g_view.path));
+
+    nfdu8char_t* outPath = NULL;
+    nfdu8filteritem_t filters[1] = { { "Models", "mt5,chrm" } };
+    nfdresult_t result = NFD_OpenDialogU8(&outPath, filters, 1, folder[0] != '\0' ? folder : NULL);
+    if (result == NFD_OKAY) {
+        snprintf(lastFolder, sizeof(lastFolder), "%s", GetDirectoryPath(outPath));
+        int index = AddModel(outPath);
+        if (index < 0)
+            fputs("[MOTNView_LoadModel]: Memory error\n", stderr);
+        else {
+            if (index != g_view.model)
+                OpenModel(index);
+            if (!g_view.modelLoaded)
+                printf("Failed to load the model %s\n", outPath);
+        }
+        NFD_FreePathU8(outPath);
+    }
+    else if (result == NFD_ERROR)
+        printf("Error: %s\n", NFD_GetError());
 }
 
 static bool IsRyo(int model) {
     return model >= 0 && EqualsIgnoreCase(GetFileName(g_view.modelPaths[model]), GetFileName(MOTNVIEW_RYO));
 }
 
-// Ryo for his motions, else the first body of the folder, else Ryo
+// Whether the loaded model can show the selected motion: a body for the motions of the characters, a model with the
+// nodes of a sampled motion (objects and animals)
+static bool ModelFits(void) {
+    if (!g_view.modelLoaded)
+        return false;
+    if (g_view.decoded && g_view.motion.kind == MOTN_SAMPLED)
+        return MT5Pose_CanPoseNodes(&g_view.render3D.mesh, &g_view.motion);
+    return g_view.body;
+}
+
+// For a sampled motion, the first model of the list with as many nodes as the motion, else one with more. Returns
+// false if none, leaving the model as it was
+static bool ChooseObjectModel(void) {
+    if (ModelFits())
+        return true;
+    uint32_t nodes = 0;
+    for (uint32_t c = 0; c < g_view.motion.channelCount; c++) {
+        if (g_view.motion.channels[c].bone + 1u > nodes)
+            nodes = g_view.motion.channels[c].bone + 1u;
+    }
+    int previous = g_view.model, larger = -1;
+    for (uint32_t i = 0; i < g_view.modelCount; i++) {
+        OpenModel((int)i);
+        if (!ModelFits())
+            continue;
+        if (g_view.render3D.mesh.nodeCount == nodes)
+            return true;
+        if (larger < 0)
+            larger = (int)i;
+    }
+    if (larger >= 0 || previous >= 0)
+        OpenModel(larger >= 0 ? larger : previous);
+    return larger >= 0;
+}
+
+// Ryo for his motions, else the first body of the folder, else Ryo. For the sampled motions, a model with their nodes
 static void ChooseModel(void) {
+    if (g_view.decoded && g_view.motion.kind == MOTN_SAMPLED) {
+        ChooseObjectModel();
+        return;
+    }
     int ryo = -1;
     for (uint32_t i = 0; i < g_view.modelCount; i++) {
         if (IsRyo((int)i))
@@ -232,7 +339,7 @@ bool MOTNView_Open(const char* filepath) {
     for (uint32_t i = 0; i < bank.count; i++) {
         MOTN_Motion motion;
         bool valid = MOTN_ReadMotion(&bank, i, &motion);
-        snprintf(g_view.labels[i], MOTNVIEW_LABEL_SIZE, "%3u  %s%s", i, bank.names[i], valid ? TextFormat("  %u", motion.frames) : "  (invalid)");
+        snprintf(g_view.labels[i], MOTNVIEW_LABEL_SIZE, "%3u  %s%s", i, bank.names[i], valid ? "" : "  (invalid)");
         if (valid)
             MOTN_FreeMotion(&motion);
     }
@@ -284,6 +391,8 @@ void MOTNView_Toolbar(void) {
     if (Toolbar_Button(ICON_ARROW_DOWN_FILL, NULL, "Next motion", TOOLBAR_REPEAT | KEY_DOWN))
         StepMotion(1);
     Toolbar_Separator();
+    if (Toolbar_Button(ICON_FILE_OPEN, "Load model", "Load a model (MT5 or CHRM) to show the motions", KEY_M))
+        LoadModelDialog();
     if (Toolbar_Button(ICON_RESTART, "Reset", "Reset the camera", KEY_R))
         ResetCamera();
     bool fly = g_view.camera.fly;
@@ -330,8 +439,13 @@ static void UpdateInput(Rectangle scene) {
 }
 
 static void UpdatePose(void) {
-    bool posed = g_view.modelLoaded && g_view.body && g_view.decoded && g_view.pose != NULL &&
-        MT5Pose_Compute(&g_view.render3D.mesh, &g_view.bodyNodes, &g_view.motion, g_view.frame, g_view.pose);
+    bool posed = false;
+    if (g_view.modelLoaded && g_view.decoded && g_view.pose != NULL) {
+        if (g_view.motion.kind == MOTN_SAMPLED)
+            posed = MT5Pose_ComputeNodes(&g_view.render3D.mesh, &g_view.motion, g_view.frame, g_view.pose);
+        else
+            posed = g_view.body && MT5Pose_Compute(&g_view.render3D.mesh, &g_view.bodyNodes, &g_view.motion, g_view.frame, g_view.pose);
+    }
     if (posed)
         MT5Render_Pose(&g_view.render3D, g_view.pose);
     else if (g_view.modelLoaded)
@@ -349,7 +463,8 @@ static void DrawGround(Vector3 center) {
 }
 
 static void DrawTargets(void) {
-    if (!g_view.decoded)
+    // The positions of the sampled motions are relative to the parent nodes
+    if (!g_view.decoded || g_view.motion.kind == MOTN_SAMPLED)
         return;
     for (uint32_t i = 0; i < g_view.motion.channelCount; i++) {
         const MOTN_Channel* channel = &g_view.motion.channels[i];
@@ -427,7 +542,7 @@ static void DrawTree(Rectangle bounds) {
     Tree_BeginGroup(tree, g_groupNames[GROUP_MODELS], &g_options.expanded[GROUP_MODELS], NULL);
     for (uint32_t i = 0; i < g_view.modelCount; i++) {
         bool loaded = (int)i == g_view.model;
-        int flags = (loaded ? TREE_SELECTED : 0) | (loaded && !g_view.modelLoaded ? TREE_FAILED : 0) | (loaded && g_view.modelLoaded && !g_view.body ? TREE_DIMMED : 0);
+        int flags = (loaded ? TREE_SELECTED : 0) | (loaded && !g_view.modelLoaded ? TREE_FAILED : 0) | (loaded && g_view.modelLoaded && !ModelFits() ? TREE_DIMMED : 0);
         const char* name = GetFileName(g_view.modelPaths[i]);
         if (Tree_Item(tree, IsRyo((int)i) ? TextFormat("%s (Ryo)", name) : name, flags, NULL))
             clickedModel = (int)i;
@@ -437,8 +552,8 @@ static void DrawTree(Rectangle bounds) {
 
     if (clickedMotion >= 0) {
         SelectMotion(clickedMotion);
-        // Ryo for his motions, the chosen model for the rest
-        if (IsRyo(g_view.model) || strncmp(g_view.bank.names[clickedMotion], MOTNVIEW_RYO_PREFIX, strlen(MOTNVIEW_RYO_PREFIX)) == 0)
+        // Ryo for his motions, the chosen model for the rest, if it can show them
+        if (IsRyo(g_view.model) || strncmp(g_view.bank.names[clickedMotion], MOTNVIEW_RYO_PREFIX, strlen(MOTNVIEW_RYO_PREFIX)) == 0 || !ModelFits())
             ChooseModel();
     }
     if (clickedModel >= 0 && clickedModel != g_view.model)
@@ -468,7 +583,7 @@ static void DrawProperties(Rectangle bounds) {
         Properties_Int(properties, "Frames", motion->frames);
         Properties_Text(properties, "Duration", TextFormat("%.2f s", motion->frames / MOTN_FRAME_RATE));
         Properties_Text(properties, "Frame", TextFormat("%.1f", g_view.frame));
-        if (motion->kind == MOTN_KEYFRAME) {
+        if (motion->kind != MOTN_SAMPLED) {
             Properties_Int(properties, "Channels", motion->channelCount);
             Properties_Section(properties, "Bones");
             for (uint32_t i = 0; i < motion->channelCount;) {
@@ -494,7 +609,10 @@ static void DrawProperties(Rectangle bounds) {
     else {
         Properties_Text(properties, "File", GetFileName(g_view.modelPaths[g_view.model]));
         Properties_Bool(properties, "Body", g_view.body);
+        bool sampled = g_view.decoded && g_view.motion.kind == MOTN_SAMPLED;
         Properties_Text(properties, "Pose", g_view.posed ? "of the motion" : !g_view.modelLoaded ? "invalid model file" :
+            sampled && g_view.motion.channelCount == 0 ? "of the file: the motion is not decoded" :
+            sampled ? "of the file: the motion has more nodes" :
             !g_view.body ? "of the file: not a body" : "of the file: the motion can't pose a body");
     }
     Properties_End(properties);

@@ -25,10 +25,15 @@ typedef struct {
 
 // Finds the nodes of a body. Returns false if the model is not the body of a character
 bool MT5Pose_FindBody(const MT5Mesh* mesh, MT5Pose_Body* body);
-// Whether the motion can pose a body: a keyframe motion of a person (not the animals)
+// Whether the motion can pose a body: a keyframe or raw motion of a person (not the animals)
 bool MT5Pose_CanPose(const MOTN_Motion* motion);
 // World matrix of each node of the body (mesh->nodeCount of them) at a frame of the motion. Returns false if the motion
 // can't pose it
 bool MT5Pose_Compute(const MT5Mesh* mesh, const MT5Pose_Body* body, const MOTN_Motion* motion, float frame, Matrix* world);
+// Whether a sampled motion can pose the nodes of a model (objects and animals): it animates the first nodes of the
+// model, in the order of the file, so the model has at least as many nodes as the motion
+bool MT5Pose_CanPoseNodes(const MT5Mesh* mesh, const MOTN_Motion* motion);
+// World matrix of each node of the model at a frame of a sampled motion. Returns false if the motion can't pose it
+bool MT5Pose_ComputeNodes(const MT5Mesh* mesh, const MOTN_Motion* motion, float frame, Matrix* world);
 
 #endif

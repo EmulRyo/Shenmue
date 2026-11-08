@@ -6,8 +6,9 @@
 #include "views/views.h"
 
 // Player of the motions of a MOTN file on the body of a character. The files don't say which character a motion is
-// for: the body is one of the models (MT5/CHRM) of the folder of the file, or Ryo (model/chara/ykb_m.mt5 of the scene)
-// for his motions (AKI_*) and when the folder has none
+// for: the body is one of the models (MT5/CHRM) of the folder of the file, or Ryo (model/chara/ykb_m.mt5 of the scene,
+// or of the first scene found from the root of the game files for a file outside the scenes, e.g. motion/motion.bin)
+// for his motions (AKI_*) and when the folder has none. Any other model can be loaded by hand from the toolbar
 
 bool MOTNView_Open(const char* filepath);
 void MOTNView_Close(void);

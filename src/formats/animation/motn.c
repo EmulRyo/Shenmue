@@ -20,6 +20,22 @@
 // Header of a keyframe motion: the first word, the offsets of the 4 sections, then the bone list
 #define MOTN_KEYFRAME_HEADER 12
 
+// Header of a raw motion: the first word, the size of each frame, a mask of 48 bones (3 uint16, bit b % 16 of word
+// b / 16 for the bone b) and 0. Each frame holds the position (float16) and the rotation (int16, 0x10000 = 1 turn) of
+// the hips, then the rotation of each bone of the mask, in turns, with 3 values (X, Y, Z) or one for the knees and the
+// elbows, which bend around Z
+#define MOTN_RAW_HEADER     14
+#define MOTN_RAW_BONES      48
+#define MOTN_RAW_HIPS       6
+static const uint8_t g_rawHinges[] = { 7, 14, 28, 34 };
+
+// Header of a sampled motion: the first word, 0x3C00, 0, the number of nodes and 0, then 32 bytes per node: a uint16
+// (usually 0), the scale (float16 X, Y, Z) and 6 channels (rotation X, Y, Z and position X, Y, Z) of a uint16 offset of
+// the samples from the start of the motion (0 if the channel is constant) and a uint16 value. The rotations are int16
+// (0x10000 = 1 turn), the positions float16, with frames + 1 samples
+#define MOTN_SAMPLED_HEADER 12
+#define MOTN_SAMPLED_NODE   32
+
 void MOTN_Free(MOTN_Bank* bank) {
     free(bank->names);
     free(bank->offsets);
@@ -178,6 +194,110 @@ static bool ReadKeyframes(const uint8_t* data, size_t size, bool wide, MOTN_Moti
     return true;
 }
 
+static bool IsRawHinge(uint32_t bone) {
+    for (size_t i = 0; i < sizeof(g_rawHinges); i++) {
+        if (g_rawHinges[i] == bone)
+            return true;
+    }
+    return false;
+}
+
+static float RawAngle(const uint8_t* data) {
+    return (int16_t)Bytes_ReadU16(data) / 65536.0f;
+}
+
+// Reads a raw motion that starts at data and has size bytes up to the end of the file: one key per frame for each
+// channel. frames is the number of frames stored
+static bool ReadRaw(const uint8_t* data, size_t size, uint32_t frames, MOTN_Motion* motion) {
+    if (size < MOTN_RAW_HEADER || frames == 0)
+        return false;
+    uint32_t frameSize = Bytes_ReadU16(data + 4);
+    uint32_t values = frameSize / 2;
+    if (frameSize % 2 != 0 || values < MOTN_RAW_HIPS || MOTN_RAW_HEADER + (size_t)frames * frameSize > size)
+        return false;
+
+    // The channels: the hips, then the bones of the mask
+    uint32_t count = MOTN_RAW_HIPS;
+    for (uint32_t bone = 0; bone < MOTN_RAW_BONES; bone++) {
+        if ((Bytes_ReadU16(data + 6 + bone / 16 * 2) >> (bone % 16)) & 1)
+            count += IsRawHinge(bone) ? 1 : 3;
+    }
+    // The animals have other knees (e.g. the cat of EXB_CAT_CAT_STAND): their values are left undecoded
+    if (count != values)
+        return true;
+    motion->channels = calloc(count, sizeof(MOTN_Channel));
+    motion->keys = calloc((size_t)count * frames, sizeof(MOTN_Key));
+    if (motion->channels == NULL || motion->keys == NULL)
+        return false;
+    for (int axis = 0; axis < MOTN_AXES; axis++)
+        motion->channels[motion->channelCount++] = (MOTN_Channel) { 0, (uint8_t)axis, 0, NULL };
+    for (uint32_t bone = 1; bone < MOTN_RAW_BONES; bone++) {
+        if (!((Bytes_ReadU16(data + 6 + bone / 16 * 2) >> (bone % 16)) & 1))
+            continue;
+        for (int axis = IsRawHinge(bone) ? MOTN_ROTATION_Z : MOTN_ROTATION_X; axis <= MOTN_ROTATION_Z; axis++)
+            motion->channels[motion->channelCount++] = (MOTN_Channel) { (uint8_t)bone, (uint8_t)axis, 0, NULL };
+    }
+
+    for (uint32_t c = 0; c < count; c++) {
+        MOTN_Channel* channel = &motion->channels[c];
+        channel->keyCount = frames;
+        channel->keys = motion->keys + (size_t)c * frames;
+        for (uint32_t f = 0; f < frames; f++) {
+            const uint8_t* value = data + MOTN_RAW_HEADER + (size_t)f * frameSize + c * 2;
+            channel->keys[f] = (MOTN_Key) { (uint16_t)f, 1, c < 3 ? Bytes_ReadF16(value) : RawAngle(value), 0.0f, 0.0f };
+        }
+    }
+    // The last frame, as in the keyframe motions
+    motion->frames = frames - 1;
+    return true;
+}
+
+// Value of a channel of a sampled motion: rotations (channels 0 to 2) in turns, positions (3 to 5) in float16
+static float SampledValue(const uint8_t* data, int channel) {
+    return channel < 3 ? RawAngle(data) : Bytes_ReadF16(data);
+}
+
+// Reads a sampled motion that starts at data and has size bytes up to the end of the file: a channel per axis of each
+// node, the "bone" being the index of the node in the model, with one key per frame, or one key if it is constant.
+// A few motions don't follow the layout (e.g. motion 22 of M_01JAN): they are left undecoded
+static bool ReadSampled(const uint8_t* data, size_t size, MOTN_Motion* motion) {
+    if (size < MOTN_SAMPLED_HEADER)
+        return false;
+    uint32_t nodes = Bytes_ReadU16(data + 8);
+    size_t table = MOTN_SAMPLED_HEADER + (size_t)nodes * MOTN_SAMPLED_NODE;
+    uint32_t samples = motion->frames + 1;
+    if (nodes == 0 || nodes > 256 || table > size)
+        return true;
+    uint32_t keyCount = 0;
+    for (uint32_t n = 0; n < nodes; n++) {
+        for (int c = 0; c < MOTN_AXES; c++) {
+            uint32_t offset = Bytes_ReadU16(data + MOTN_SAMPLED_HEADER + n * MOTN_SAMPLED_NODE + 8 + c * 4);
+            if (offset != 0 && (offset < table || offset + (size_t)samples * 2 > size))
+                return true;
+            keyCount += offset != 0 ? samples : 1;
+        }
+    }
+    motion->channels = calloc((size_t)nodes * MOTN_AXES, sizeof(MOTN_Channel));
+    motion->keys = calloc(keyCount, sizeof(MOTN_Key));
+    if (motion->channels == NULL || motion->keys == NULL)
+        return false;
+    MOTN_Key* key = motion->keys;
+    for (uint32_t n = 0; n < nodes; n++) {
+        for (int c = 0; c < MOTN_AXES; c++) {
+            const uint8_t* entry = data + MOTN_SAMPLED_HEADER + n * MOTN_SAMPLED_NODE + 8 + c * 4;
+            uint32_t offset = Bytes_ReadU16(entry);
+            // The channels of the file are the rotations then the positions
+            uint8_t axis = (uint8_t)(c < 3 ? MOTN_ROTATION_X + c : MOTN_POSITION_X + c - 3);
+            MOTN_Channel* channel = &motion->channels[motion->channelCount++];
+            *channel = (MOTN_Channel) { (uint8_t)n, axis, offset != 0 ? samples : 1, key };
+            for (uint32_t f = 0; f < channel->keyCount; f++)
+                key[f] = (MOTN_Key) { (uint16_t)f, 1, SampledValue(offset != 0 ? data + offset + f * 2 : entry + 2, c), 0.0f, 0.0f };
+            key += channel->keyCount;
+        }
+    }
+    return true;
+}
+
 bool MOTN_ReadMotion(const MOTN_Bank* bank, uint32_t index, MOTN_Motion* motion) {
     memset(motion, 0, sizeof(MOTN_Motion));
     if (index >= bank->count || bank->offsets[index] == 0 || bank->offsets[index] + 4 > bank->size)
@@ -186,17 +306,19 @@ bool MOTN_ReadMotion(const MOTN_Bank* bank, uint32_t index, MOTN_Motion* motion)
     uint32_t word = Bytes_ReadU32(data);
     uint32_t type = word >> 16;
     motion->frames = word & MOTN_FRAMES_MASK;
+    size_t size = bank->size - bank->offsets[index];
+    bool read;
     if (type == MOTN_SAMPLED_TYPE) {
         motion->kind = MOTN_SAMPLED;
-        return true;
+        read = ReadSampled(data, size, motion);
     }
-    motion->type = type & ~MOTN_RAW_FLAG;
-    if (type & MOTN_RAW_FLAG) {
-        motion->kind = MOTN_RAW;
-        return true;
+    else {
+        motion->type = type & ~MOTN_RAW_FLAG;
+        motion->kind = type & MOTN_RAW_FLAG ? MOTN_RAW : MOTN_KEYFRAME;
+        read = motion->kind == MOTN_RAW ? ReadRaw(data, size, motion->frames, motion) :
+            ReadKeyframes(data, size, (word & MOTN_WIDE) != 0, motion);
     }
-    motion->kind = MOTN_KEYFRAME;
-    if (!ReadKeyframes(data, bank->size - bank->offsets[index], (word & MOTN_WIDE) != 0, motion)) {
+    if (!read) {
         fprintf(stderr, "[MOTN_ReadMotion]: Invalid motion %u (%s)\n", index, bank->names[index]);
         MOTN_FreeMotion(motion);
         return false;
