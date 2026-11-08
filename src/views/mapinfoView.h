@@ -23,5 +23,11 @@ void MAPINFOView_Draw(Rectangle area);
 void MAPINFOView_Status(ViewStatus* status);
 // Adds its actions to the toolbar (Enter: play the selected cutscene)
 void MAPINFOView_Toolbar(void);
+// Path of the open mapinfo.bin, NULL if the view isn't open
+const char* MAPINFOView_Path(void);
+// Draws the visible models of the map, of the doors and of the characters, as the view shows them (its layers and the
+// eyes of its tree), from camera, inside a 3D mode begun by another view (the cutscenes of the map). The characters for
+// which hidden returns true aren't drawn (hidden can be NULL). Does nothing if the view isn't open
+void MAPINFOView_DrawMap(Camera3D camera, bool (*hidden)(const char* id));
 
 #endif

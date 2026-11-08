@@ -13,8 +13,9 @@
 // the pose of their motions, found in the CHRT scripts of the folder (or of the PKF/PKS files of the map), of the scene
 // and of the map, and the voices and sound effects are played (see authSounds.h)
 
-// Loads a cutscene, replacing the current one, with the same camera (free or of the cutscene) and fly mode. Returns
-// false if the file can't be loaded
+// Loads a cutscene, replacing the current one, with the same camera (free or of the cutscene) and fly mode. With the
+// option of the map, the view of its map (the mapinfo.bin of the parent folder) is opened behind it, and its models are
+// drawn around the characters. Returns false if the file can't be loaded
 bool AUTHView_Open(const char* filepath);
 // Loads a cutscene of a mapinfo.bin (a TRCK chunk of its SCEX chunk, by its number among them), replacing the current
 // one. Its map is the folder of the file: the motions and the models are also searched in the PKF/PKS files of the
@@ -23,6 +24,10 @@ bool AUTHView_Open(const char* filepath);
 bool AUTHView_OpenMapCutscene(const char* filepath, uint32_t cutscene);
 // The open cutscene is one of a mapinfo.bin
 bool AUTHView_IsMapCutscene(void);
+// The view of the map of the open cutscene is open behind it: the view of the map that played it, or the one opened for
+// an AUTH file (the mapinfo.bin of its parent folder) to show its models. Back (backspace) closes the cutscene and shows
+// the map
+bool AUTHView_UsesMap(void);
 void AUTHView_Close(void);
 bool AUTHView_IsOpen(void);
 // Handles the input (space: play/pause, left/right: previous/next command, home: start, V: free/cutscene camera, mouse
@@ -31,7 +36,7 @@ bool AUTHView_IsOpen(void);
 void AUTHView_Draw(Rectangle area);
 // Fills the texts of the status bar
 void AUTHView_Status(ViewStatus* status);
-// Adds its actions to the toolbar
+// Adds its actions to the toolbar (backspace: back to the map, M: show the map)
 void AUTHView_Toolbar(void);
 
 #endif

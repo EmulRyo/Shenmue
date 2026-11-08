@@ -13,6 +13,11 @@ static size_t Hash_Hash(const void* data) {
 
 HashTable FilenameDB_Load(const char* filepath) {
     FILE* file = fopen(filepath, "rb");
+    if (file == NULL) {
+        // Without it, the files of the TAD archives are named by their hashes
+        fprintf(stderr, "[FilenameDB_Load]: Can't open %s\n", filepath);
+        return HT_Create(128000, sizeof(uint32_t), sizeof(char) * 128, Hash_Hash);
+    }
     fseek(file, 0, SEEK_END);
     size_t length = ftell(file);
     rewind(file);

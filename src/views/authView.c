@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <ctype.h>
 #include <raylib.h>
 #include <raymath.h>
 #include "raygui.h"
@@ -32,6 +33,8 @@
 #define AUTHVIEW_HEIGHT         1.7f    // Of the characters, drawn as cylinders when their model isn't found
 #define AUTHVIEW_RADIUS         0.25f
 #define AUTHVIEW_SOUND_TIME     0.5f    // Seconds a sound with no length is shown
+#define AUTHVIEW_NEAR           0.05    // Planes of the camera of the cutscene, and of the free camera with the map
+#define AUTHVIEW_FAR            2000.0
 #define AUTHVIEW_SCENE_MODELS   "model/chara" // Models of the characters in the folder of the scene
 #define AUTHVIEW_HUMANS         "stream/humans" // Folder of each character of the scene, with its script and models
 #define AUTHVIEW_COMMON_MOTIONS "/motion/motion.bin" // Motions shared by the whole game, from the parent of the scene folder
@@ -102,6 +105,7 @@ typedef struct {
     char            sceneFolder[AUTHVIEW_PATH_SIZE]; // Folder of the scene of the file (e.g. .../scene/01), empty if none
     char            mapinfoPath[AUTHVIEW_PATH_SIZE]; // mapinfo.bin of the map of the cutscene: of the parent folder of
                                                      // an AUTH file, or the open file for a cutscene of a mapinfo.bin
+    bool            hasMapinfo; // mapinfoPath exists
     int             cutscene;   // TRCK chunk of the SCEX chunk of the open mapinfo.bin, -1 for an AUTH file
     MapFiles        mapFiles;   // For a cutscene of a mapinfo.bin: the CHRT, model and MOTN files of its map
     MT5Render       render;
@@ -118,12 +122,14 @@ typedef struct {
     bool            expanded[GROUP_COUNT];
     bool            charactersShown;
     bool            labels;         // Name, sound and motion over the characters
+    bool            map;            // The models of the map of the cutscene, as its view shows them
 } AUTHView_Options;
 
 static AUTHView_State g_view;
 static AUTHView_Options g_options = {
     .cutsceneCamera = true,
     .labels = true,
+    .map = true,
     .expanded = { true, true, true, true, true },
     .charactersShown = true,
 };
@@ -142,6 +148,7 @@ static const Color g_otherColor = { 170, 120, 220, 255 };
 #define COLOR_COUNT (sizeof(g_characterColors) / sizeof(g_characterColors[0]))
 
 static bool HasMovement(const AUTH_Character* character);
+static void OpenMap(void);
 
 static float Duration(void) {
     return g_view.sequence.duration / AUTH_FRAME_RATE;
@@ -758,6 +765,7 @@ static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutsc
     if (cutscene < 0)
         ToParent(mapFolder);
     snprintf(g_view.mapinfoPath, sizeof(g_view.mapinfoPath), "%s", cutscene < 0 ? TextFormat("%s/mapinfo.bin", mapFolder) : g_view.path);
+    g_view.hasMapinfo = FileExists(g_view.mapinfoPath);
     FindSceneFolder(g_view.path, g_view.sceneFolder, sizeof(g_view.sceneFolder));
     if (cutscene >= 0 && !MapFiles_Load(mapFolder, ".mt5;.chrm;.chrt;.motn", &g_view.mapFiles)) {
         fputs("[AUTHView_Open]: Memory error\n", stderr);
@@ -775,6 +783,8 @@ static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutsc
     }
     MT5Render_Init(&g_view.render);
     g_view.open = true;
+    if (g_options.map)
+        OpenMap();
     // The program of the map loads the bank of the sounds with the name of the PKS of an AUTH file, or of the map
     AUTHSounds_Load(g_view.sceneFolder[0] != '\0' ? g_view.sceneFolder : NULL, g_view.mapinfoPath,
         GetFileName(GetDirectoryPath(g_view.path)), &g_view.sequence);
@@ -804,6 +814,41 @@ bool AUTHView_OpenMapCutscene(const char* filepath, uint32_t cutscene) {
 
 bool AUTHView_IsMapCutscene(void) {
     return g_view.open && g_view.cutscene >= 0;
+}
+
+// The same path, ignoring the case and the kind of separators
+static bool SamePath(const char* a, const char* b) {
+    for (; *a != '\0' && *b != '\0'; a++, b++) {
+        char ca = *a == '\\' ? '/' : (char)tolower((unsigned char)*a), cb = *b == '\\' ? '/' : (char)tolower((unsigned char)*b);
+        if (ca != cb)
+            return false;
+    }
+    return *a == *b;
+}
+
+bool AUTHView_UsesMap(void) {
+    const char* map = MAPINFOView_Path();
+    return g_view.open && map != NULL && SamePath(map, g_view.mapinfoPath);
+}
+
+// Opens the view of the map of an AUTH file (its parent folder) if it isn't open, behind this one. The view of the map of
+// a cutscene of a mapinfo.bin is already open
+static void OpenMap(void) {
+    if (!AUTHView_UsesMap() && g_view.hasMapinfo && !MAPINFOView_Open(g_view.mapinfoPath))
+        printf("[AUTHView_Open]: Failed to load the map %s\n", g_view.mapinfoPath);
+}
+
+// The characters of the map that are in the cutscene aren't drawn with the map: the cutscene places them
+static bool IsCutsceneCharacter(const char* id) {
+    for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {
+        if (strcmp(g_view.sequence.characters[i].id, id) == 0)
+            return true;
+    }
+    return false;
+}
+
+static bool ShowsMap(void) {
+    return g_options.map && AUTHView_UsesMap();
 }
 
 bool AUTHView_IsOpen(void) {
@@ -870,9 +915,9 @@ static Camera3D CutsceneCamera(void) {
 
 
 void AUTHView_Toolbar(void) {
-    // The view of the map is open behind its cutscenes
-    if (AUTHView_IsMapCutscene() && MAPINFOView_IsOpen()) {
-        if (Toolbar_Button(ICON_ARROW_LEFT, "Map", "Close the cutscene and go back to its map", KEY_BACKSPACE)) {
+    // The view of the map is open behind the cutscene
+    if (AUTHView_UsesMap()) {
+        if (Toolbar_Button(ICON_ARROW_LEFT, "Back", "Close the cutscene and go to its map", KEY_BACKSPACE)) {
             AUTHView_Close();
             return;
         }
@@ -903,6 +948,12 @@ void AUTHView_Toolbar(void) {
         g_options.cutsceneCamera = false;
     }
     Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the name, sound and motion over the characters", KEY_L, &g_options.labels);
+    if (!g_view.hasMapinfo)
+        GuiDisable();
+    if (Toolbar_Toggle(ICON_MAPS, "Map", "Show the models of the map of the cutscene, as its view shows them", KEY_M, &g_options.map) &&
+        g_options.map)
+        OpenMap();
+    GuiEnable();
 }
 
 static void UpdateInput(Rectangle scene) {
@@ -1131,15 +1182,24 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     Camera3D camera;
     Rectangle view = area;
+    bool map = ShowsMap();
     if (g_options.cutsceneCamera) {
         camera = CutsceneCamera();
         view = Scene3D_Letterbox(area, AUTHVIEW_ASPECT);
-        FreeCamera_BeginCamera3D(camera, view, 0.05, 1000.0);
+        FreeCamera_BeginCamera3D(camera, view, AUTHVIEW_NEAR, AUTHVIEW_FAR);
+    }
+    else if (map) {
+        // The planes of the free camera are those of the cutscene, which can be much smaller than the map
+        camera = FreeCamera_Camera3D(&g_view.camera);
+        FreeCamera_BeginCamera3D(camera, view, AUTHVIEW_NEAR, AUTHVIEW_FAR);
     }
     else
         camera = FreeCamera_Begin3D(&g_view.camera, view);
 
-    DrawGround();
+    if (map)
+        MAPINFOView_DrawMap(camera, IsCutsceneCharacter);
+    else
+        DrawGround();
     if (!g_options.cutsceneCamera) {
         DrawPath(&g_view.sequence.camera[AUTH_CAMERA_X], Fade(g_cameraColor, 0.5f));
         for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {

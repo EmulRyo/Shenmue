@@ -5,8 +5,9 @@
 #include <raylib.h>
 
 // Views that show the opened file in the content area of the window. Only one of them is open at a time, except the view
-// of the cutscenes (VIEW_AUTH) over the view of the map (VIEW_MAPINFO) when it plays a cutscene of the map: the first open
-// view in ViewID order is the one shown, and the map is shown again when the cutscene is closed
+// of the cutscenes (VIEW_AUTH) over the view of the map of the cutscene (VIEW_MAPINFO), which plays the cutscenes of the
+// map and draws the map around the cutscenes: the first open view in ViewID order is the one shown, and the map is shown
+// again when the cutscene is closed
 
 typedef enum {
     VIEW_NONE = -1,
@@ -29,7 +30,8 @@ typedef struct {
     char    hint[256];  // What the mouse does in the view
 } ViewStatus;
 
-// Closes the views other than view, after view has opened a file. VIEW_NONE closes all of them
+// Closes the views other than view, after view has opened a file, except the view of the map of an open cutscene.
+// VIEW_NONE closes all of them
 void Views_CloseOthers(ViewID view);
 void Views_CloseAll(void);
 // Draws the open view inside area

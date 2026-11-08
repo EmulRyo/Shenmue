@@ -226,6 +226,8 @@ The detailed faces (`_F`, e.g. `model/face/aso_f.mt5`, `ASO_F.chrm`) and hands (
 | Left hand (`_TL`)  | `0x000B` (also `0x000A`, `0x000C`) | `0xFFBE`        | `0x000B` (lower arm)        | X → −Y, Y → −Z, Z → X                     |
 | Right hand (`_TR`) | `0x0006` (also `0x0005`, `0x0007`) | `0xFFBF`        | `0x0006` (lower arm)        | X → −Y, Y → −Z, Z → X                     |
 
+In 16 of the 83 different bodies (`_L` and `_M` files, by content) the hands are one level lower: the lower arms `0x0006` and `0x000B` have a child `0x0007` and `0x000C` (the wrist, about 0.24 from the lower arm, where the hand is in the other bodies), and `0xFFBF` and `0xFFBE`, with the fingers, are children of them at their origin: `acs_m`, `bib_l`, `bob_l`, `fub_m`, `fuc_m`, `fud_m`, `fuk_m` (Fukusan), `jea_l`, `jnc_l`, `joj_m`, `kok_m` (Lan Di), `mir_l`, `svb_l`, `tuw_l`, `yab_l` and `yea_l`. 66 have the hands under the lower arms, and `doo_l` has no `0xFFBF`.
+
 The upper 16 bits of the root ID are `0`, `1`, `4` or `9` (unknown meaning). The rotations are the ones of 154 of the 166 bodies of the game (the rest are posed differently). The meshes of the body nodes `0xFFBD`, `0xFFBE` and `0xFFBF` are low detail versions of the parts that replace them, with about the same bounding box. A few faces (e.g. `mgr_f.mt5`) have the root ID `0xFFFF` and only triangles with negative indices.
 
 ## Arms of Ryo

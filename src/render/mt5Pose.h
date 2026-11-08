@@ -20,7 +20,8 @@ typedef struct {
     int32_t     pelvis;     // 0x0E, with the legs
     int32_t     head;       // 0xFFBD
     int32_t     legs[2][3]; // Thigh, shin and foot: 0x10-0x12 (+Z side of the pelvis), 0x15-0x17
-    int32_t     arms[2][4]; // Shoulder, upper arm, forearm and hand: 0x09-0x0B and 0xFFBE (-Z side), 0x04-0x06 and 0xFFBF
+    int32_t     arms[2][4]; // Shoulder, upper arm, forearm and hand: 0x09-0x0B and 0xFFBE (-Z side), 0x04-0x06 and 0xFFBF.
+                            // The hand is the child of the forearm: 0xC and 7 in the bodies that have them
 } MT5Pose_Body;
 
 // Finds the nodes of a body. Returns false if the model is not the body of a character

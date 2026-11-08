@@ -1074,8 +1074,11 @@ static void UpdateInput(Rectangle scene) {
     g_view.time += Scene3D_FrameTime();
 }
 
-// The visible instances: the models of the map, the doors and the characters (only the visible ones have an instance)
-static void DrawModels(Camera3D camera) {
+// The visible instances: the models of the map, the doors and the characters (only the visible ones have an instance),
+// without the characters for which hidden returns true if it isn't NULL
+static void DrawModels(Camera3D camera, bool (*hidden)(const char* id)) {
+    if (g_view.visibleInstances == NULL)
+        return;
     uint32_t count = 0;
     for (uint32_t i = 0; i < g_view.mapModelCount && g_options.layers[LAYER_MAP]; i++) {
         if (IsItemVisible(ITEM_MAP_MODEL, i))
@@ -1085,10 +1088,27 @@ static void DrawModels(Camera3D camera) {
         if (g_view.doorInstances[i] >= 0 && IsItemVisible(ITEM_DOOR, i))
             g_view.visibleInstances[count++] = g_view.instances[g_view.doorInstances[i]];
     }
-    for (uint32_t i = g_view.characterInstances; i < g_view.instanceCount && g_options.layers[LAYER_CHARACTERS]; i++)
-        g_view.visibleInstances[count++] = g_view.instances[i];
+    // In the order of ShowCharacters, which gives an instance to the shown characters with a model
+    uint32_t instance = g_view.characterInstances;
+    for (uint32_t i = 0; i < g_view.characterCount && instance < g_view.instanceCount && g_options.layers[LAYER_CHARACTERS]; i++) {
+        const MapCharacter* character = &g_view.characters[i];
+        if (!character->shown || character->model < 0 || !IsItemVisible(ITEM_CHARACTER, i))
+            continue;
+        if (hidden == NULL || !hidden(character->info.id))
+            g_view.visibleInstances[count++] = g_view.instances[instance];
+        instance++;
+    }
     if (count > 0)
         MT5Render_DrawInstances(&g_view.render, g_view.visibleInstances, count, camera);
+}
+
+const char* MAPINFOView_Path(void) {
+    return g_view.open ? g_view.filename : NULL;
+}
+
+void MAPINFOView_DrawMap(Camera3D camera, bool (*hidden)(const char* id)) {
+    if (g_view.open)
+        DrawModels(camera, hidden);
 }
 
 static void DrawShape(const MAPINFO_Shape* shape, Color color) {
@@ -1239,7 +1259,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     else
         camera = FreeCamera_Begin3D(&g_view.camera, area);
 
-    DrawModels(camera);
+    DrawModels(camera, NULL);
     DrawOverlays();
     FreeCamera_End3D();
     if (g_options.labels)

@@ -39,6 +39,8 @@ The file is a `TRCK` chunk that contains four chunks, always in this order. `AST
 
 Time is measured in two units: the commands of `ASEQ` use **frames** (30 per second) and the curves of `ACAM` and `AMOV` use **seconds**.
 
+The positions of the camera and of the characters are in the space of the map of the cutscene, the same as the models of the map (`MAP*.mt5`) and the positions of the characters and doors of its [MAPINFO](MAPINFO): the `mapinfo.bin` of the parent folder of the PKS (e.g. the bus stop of `scene/01/d000` for `scene/01/d000/buss/SEQDATA5`), or the file itself for the cutscenes of its `SCEX` chunk (e.g. the dining room of `scene/01/jomo` for its third cutscene, the bus of `scene/03/msbs` for its second one).
+
 ## ASEQ — Commands
 
 The timeline of the cutscene. All offsets in this section are relative to the start of the `ASEQ` chunk.

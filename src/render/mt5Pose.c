@@ -203,7 +203,9 @@ static bool IsChild(const MT5Mesh* mesh, int32_t child, int32_t parent) {
 bool MT5Pose_FindBody(const MT5Mesh* mesh, MT5Pose_Body* body) {
     body->torso = FindNode(mesh, 0x01, UINT32_MAX);
     body->pelvis = FindNode(mesh, 0x0E, 0x01);
-    // Some old models (e.g. KOB_L.chrm) have the head 3 under the torso, and the hands 7 and 0xC
+    // Some old models (e.g. KOB_L.chrm) have the head 3 under the torso, and the hands 7 and 0xC. Others have both hands:
+    // 7 and 0xC under the forearms, with 0xFFBF and 0xFFBE (and the fingers) under them (e.g. fub_m.mt5 and kok_m.mt5,
+    // Fukusan and Lan Di): the hand is the child of the forearm
     body->head = FindEither(mesh, 0xFFBD, 0x03, 0x01);
     const uint32_t legs[2][3] = { { 0x10, 0x11, 0x12 }, { 0x15, 0x16, 0x17 } };
     const uint32_t arms[2][4] = { { 0x09, 0x0A, 0x0B, 0xFFBE }, { 0x04, 0x05, 0x06, 0xFFBF } };
@@ -215,8 +217,13 @@ bool MT5Pose_FindBody(const MT5Mesh* mesh, MT5Pose_Body* body) {
             found = found && body->legs[side][i] >= 0;
         }
         for (int i = 0; i < 4; i++) {
-            body->arms[side][i] = i < 3 ? FindNode(mesh, arms[side][i], i == 0 ? 0x01 : arms[side][i - 1]) :
-                FindEither(mesh, arms[side][i], oldHands[side], arms[side][2]);
+            if (i < 3)
+                body->arms[side][i] = FindNode(mesh, arms[side][i], i == 0 ? 0x01 : arms[side][i - 1]);
+            else {
+                body->arms[side][i] = FindNode(mesh, arms[side][i], arms[side][2]);
+                if (body->arms[side][i] < 0)
+                    body->arms[side][i] = FindNode(mesh, oldHands[side], arms[side][2]);
+            }
             found = found && body->arms[side][i] >= 0;
         }
         // The IK takes the thigh, the shin and the foot as a chain, also the upper arm, the forearm and the hand

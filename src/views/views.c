@@ -35,7 +35,8 @@ static const View g_views[VIEW_COUNT] = {
 
 void Views_CloseOthers(ViewID view) {
     for (int i = 0; i < VIEW_COUNT; i++) {
-        if (i != view)
+        // The view of the map of a cutscene stays open behind it
+        if (i != view && !(view == VIEW_AUTH && i == VIEW_MAPINFO && AUTHView_UsesMap()))
             g_views[i].close();
     }
 }
