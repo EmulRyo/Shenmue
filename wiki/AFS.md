@@ -41,4 +41,4 @@ AFS is a simple archive format used by Sega games. It stores a list of files one
 
 - Entries with `size == 0` are empty.
 - The AFS format doesn't store the name or the type of each file. The names are in the [IDX](IDX) file, and the type can be identified from the magic of the data (see [Home](Home#magic-numbers)).
-- `scene/01/op00/op99.afs` has no [IDX](IDX) file, so its entries have no name. It holds 32 entries that alternate [PKF](PKF) and [PKS](PKS): the models in each PKS (odd index) take their textures from the PKF at the previous index (`0` + `1`, `2` + `3`...).
+- `scene/01/op00/op99.afs` has no [IDX](IDX) file, so its entries have no name. It holds 32 entries that alternate [PKF](PKF) and [PKS](PKS): the models in each PKS (odd index) take their textures from the PKF at the previous index (`0` + `1`, `2` + `3`...). They are the map and the characters of the prologue, `scene/01/op00`, whose program names them as `OP99.afs#000#001` to `OP99.afs#030#031` (see [MAPINFO](MAPINFO#the-map-of-scene01op00)).

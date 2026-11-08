@@ -8,7 +8,8 @@
 
 // The files of the folder of a map (scene/0N/<map>, with its mapinfo.bin): those of the folder and of one level of
 // subfolders (the extracted PKF/PKS files of the map), and those of the PKF and PKS files of the folder that aren't
-// extracted (no folder named as the file next to it), loaded in memory. A file of the folder with the name of a packed
+// extracted (no folder named as the file next to it), loaded in memory, also those of the PKF/PKS entries of its AFS files
+// without an IDX file (e.g. the 16 packages of scene/01/op00/op99.afs, named op99#000 to op99#030). A file of the folder with the name of a packed
 // file is used instead of it (e.g. map.mt5 is the MAP.mt5 of mpk00.pks with its textures)
 
 // A file of the map: on disk, or in a PKF/PKS file of the map that isn't extracted, loaded in memory

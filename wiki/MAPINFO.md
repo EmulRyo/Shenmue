@@ -371,6 +371,20 @@ The game files have 259 `TRCK` chunks in 18 files, but 74 of them are empty: onl
 
 The empty chunks are scattered among the others (e.g. `scene/01/jomo` starts with two empty chunks, then a cutscene, two empty chunks...).
 
+### The map of scene/01/op00
+
+The folder of `scene/01/op00` (the prologue, 47 cutscenes) has no model of the map: its map and its characters are in `op00/op99.afs`, an [AFS](AFS) without [IDX](IDX) whose 32 entries are 16 pairs of a [PKF](PKF) (the textures and a `CHARA.CHRT`) and a [PKS](PKS) (the models). The program of the file names them by the AFS and the indices of each pair (`OP99.afs#000#001`... `OP99.afs#030#031`), several times, next to the names `OPEN1`, `OPEN2`, `A0114` and `A01103`.
+
+| Entries | Models of the PKS |
+|---------|-------------------|
+| 0–23 | Characters and objects (e.g. Iwao `IWA_M`, 16–17; Lan Di `KOK_M`, 18–19; Fukusan `FUK_M`, 8–9; `BLA_M` and `BLB_M` (`KURA` and `KURB` of the cutscenes), 12–13; Ine `INE_M`, 4–5) |
+| 24–25 | `OMO.MAPM`, and `YKD_M` |
+| 26–27 | `JIMENHAL.MAPM`, `NAIB.MAPM`, `NIWAKAL.MAPM`, `OMADO.MAPM`, and `COLLI.COLI` |
+| 28–29 | `OOSAKI.MAPM` |
+| 30–31 | `JYUU.MAPM` |
+
+The map models are the `MAPM` files (the extension in the [IPAC](IPAC) dictionary; their data is an [MT5](MT5) model), which are not named `MAP*` as in the other maps: these are the only `MAPM` files with another name (none of the PKF/PKS files of the scene folders has one). They are in the same space as the cutscenes of the file: e.g. Iwao and Lan Di fight inside the dojo in the cutscene 18, and the characters of the cutscenes are those of the `CHARA.CHRT` scripts of the pairs (`SORY`, Lan Di, is the `KOK_M` of the pair 18–19).
+
 ### Motions and characters
 
 The cutscenes of a map play the motions ([MOTN](MOTN)) of the map, as the [AUTH](AUTH) files of a PKS named as a map (see [Motions of the maps](MOTN#motions-of-the-maps)): the `m_*.bin` files of the folder of the map (e.g. `scene/03/nbik/m_01bike.bin`), the MOTN files of the [PKS](PKS) files of the folder of the map (e.g. `M_01JA` of `scene/01/jomo/common01.pks`, `M_0605` of `scene/01/op02/shd2.pks`), or the [common motions](MOTN#common-motions) for the small IDs. Of the 450 motions played by the cutscenes (each motion counted once per cutscene, with the last frame played by its commands), 447 are found with that length: 260 in the `m_*.bin` files, 172 in the PKS files of the map (`jomo`, `op02`, `tatq`, `scene/03/arar`, `dxms`) and 15 in the common motions. The other three are `0x1913` in `scene/01/op00`, `0x1004` in `scene/01/yq14` (the same ID that is missing in `scene/01/d000/yq14.pks`) and `0x1CB1` in `scene/02/jomo`.

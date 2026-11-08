@@ -338,9 +338,14 @@ static Matrix CharacterTransform(const CHRT_Character* character, const MT5Rende
     return MatrixMultiply(matrix, MatrixTranslate(character->position[0], character->position[1], character->position[2]));
 }
 
-// Models of the map: MAP.mt5, MAP01.mt5... in the folder, in its subfolders (mpk00, map0...) and in its PKF/PKS files
-static bool IsMapModel(const char* path) {
-    const char* name = GetFileName(path);
+// Models of the map: MAP.mt5, MAP01.mt5... in the folder, in its subfolders (mpk00, map0...) and in its PKF/PKS files,
+// and the packed files of type MAPM, whatever their name (e.g. JYUU.MAPM in the packages of op99.afs of scene/01/op00)
+static bool IsMapModel(const MapFile* file) {
+    if (!IsFileExtension(file->name, ".mt5"))
+        return false;
+    if (file->packed != NULL && strcmp(file->packed->type, "MAPM") == 0)
+        return true;
+    const char* name = GetFileName(file->name);
     if (toupper((unsigned char)name[0]) != 'M' || toupper((unsigned char)name[1]) != 'A' || toupper((unsigned char)name[2]) != 'P')
         return false;
     for (name += 3; isdigit((unsigned char)*name); name++)
@@ -486,7 +491,7 @@ static Matrix DoorTransform(const MAPINFO_Door* door) {
 static void PlaceModels(const char* folder, const MapFile* files, uint32_t count, int* fileModels, const IPAC_FileList* packed) {
     const MAPINFO_File* file = &g_view.file;
     for (uint32_t i = 0; i < count; i++) {
-        if (IsFileExtension(files[i].name, ".mt5") && IsMapModel(files[i].name) && FileModel(files, (int)i, fileModels, packed) >= 0) {
+        if (IsMapModel(&files[i]) && FileModel(files, (int)i, fileModels, packed) >= 0) {
             snprintf(g_view.mapModelNames[g_view.instanceCount], MAPINFOVIEW_LABEL_SIZE, "%s%s%s", files[i].name,
                 files[i].package[0] != '\0' ? "  " : "", files[i].package);
             AddInstance((uint32_t)fileModels[i], MatrixIdentity());
@@ -798,7 +803,7 @@ static const char* FormatTime(float seconds) {
     return TextFormat("%d:%02d.%02d", centiseconds / 6000, centiseconds / 100 % 60, centiseconds % 100);
 }
 
-// Its number, its length and up to MAPINFOVIEW_CUTSCENE_IDS of its characters
+// Its number and up to MAPINFOVIEW_CUTSCENE_IDS of its characters
 static const char* CutsceneText(uint32_t index) {
     const MapCutscene* cutscene = &g_view.cutscenes[index];
     if (!cutscene->valid)
@@ -813,7 +818,7 @@ static const char* CutsceneText(uint32_t index) {
     }
     if (end != NULL)
         snprintf(end, sizeof(ids) - (end - ids), " ...");
-    return TextFormat("%3u  %s  %s", index, FormatTime(cutscene->duration / AUTH_FRAME_RATE), ids);
+    return TextFormat("%3u  %s", index, ids);
 }
 
 // The items of each kind, in ItemKind order

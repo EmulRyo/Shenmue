@@ -122,28 +122,29 @@ void PKF_ExtractAllFiles(const char* filepath, const char* outputPath) {
     free(buffer);
 }
 
-bool PKF_LoadFiles(const char* filepath, IPAC_FileList* list) {
-    size_t size = 0;
-    uint8_t* buffer = File_LoadToMemoryDecompressed(filepath, &size);
-    if (buffer == NULL)
-        return false;
-
+bool PKF_LoadFilesFromMemory(const uint8_t* buffer, size_t size, const char* name, IPAC_FileList* list) {
     // Some files have the wrong extension
-    if (size >= 4 && memcmp(buffer, "PAKS", 4) == 0) {
-        free(buffer);
-        return PKS_LoadFiles(filepath, list);
-    }
+    if (size >= 4 && memcmp(buffer, "PAKS", 4) == 0)
+        return PKS_LoadFilesFromMemory(buffer, size, name, list);
 
     const PKF_Header* header = (const PKF_Header*)buffer;
     if (size < sizeof(PKF_Header) || memcmp(header->id, "PAKF", 4) != 0) {
-        fprintf(stderr, "[PKF_LoadFiles]: Invalid PKF file %s\n", filepath);
-        free(buffer);
+        fprintf(stderr, "[PKF_LoadFiles]: Invalid PKF file %s\n", name);
         return false;
     }
     size_t texturesEnd = header->ipacOffset < size ? header->ipacOffset : size;
     ReadTextures(buffer, texturesEnd, false, AddTexture, list);
     if (header->ipacOffset < size)
         IPAC_LoadFiles(buffer + header->ipacOffset, size - header->ipacOffset, list);
-    free(buffer);
     return true;
+}
+
+bool PKF_LoadFiles(const char* filepath, IPAC_FileList* list) {
+    size_t size = 0;
+    uint8_t* buffer = File_LoadToMemoryDecompressed(filepath, &size);
+    if (buffer == NULL)
+        return false;
+    bool loaded = PKF_LoadFilesFromMemory(buffer, size, filepath, list);
+    free(buffer);
+    return loaded;
 }

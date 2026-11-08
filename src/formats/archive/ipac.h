@@ -6,11 +6,14 @@
 #include <stdint.h>
 
 #define IPAC_FILENAME_SIZE 32
+#define IPAC_TYPE_SIZE     5
 
 // File of an IPAC block (or of the PKF/PKS file that contains it) loaded in memory, decompressed and named as when it
 // is extracted
 typedef struct {
     char        filename[IPAC_FILENAME_SIZE];
+    char        type[IPAC_TYPE_SIZE]; // Extension in the IPAC dictionary, in uppercase (e.g. "MAPM", "CHRM"), empty if
+                                      // the file isn't from the dictionary (the textures of the PKF files)
     uint8_t*    data;
     size_t      size;
 } IPAC_File;

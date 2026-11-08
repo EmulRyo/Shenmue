@@ -60,8 +60,9 @@ static void GetEntryFilename(char (*filenames)[IPAC_FILENAME_SIZE], uint32_t ent
     }
 }
 
-// Called with each file of an IPAC block, decompressed. Returns false if the file couldn't be handled
-typedef bool (*IPAC_FileCallback)(const char* filename, const uint8_t* data, size_t size, void* context);
+// Called with each file of an IPAC block, decompressed, with its name and its extension in the dictionary (type, in
+// uppercase, e.g. "MAPM"). Returns false if the file couldn't be handled
+typedef bool (*IPAC_FileCallback)(const char* filename, const char* type, const uint8_t* data, size_t size, void* context);
 
 // Reads the files of an IPAC block, printing the header and the entries if verbose. Returns the number of files
 // handled by the callback
@@ -123,7 +124,9 @@ static uint32_t ReadFiles(const uint8_t* buffer, size_t size, bool verbose, IPAC
                 printf(" (gzip, 0x%04zX bytes)", dataSize);
             printf(" -> %s\n", filenames[i]);
         }
-        if (callback(filenames[i], data, dataSize, context))
+        char type[IPAC_TYPE_SIZE];
+        CopyTrimmed(type, entry->extension, sizeof(entry->extension), false);
+        if (callback(filenames[i], type, data, dataSize, context))
             handled++;
 
         MemFree(decompressed);
@@ -133,7 +136,8 @@ static uint32_t ReadFiles(const uint8_t* buffer, size_t size, bool verbose, IPAC
     return handled;
 }
 
-static bool SaveFile(const char* filename, const uint8_t* data, size_t size, void* context) {
+static bool SaveFile(const char* filename, const char* type, const uint8_t* data, size_t size, void* context) {
+    (void)type;
     char outputFilename[IPAC_PATH_SIZE];
     snprintf(outputFilename, sizeof(outputFilename), "%s/%s", (const char*)context, filename);
     return File_Save(outputFilename, data, size);
@@ -143,8 +147,12 @@ uint32_t IPAC_ExtractAllFiles(const uint8_t* buffer, size_t size, const char* ou
     return ReadFiles(buffer, size, true, SaveFile, (void*)outputFolder);
 }
 
-static bool AddFile(const char* filename, const uint8_t* data, size_t size, void* context) {
-    return IPAC_AddFile((IPAC_FileList*)context, filename, data, size);
+static bool AddFile(const char* filename, const char* type, const uint8_t* data, size_t size, void* context) {
+    IPAC_FileList* list = context;
+    if (!IPAC_AddFile(list, filename, data, size))
+        return false;
+    snprintf(list->files[list->count - 1].type, IPAC_TYPE_SIZE, "%s", type);
+    return true;
 }
 
 uint32_t IPAC_LoadFiles(const uint8_t* buffer, size_t size, IPAC_FileList* list) {
@@ -167,6 +175,7 @@ bool IPAC_AddFile(IPAC_FileList* list, const char* filename, const uint8_t* data
     memcpy(file->data, data, size);
     file->size = size;
     snprintf(file->filename, sizeof(file->filename), "%s", filename);
+    file->type[0] = '\0';
     list->count++;
     return true;
 }

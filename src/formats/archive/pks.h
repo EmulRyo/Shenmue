@@ -2,6 +2,8 @@
 #define __PKS_H__
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include "formats/archive/ipac.h"
 
 // Extracts the IPAC files of a PKS file (gzipped or not) into a folder named as the file,
@@ -10,5 +12,7 @@ void PKS_ExtractAllFiles(const char* filepath, const char* outputPath);
 // Adds the files of a PKS file (gzipped or not) to list, named as when they are extracted. Returns false if
 // the file is not valid
 bool PKS_LoadFiles(const char* filepath, IPAC_FileList* list);
+// The same for a PKS file already in memory (decompressed, e.g. an entry of an AFS file). name is printed in the errors
+bool PKS_LoadFilesFromMemory(const uint8_t* buffer, size_t size, const char* name, IPAC_FileList* list);
 
 #endif

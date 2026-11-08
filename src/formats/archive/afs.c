@@ -167,6 +167,37 @@ void AFS_ExtractAllFiles(const char* filepath, const char* outputPath) {
     fclose(afsFile);
 }
 
+uint8_t* AFS_LoadEntry(const char* filepath, uint32_t index, size_t* size, uint32_t* count) {
+    *count = 0;
+    FILE* afsFile = fopen(filepath, "rb");
+    if (afsFile == NULL)
+        return NULL;
+    fseek(afsFile, 0, SEEK_END);
+    long fileSize = ftell(afsFile);
+    rewind(afsFile);
+
+    uint8_t* data = NULL;
+    AFS_Header header;
+    AFS_Entry entry;
+    if (fread(&header, sizeof(AFS_Header), 1, afsFile) == 1 && memcmp(header.id, "AFS\0", 4) == 0 &&
+        (uint64_t)header.count * sizeof(AFS_Entry) <= (uint64_t)fileSize) {
+        *count = header.count;
+        if (index < header.count && fseek(afsFile, (long)(sizeof(AFS_Header) + index * sizeof(AFS_Entry)), SEEK_SET) == 0 &&
+            fread(&entry, sizeof(AFS_Entry), 1, afsFile) == 1 && entry.size > 0 &&
+            (uint64_t)entry.offset + entry.size <= (uint64_t)fileSize && (data = malloc(entry.size)) != NULL) {
+            fseek(afsFile, entry.offset, SEEK_SET);
+            if (fread(data, 1, entry.size, afsFile) == entry.size)
+                *size = entry.size;
+            else {
+                free(data);
+                data = NULL;
+            }
+        }
+    }
+    fclose(afsFile);
+    return data;
+}
+
 static bool EqualsIgnoreCase(const char* a, const char* b) {
     for (; *a != '\0' && tolower((unsigned char)*a) == tolower((unsigned char)*b); a++, b++)
         ;
