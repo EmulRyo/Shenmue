@@ -106,6 +106,12 @@ typedef struct {
     float       angle;      // Around the vertical axis, degrees
 } MAPINFO_Door;
 
+// A TRCK chunk of the SCEX chunk: an AUTH cutscene, or an empty chunk (only the header) that keeps its number
+typedef struct {
+    uint32_t    offset;     // Of the header, in the file
+    uint32_t    size;       // Header included, 8 if it is empty
+} MAPINFO_Cutscene;
+
 typedef struct {
     uint8_t*            data;   // The whole file: the curves, the shapes and the doors point into it
     size_t              size;
@@ -123,7 +129,8 @@ typedef struct {
     MAPINFO_Door*       doors;
     MAPINFO_Fog         fog;    // The first set of the FOG chunk
     uint32_t            scnVersion;     // 0x20000: SH-4 code, 0x100: bytecode, 0 if there is no SCN3 chunk
-    uint32_t            cutsceneCount;  // TRCK chunks of the SCEX chunk
+    uint32_t            cutsceneCount;  // TRCK chunks of the SCEX chunk, the empty ones included
+    MAPINFO_Cutscene*   cutscenes;
     const uint8_t*      characters;     // CHRS block of the CHRD chunk, NULL if none
     uint32_t            charactersSize;
 } MAPINFO_File;

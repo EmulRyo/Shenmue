@@ -20,8 +20,10 @@ typedef struct {
 } AUTHSounds_Info;
 
 // Finds and decodes the sounds of the commands of a cutscene of a scene folder (e.g. .../scene/01, with / separators),
-// replacing the previous ones. Without a scene folder (NULL) the cutscene has no sound
-void AUTHSounds_Load(const char* sceneFolder, const char* filepath, const AUTH_Sequence* sequence);
+// replacing the previous ones: mapinfo is the mapinfo.bin of its map, whose program loads the bank of the effects with
+// the name of the cutscene (name: the name of its PKS, or of the map for a cutscene of a mapinfo.bin). Without a scene
+// folder (NULL) the cutscene has no sound
+void AUTHSounds_Load(const char* sceneFolder, const char* mapinfo, const char* name, const AUTH_Sequence* sequence);
 void AUTHSounds_Free(void);
 // Plays the sounds of the commands between the previous time and time (seconds) while playing; pauses them when not
 // playing, and stops them when the time jumps (seek)

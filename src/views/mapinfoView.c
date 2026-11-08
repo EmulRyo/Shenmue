@@ -9,9 +9,6 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "raygui.h"
-#include "core/file.h"
-#include "formats/archive/pkf.h"
-#include "formats/archive/pks.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/chrt.h"
 #include "render/mt5Render.h"
@@ -20,6 +17,8 @@
 #include "ui/properties.h"
 #include "ui/toolbar.h"
 #include "ui/tree.h"
+#include "views/authView.h"
+#include "views/mapFiles.h"
 #include "views/mapinfoView.h"
 
 #define MAPINFOVIEW_LABEL_SIZE   160
@@ -42,6 +41,7 @@ typedef enum {
     ITEM_LIGHT,
     ITEM_SHAPE,
     ITEM_CHARACTER,
+    ITEM_CUTSCENE,
     ITEM_KIND_COUNT,
 } ItemKind;
 
@@ -59,12 +59,14 @@ typedef enum {
     LAYER_LIGHTS,
     LAYER_SHAPES,
     LAYER_CHARACTERS,
+    LAYER_CUTSCENES,        // Not drawn: a cutscene is played by the view of the cutscenes
     LAYER_GROUPS,           // Subgroups of the shapes, one per COLS group, MAPINFO_GROUP_COUNT
     LAYER_COUNT = LAYER_GROUPS + MAPINFO_GROUP_COUNT,
 } Layer;
 
 static const char* g_layerNames[LAYER_COUNT] = {
-    "Information", "Map", "Doors", "Cameras", "Lights", "Shapes", "Characters", "COLI", "HGHT", "EVNT", "UNDU", "SOND", "PROP",
+    "Information", "Map", "Doors", "Cameras", "Lights", "Shapes", "Characters", "Cutscenes",
+    "COLI", "HGHT", "EVNT", "UNDU", "SOND", "PROP",
 };
 
 static const char* g_shapeTypes[] = { "point", "segment", "polyline", "circle", "triangle", "rectangle", "polygon" };
@@ -104,9 +106,24 @@ typedef struct {
     const char*         error;          // Why the model of a displayed character couldn't be loaded, NULL otherwise
 } MapCharacter;
 
+#define MAPINFOVIEW_CUTSCENE_IDS 5 // Characters of a cutscene named in the tree
+
+// A cutscene of the SCEX chunk (a TRCK chunk), played by the view of the cutscenes
+typedef struct {
+    bool                valid;          // An AUTH cutscene, not an empty chunk
+    uint32_t            duration;       // Frames
+    uint32_t            characterCount;
+    uint32_t            commandCount;
+    uint32_t            motions;        // Commands of each kind
+    uint32_t            voices;
+    uint32_t            sounds;
+    char                ids[MAPINFOVIEW_LABEL_SIZE]; // Of the characters, separated by spaces
+} MapCutscene;
+
 typedef struct {
     bool                open;
     char                filename[1024]; // Path of the open file
+    MapCutscene*        cutscenes;      // file.cutsceneCount of them
     MAPINFO_File        file;
     uint32_t            scriptCount;
     CHRT_Script*        scripts;        // The CHRD chunk, then the CHRT files of the map
@@ -163,7 +180,7 @@ typedef struct {
 static MAPINFOView_State g_view;
 static MAPINFOView_Options g_options = {
     .layers = { [LAYER_MAP] = true, [LAYER_DOORS] = true, [LAYER_SHAPES] = true, [LAYER_CHARACTERS] = true },
-    .expanded = { [LAYER_INFO] = true, [LAYER_CAMERAS] = true, [LAYER_CHARACTERS] = true },
+    .expanded = { [LAYER_INFO] = true, [LAYER_CAMERAS] = true, [LAYER_CHARACTERS] = true, [LAYER_CUTSCENES] = true },
     .labels = true,
 };
 
@@ -331,15 +348,6 @@ static bool IsMapModel(const char* path) {
     return *name == '.';
 }
 
-// A model or CHRT file of the map: on disk, or in a PKF/PKS file of the map that isn't extracted, loaded in memory
-typedef struct {
-    const char*             path;   // NULL if the file is in memory
-    const char*             name;
-    const IPAC_File*        packed;
-    char                    package[IPAC_FILENAME_SIZE]; // Name of its PKF/PKS files or of their extracted folder, empty
-                                                         // for the files of the folder of the map
-} MapFile;
-
 // The external textures of the packed files are searched in the files of all the PKF/PKS files (e.g. the MAP.mt5 of
 // mpk00.pks uses the textures of mpk00.pkf)
 static bool LoadMapModel(const MapFile* file, const IPAC_FileList* packed, MT5Render_Model* model) {
@@ -398,33 +406,6 @@ static const char* CharacterModelName(const MapCharacter* character) {
     for (uint32_t i = 0; image == NULL && i < g_view.scriptCount; i++)
         image = CHRT_ImageFile(&g_view.scripts[i], name);
     return image != NULL ? image : name;
-}
-
-// The files of the PKF and PKS files of the folder that aren't extracted (no folder named as the file next to it), and the
-// name of the PKF/PKS file of each one (packages, packed->count of them). Returns false on memory error
-static bool LoadPacks(const char* folder, IPAC_FileList* packed, char (**packages)[IPAC_FILENAME_SIZE]) {
-    FilePathList files = LoadDirectoryFilesEx(folder, ".pkf;.pks", false);
-    bool ok = true;
-    for (unsigned int i = 0; i < files.count && ok; i++) {
-        char extracted[1024];
-        File_GetOutputFolder(files.paths[i], "", extracted, sizeof(extracted));
-        if (DirectoryExists(extracted))
-            continue;
-        uint32_t first = packed->count;
-        if (IsFileExtension(files.paths[i], ".pkf"))
-            PKF_LoadFiles(files.paths[i], packed);
-        else
-            PKS_LoadFiles(files.paths[i], packed);
-        char (*grown)[IPAC_FILENAME_SIZE] = realloc(*packages, (packed->count + 1) * sizeof(**packages));
-        ok = grown != NULL;
-        if (ok) {
-            *packages = grown;
-            for (uint32_t f = first; f < packed->count; f++)
-                snprintf(grown[f], sizeof(grown[f]), "%s", GetFileNameWithoutExt(files.paths[i]));
-        }
-    }
-    UnloadDirectoryFiles(files);
-    return ok;
 }
 
 // Model of a file, loaded the first time. Returns -1 if it can't be loaded
@@ -605,52 +586,21 @@ static void LoadScripts(const MapFile* files, uint32_t count) {
 }
 
 // The scripts, the models of the map, the models of the doors at their placements and the models of the characters,
-// from the MT5, CHRM and CHRT files of the folder and of one level of subfolders (the extracted PKF files of the map),
-// and of the PKF and PKS files of the folder that aren't extracted. Each file is loaded once
+// from the MT5, CHRM and CHRT files of the map (see mapFiles.h). Each file is loaded once
 static void LoadModels(const char* folder) {
     const MAPINFO_File* file = &g_view.file;
-    FilePathList paths = LoadDirectoryFilesEx(folder, ".mt5;.chrm;.chrt", true);
-    IPAC_FileList packed = { 0 };
-    char (*packages)[IPAC_FILENAME_SIZE] = NULL;
-    bool packsLoaded = LoadPacks(folder, &packed, &packages);
-    uint32_t capacity = paths.count + packed.count;
-
-    MapFile* files = calloc(capacity + 1, sizeof(MapFile));
-    uint32_t count = 0;
-    int* fileModels = malloc((capacity + 1) * sizeof(int)); // Model of each file, -1 if not loaded
-    g_view.scripts = calloc(capacity + 2, sizeof(CHRT_Script));
+    MapFiles mapFiles;
+    if (!MapFiles_Load(folder, ".mt5;.chrm;.chrt", &mapFiles))
+        return;
+    const MapFile* files = mapFiles.files;
+    uint32_t count = mapFiles.count;
+    int* fileModels = malloc((count + 1) * sizeof(int)); // Model of each file, -1 if not loaded
+    g_view.scripts = calloc(count + 2, sizeof(CHRT_Script));
     g_view.doorErrors = calloc(file->doorCount + 1, sizeof(const char*));
     g_view.doorInstances = calloc(file->doorCount + 1, sizeof(int32_t));
-    g_view.mapModelNames = calloc(capacity + 1, sizeof(*g_view.mapModelNames));
-    if (packsLoaded && files != NULL && fileModels != NULL && g_view.scripts != NULL && g_view.doorErrors != NULL &&
-        g_view.doorInstances != NULL && g_view.mapModelNames != NULL) {
-        for (unsigned int i = 0; i < paths.count; i++) {
-            const char* relative = paths.paths[i] + strlen(folder);
-            int separators = 0;
-            for (const char* p = relative + 1; *p != '\0'; p++)
-                separators += *p == '/' || *p == '\\';
-            if (separators > 1)
-                continue;
-            MapFile* added = &files[count++];
-            *added = (MapFile) { paths.paths[i], GetFileName(paths.paths[i]), NULL, "" };
-            if (separators == 1)
-                snprintf(added->package, sizeof(added->package), "%s", GetFileName(GetDirectoryPath(paths.paths[i])));
-        }
-        // The files of the folder with the name of a packed file are used instead of it (e.g. map.mt5 is the MAP.mt5 of
-        // mpk00.pks with its textures)
-        uint32_t diskCount = count;
-        for (uint32_t i = 0; i < packed.count; i++) {
-            char name[IPAC_FILENAME_SIZE];
-            snprintf(name, sizeof(name), "%s", GetFileNameWithoutExt(packed.files[i].filename));
-            bool onDisk = false;
-            for (uint32_t d = 0; d < diskCount && !onDisk; d++)
-                onDisk = files[d].package[0] == '\0' && CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files[d].name), name);
-            if (onDisk || !IsFileExtension(packed.files[i].filename, ".mt5;.chrm;.chrt"))
-                continue;
-            files[count] = (MapFile) { NULL, packed.files[i].filename, &packed.files[i], "" };
-            snprintf(files[count].package, sizeof(files[count].package), "%s", packages[i]);
-            count++;
-        }
+    g_view.mapModelNames = calloc(count + 1, sizeof(*g_view.mapModelNames));
+    if (fileModels != NULL && g_view.scripts != NULL && g_view.doorErrors != NULL && g_view.doorInstances != NULL &&
+        g_view.mapModelNames != NULL) {
         for (uint32_t i = 0; i < count; i++)
             fileModels[i] = -1;
 
@@ -660,13 +610,10 @@ static void LoadModels(const char* folder) {
         g_view.instances = calloc(count + file->doorCount + g_view.characterCount + 1, sizeof(MT5Render_Instance));
         g_view.visibleInstances = calloc(count + file->doorCount + g_view.characterCount + 1, sizeof(MT5Render_Instance));
         if (g_view.models != NULL && g_view.instances != NULL && g_view.visibleInstances != NULL)
-            PlaceModels(folder, files, count, fileModels, &packed);
+            PlaceModels(folder, files, count, fileModels, &mapFiles.packed);
     }
-    free(packages);
-    free(files);
     free(fileModels);
-    IPAC_FreeFiles(&packed);
-    UnloadDirectoryFiles(paths);
+    MapFiles_Free(&mapFiles);
 }
 
 // Point of a shape in the scene: the shapes have x and z coordinates
@@ -789,8 +736,11 @@ static void AddInfoItems(void) {
     if (file->fog.present)
         AddItem(ITEM_INFO, 0, TextFormat("Fog: %g to %g, density %g, color #%06X", file->fog.nearDistance, file->fog.farDistance,
             file->fog.density, file->fog.color & 0xFFFFFF), false);
+    uint32_t cutscenes = 0;
+    for (uint32_t i = 0; i < file->cutsceneCount; i++)
+        cutscenes += g_view.cutscenes[i].valid;
     if (file->cutsceneCount > 0)
-        AddItem(ITEM_INFO, 0, TextFormat("SCEX: %u cutscenes", file->cutsceneCount), false);
+        AddItem(ITEM_INFO, 0, TextFormat("SCEX: %u cutscenes, %u empty", cutscenes, file->cutsceneCount - cutscenes), false);
     for (uint32_t i = 0; i < file->bankCount; i++) {
         if (strcmp(file->banks[i].name, "FREE") != 0)
             AddItem(ITEM_INFO, 0, TextFormat("Sound bank %u: %s", file->banks[i].slot, file->banks[i].name), false);
@@ -812,11 +762,65 @@ static void AddInfoItems(void) {
     }
 }
 
+// What the cutscenes of the SCEX chunk contain. Returns false on memory error
+static bool ReadCutscenes(void) {
+    const MAPINFO_File* file = &g_view.file;
+    g_view.cutscenes = calloc(file->cutsceneCount + 1, sizeof(MapCutscene));
+    if (g_view.cutscenes == NULL)
+        return false;
+    for (uint32_t i = 0; i < file->cutsceneCount; i++) {
+        MapCutscene* cutscene = &g_view.cutscenes[i];
+        AUTH_Sequence sequence;
+        // The empty chunks are only a header
+        if (file->cutscenes[i].size <= 8 || !AUTH_LoadFromMemory(file->data + file->cutscenes[i].offset, file->cutscenes[i].size,
+            TextFormat("%s #%u", g_view.filename, i), &sequence))
+            continue;
+        cutscene->valid = true;
+        cutscene->duration = sequence.duration;
+        cutscene->characterCount = sequence.characterCount;
+        cutscene->commandCount = sequence.commandCount;
+        for (uint32_t c = 0; c < sequence.commandCount; c++) {
+            uint8_t opcode = sequence.commands[c].opcode;
+            cutscene->motions += opcode == AUTH_COMMAND_MOTION;
+            cutscene->voices += opcode == AUTH_COMMAND_VOICE;
+            cutscene->sounds += opcode == AUTH_COMMAND_SOUND;
+        }
+        int length = 0;
+        for (uint32_t c = 0; c < sequence.characterCount && length < (int)sizeof(cutscene->ids); c++)
+            length += snprintf(cutscene->ids + length, sizeof(cutscene->ids) - length, "%s%s", c > 0 ? " " : "", sequence.characters[c].id);
+        AUTH_Free(&sequence);
+    }
+    return true;
+}
+
+static const char* FormatTime(float seconds) {
+    int centiseconds = (int)(seconds * 100.0f);
+    return TextFormat("%d:%02d.%02d", centiseconds / 6000, centiseconds / 100 % 60, centiseconds % 100);
+}
+
+// Its number, its length and up to MAPINFOVIEW_CUTSCENE_IDS of its characters
+static const char* CutsceneText(uint32_t index) {
+    const MapCutscene* cutscene = &g_view.cutscenes[index];
+    if (!cutscene->valid)
+        return TextFormat("%3u  empty", index);
+    char ids[MAPINFOVIEW_LABEL_SIZE];
+    snprintf(ids, sizeof(ids), "%s", cutscene->ids);
+    char* end = ids;
+    for (int i = 0; i < MAPINFOVIEW_CUTSCENE_IDS && end != NULL; i++) {
+        end = strchr(end, ' ');
+        if (end != NULL && i + 1 < MAPINFOVIEW_CUTSCENE_IDS)
+            end++;
+    }
+    if (end != NULL)
+        snprintf(end, sizeof(ids) - (end - ids), " ...");
+    return TextFormat("%3u  %s  %s", index, FormatTime(cutscene->duration / AUTH_FRAME_RATE), ids);
+}
+
 // The items of each kind, in ItemKind order
 static bool CreateItems(void) {
     const MAPINFO_File* file = &g_view.file;
     uint32_t count = 16 + file->bankCount + g_view.mapModelCount + file->doorCount + file->cameraCount + file->lightCount +
-        file->shapeCount + g_view.characterCount;
+        file->shapeCount + g_view.characterCount + file->cutsceneCount;
     g_view.items = malloc(count * sizeof(Item));
     g_view.labels = malloc(count * sizeof(*g_view.labels));
     g_view.failedItems = malloc(count * sizeof(bool));
@@ -853,6 +857,9 @@ static bool CreateItems(void) {
     g_view.firstItems[ITEM_CHARACTER] = g_view.itemCount;
     for (uint32_t i = 0; i < g_view.characterCount; i++)
         AddItem(ITEM_CHARACTER, i, g_view.characters[i].info.id, g_view.characters[i].error != NULL);
+    g_view.firstItems[ITEM_CUTSCENE] = g_view.itemCount;
+    for (uint32_t i = 0; i < file->cutsceneCount; i++)
+        AddItem(ITEM_CUTSCENE, i, CutsceneText(i), false);
     return true;
 }
 
@@ -879,6 +886,7 @@ void MAPINFOView_Close(void) {
     for (uint32_t i = 0; i < g_view.scriptCount; i++)
         CHRT_Free(&g_view.scripts[i]);
     free(g_view.scripts);
+    free(g_view.cutscenes);
     MAPINFO_Free(&g_view.file);
     memset(&g_view, 0, sizeof(g_view));
 }
@@ -902,7 +910,7 @@ bool MAPINFOView_Open(const char* filepath) {
         memcpy(g_view.originalLights, file.lights, file.lightCount * sizeof(MAPINFO_Light));
     }
     // After the models, for the doors whose model couldn't be loaded
-    if (g_view.originalDoors == NULL || g_view.originalLights == NULL || !CreateItems()) {
+    if (g_view.originalDoors == NULL || g_view.originalLights == NULL || !ReadCutscenes() || !CreateItems()) {
         fputs("[MAPINFOView_Open]: Memory error\n", stderr);
         MAPINFOView_Close();
         return false;
@@ -1006,6 +1014,14 @@ static void Select(int item) {
     g_view.camera.distance = 6.0f;
 }
 
+// The selected cutscene, if it isn't an empty chunk. -1 if none
+static int SelectedCutscene(void) {
+    if (g_view.selected < 0 || g_view.items[g_view.selected].kind != ITEM_CUTSCENE)
+        return -1;
+    uint32_t index = g_view.items[g_view.selected].index;
+    return g_view.cutscenes[index].valid ? (int)index : -1;
+}
+
 void MAPINFOView_Toolbar(void) {
     if (Toolbar_Button(ICON_RESTART, "Reset", "Reset the free camera", KEY_R)) {
         ResetCamera();
@@ -1038,6 +1054,15 @@ void MAPINFOView_Toolbar(void) {
         GuiDisable();
     if (Toolbar_Button(ICON_UNDO, "Restore", "Restore the values of the file of the edited items", 0))
         RestoreAll();
+    GuiEnable();
+    // The view of the cutscenes is shown over this one, which stays open to go back to it
+    Toolbar_Separator();
+    int cutscene = SelectedCutscene();
+    if (cutscene < 0)
+        GuiDisable();
+    if (Toolbar_Button(ICON_PLAYER_PLAY, "Play", "Play the selected cutscene", KEY_ENTER) &&
+        !AUTHView_OpenMapCutscene(g_view.filename, (uint32_t)cutscene))
+        printf("[MAPINFOView]: Failed to load the cutscene %d\n", cutscene);
     GuiEnable();
 }
 
@@ -1281,6 +1306,11 @@ static void DrawTree(Rectangle bounds) {
         changed |= Tree_EndGroup(tree);
     }
     Tree_EndGroup(tree);
+    // The empty chunks are dimmed
+    Tree_BeginGroup(tree, g_layerNames[LAYER_CUTSCENES], &g_options.expanded[LAYER_CUTSCENES], NULL);
+    for (uint32_t i = 0; i < file->cutsceneCount; i++)
+        TreeItem(g_view.firstItems[ITEM_CUTSCENE] + i, false, !g_view.cutscenes[i].valid, &clicked);
+    Tree_EndGroup(tree);
     Tree_End(tree);
 
     if (changed)
@@ -1418,6 +1448,24 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
         Properties_Text(properties, "Model", character->error != NULL ? character->error : "none");
 }
 
+static void CutsceneProperties(Properties* properties, uint32_t index) {
+    const MapCutscene* cutscene = &g_view.cutscenes[index];
+    const MAPINFO_Cutscene* chunk = &g_view.file.cutscenes[index];
+    Properties_Text(properties, "Chunk", TextFormat("0x%X bytes at 0x%X", chunk->size, chunk->offset));
+    if (!cutscene->valid) {
+        Properties_Note(properties, chunk->size <= 8 ? "Empty TRCK chunk" : "Invalid TRCK chunk");
+        return;
+    }
+    Properties_Text(properties, "Duration", TextFormat("%s (%u frames)", FormatTime(cutscene->duration / AUTH_FRAME_RATE), cutscene->duration));
+    Properties_Int(properties, "Characters", cutscene->characterCount);
+    Properties_Text(properties, "IDs", cutscene->ids);
+    Properties_Int(properties, "Commands", cutscene->commandCount);
+    Properties_Int(properties, "Motions", cutscene->motions);
+    Properties_Int(properties, "Voices", cutscene->voices);
+    Properties_Int(properties, "Sounds", cutscene->sounds);
+    Properties_Note(properties, "Play it with the Play button of the toolbar (Enter)");
+}
+
 // Of the selected item, or the chunks of the file
 static void DrawProperties(Rectangle bounds) {
     Properties* properties = &g_view.properties;
@@ -1453,6 +1501,10 @@ static void DrawProperties(Rectangle bounds) {
     case ITEM_CHARACTER:
         Properties_Begin(properties, bounds, TextFormat("Character %s", g_view.characters[item->index].info.id));
         CharacterProperties(properties, item->index);
+        break;
+    case ITEM_CUTSCENE:
+        Properties_Begin(properties, bounds, TextFormat("Cutscene %u", item->index));
+        CutsceneProperties(properties, item->index);
         break;
     default:
         Properties_Begin(properties, bounds, "Information");

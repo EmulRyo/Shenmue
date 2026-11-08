@@ -149,12 +149,8 @@ void AUTH_Free(AUTH_Sequence* sequence) {
     memset(sequence, 0, sizeof(AUTH_Sequence));
 }
 
-bool AUTH_Load(const char* filepath, AUTH_Sequence* sequence) {
-    memset(sequence, 0, sizeof(AUTH_Sequence));
-    sequence->data = File_LoadToMemoryDecompressed(filepath, &sequence->size);
-    if (sequence->data == NULL)
-        return false;
-
+// Reads the data of the sequence, which it owns. Frees it if it is not a valid AUTH file
+static bool ReadSequence(AUTH_Sequence* sequence, const char* name) {
     AUTH_Chunk commands, camera, movement, sounds;
     bool valid = sequence->size >= 8 && memcmp(sequence->data, "TRCK", 4) == 0 &&
         Bytes_ReadU32(sequence->data + 4) <= sequence->size &&
@@ -170,11 +166,27 @@ bool AUTH_Load(const char* filepath, AUTH_Sequence* sequence) {
             (!FindChunk(sequence, "ASTR", &sounds) || ReadSounds(sequence, sounds));
     }
     if (!valid) {
-        fprintf(stderr, "[AUTH_Load]: Invalid AUTH file %s\n", filepath);
+        fprintf(stderr, "[AUTH_Load]: Invalid AUTH file %s\n", name);
         AUTH_Free(sequence);
         return false;
     }
     return true;
+}
+
+bool AUTH_Load(const char* filepath, AUTH_Sequence* sequence) {
+    memset(sequence, 0, sizeof(AUTH_Sequence));
+    sequence->data = File_LoadToMemoryDecompressed(filepath, &sequence->size);
+    return sequence->data != NULL && ReadSequence(sequence, filepath);
+}
+
+bool AUTH_LoadFromMemory(const uint8_t* data, size_t size, const char* name, AUTH_Sequence* sequence) {
+    memset(sequence, 0, sizeof(AUTH_Sequence));
+    sequence->data = malloc(size + 1);
+    if (sequence->data == NULL)
+        return false;
+    memcpy(sequence->data, data, size);
+    sequence->size = size;
+    return ReadSequence(sequence, name);
 }
 
 // Longest span between two keys that is a jump: one frame, with a margin for the rounding of the times

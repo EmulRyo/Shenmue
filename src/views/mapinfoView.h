@@ -8,7 +8,8 @@
 // 3D view of a mapinfo.bin: the models of the map (MAP*.mt5 files of the folder of the file and of its subfolders,
 // where the PKF files of the map are extracted) and of the doors of the door table of the scene program, with the
 // collisions and areas, the lights, the cameras and the characters of the file over them, and a list with the cameras,
-// lights, characters, doors and other information. A camera of the list shows the map from it
+// lights, characters, doors, cutscenes and other information. A camera of the list shows the map from it, and a cutscene
+// of the SCEX chunk is played by the view of the cutscenes (authView.h), shown over this one until it is closed
 
 // Loads a mapinfo.bin and the models of its map, replacing the current one, with the same layers and fly mode. Returns
 // false if the file can't be loaded
@@ -20,7 +21,7 @@ bool MAPINFOView_IsOpen(void);
 void MAPINFOView_Draw(Rectangle area);
 // Fills the texts of the status bar
 void MAPINFOView_Status(ViewStatus* status);
-// Adds its actions to the toolbar
+// Adds its actions to the toolbar (Enter: play the selected cutscene)
 void MAPINFOView_Toolbar(void);
 
 #endif

@@ -243,14 +243,19 @@ static void ReadFog(MAPINFO_File* file, const MAPINFO_Chunk* chunk) {
     }
 }
 
-static uint32_t CountCutscenes(const MAPINFO_File* file, const MAPINFO_Chunk* chunk) {
+// The TRCK chunks of the SCEX chunk (the other chunks, MLWD, are skipped). With cutscenes NULL, only counts them
+static uint32_t ReadCutscenes(const MAPINFO_File* file, const MAPINFO_Chunk* chunk, MAPINFO_Cutscene* cutscenes) {
     uint32_t end = chunk->offset + chunk->size;
     uint32_t count = 0;
     for (uint32_t pos = chunk->offset + MAPINFO_HEADER_SIZE; pos + 8 <= end;) {
         uint32_t size = Bytes_ReadU32(file->data + pos + 4);
         if (size < 8 || size > end - pos)
             break;
-        count += memcmp(file->data + pos, "TRCK", 4) == 0;
+        if (memcmp(file->data + pos, "TRCK", 4) == 0) {
+            if (cutscenes != NULL)
+                cutscenes[count] = (MAPINFO_Cutscene) { pos, size };
+            count++;
+        }
         pos += size;
     }
     return count;
@@ -354,6 +359,7 @@ void MAPINFO_Free(MAPINFO_File* file) {
     free(file->shapes);
     free(file->banks);
     free(file->doors);
+    free(file->cutscenes);
     free(file->data);
     memset(file, 0, sizeof(*file));
 }
@@ -417,8 +423,16 @@ bool MAPINFO_Load(const char* filepath, MAPINFO_File* file) {
     if (chunk != NULL && chunk->size >= 12)
         file->scnVersion = Bytes_ReadU32(file->data + chunk->offset + 8);
     chunk = MAPINFO_FindChunk(file, "SCEX");
-    if (chunk != NULL)
-        file->cutsceneCount = CountCutscenes(file, chunk);
+    if (chunk != NULL) {
+        uint32_t count = ReadCutscenes(file, chunk, NULL);
+        file->cutscenes = calloc(count + 1, sizeof(MAPINFO_Cutscene));
+        if (file->cutscenes == NULL) {
+            fputs("[MAPINFO_Load]: Memory error\n", stderr);
+            MAPINFO_Free(file);
+            return false;
+        }
+        file->cutsceneCount = ReadCutscenes(file, chunk, file->cutscenes);
+    }
     // The CHRS block, followed by its STRG block, fills the chunk
     chunk = MAPINFO_FindChunk(file, "CHRD");
     if (chunk != NULL && chunk->size > 16 && memcmp(file->data + chunk->offset + 8, "CHRS", 4) == 0) {

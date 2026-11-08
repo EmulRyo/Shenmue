@@ -71,6 +71,9 @@ typedef struct {
 
 // Loads an AUTH file (gzipped or not). Returns false if it is not a valid AUTH file
 bool AUTH_Load(const char* filepath, AUTH_Sequence* sequence);
+// Loads an AUTH file from a copy of data (e.g. a TRCK chunk of the SCEX chunk of a mapinfo.bin). name is printed in the
+// errors. Returns false if it is not a valid AUTH file
+bool AUTH_LoadFromMemory(const uint8_t* data, size_t size, const char* name, AUTH_Sequence* sequence);
 void AUTH_Free(AUTH_Sequence* sequence);
 // Value of a curve at a time in seconds, interpolated linearly between the keys, except between keys one frame apart
 // whose value changes much more than around them, where it jumps at the second key. fallback if the curve has no key

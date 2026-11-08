@@ -114,6 +114,8 @@ set(SRC
     src/views/fonView.h
     src/views/imageView.c
     src/views/imageView.h
+    src/views/mapFiles.c
+    src/views/mapFiles.h
     src/views/mapinfoView.c
     src/views/mapinfoView.h
     src/views/mt5View.c

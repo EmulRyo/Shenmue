@@ -65,6 +65,9 @@ typedef struct {
 // Loads the names and the table of the motions of a MOTN file (gzipped or not). Returns false if it is not a valid MOTN
 // file
 bool MOTN_Load(const char* filepath, MOTN_Bank* bank);
+// Loads a MOTN file from a copy of data (e.g. a file of a PKS file loaded in memory). name is printed in the errors.
+// Returns false if it is not a valid MOTN file
+bool MOTN_LoadFromMemory(const uint8_t* data, size_t size, const char* name, MOTN_Bank* bank);
 void MOTN_Free(MOTN_Bank* bank);
 // Name of the motion with this ID, NULL if it is not in the bank
 const char* MOTN_FindName(const MOTN_Bank* bank, uint32_t id);

@@ -247,11 +247,11 @@ static bool BankPath(const char* sceneFolder, const char* name, char* path, size
     return FileExists(path);
 }
 
-// Names the program of the map loads with the cutscene: the name of its PKS (its folder, e.g. DJHN_07) and the names of
+// Names the program of the map loads with the cutscene: its name (the name of its PKS, e.g. DJHN_07) and the names of
 // the AFS of its voices (e.g. 01JUCEA). Returns their number
-static uint32_t CutsceneKeys(const AUTH_Sequence* sequence, const char* filepath, char keys[][AUTHSOUNDS_NAME_SIZE], uint32_t maxKeys) {
+static uint32_t CutsceneKeys(const AUTH_Sequence* sequence, const char* name, char keys[][AUTHSOUNDS_NAME_SIZE], uint32_t maxKeys) {
     uint32_t count = 0;
-    snprintf(keys[count++], AUTHSOUNDS_NAME_SIZE, "%s", GetFileName(GetDirectoryPath(filepath)));
+    snprintf(keys[count++], AUTHSOUNDS_NAME_SIZE, "%s", name);
     for (uint32_t i = 0; i < sequence->commandCount && count < maxKeys; i++) {
         const AUTH_Command* command = &sequence->commands[i];
         char afs[AUTHSOUNDS_NAME_SIZE], clip[AUTHSOUNDS_NAME_SIZE];
@@ -267,25 +267,33 @@ static uint32_t CutsceneKeys(const AUTH_Sequence* sequence, const char* filepath
     return count;
 }
 
-// Loads the bank of the sounds of the cutscene: among the banks loaded by the functions of the program of its map (the
-// mapinfo.bin of the parent folder of its folder) that also load the name of its PKS or of the AFS of its voices, the
-// one with a sequence for the most sound commands (the group with the ID of the low 16 bits of their sound ID); it has
-// to have more than any other one. Returns false if there is none
-static bool LoadProgramBank(const AUTH_Sequence* sequence, const char* sceneFolder, const char* filepath, SND_Bank* bank, char* name, size_t size) {
+// Loads the bank of the sounds of the cutscene: among the banks loaded by the functions of the program of its map (its
+// mapinfo.bin) that also load the name of the cutscene or of the AFS of its voices, or else among the banks of the SNDD
+// chunk of the map (e.g. a1_prolg.snd for the cutscenes of scene/01/op00), the one with a sequence for the most sound
+// commands (the group with the ID of the low 16 bits of their sound ID); it has to have more than any other one.
+// Returns false if there is none
+static bool LoadProgramBank(const AUTH_Sequence* sequence, const char* sceneFolder, const char* mapinfo, const char* cutscene,
+    SND_Bank* bank, char* name, size_t size) {
     char keys[AUTHSOUNDS_PROGRAM_BANKS][AUTHSOUNDS_NAME_SIZE];
     const char* keyPointers[AUTHSOUNDS_PROGRAM_BANKS];
-    uint32_t keyCount = CutsceneKeys(sequence, filepath, keys, AUTHSOUNDS_PROGRAM_BANKS);
+    uint32_t keyCount = CutsceneKeys(sequence, cutscene, keys, AUTHSOUNDS_PROGRAM_BANKS);
     for (uint32_t k = 0; k < keyCount; k++)
         keyPointers[k] = keys[k];
-    char mapinfo[AUTHSOUNDS_PATH_SIZE];
-    snprintf(mapinfo, sizeof(mapinfo), "%s/mapinfo.bin", GetPrevDirectoryPath(GetDirectoryPath(filepath)));
     MAPINFO_File map;
     if (!FileExists(mapinfo) || !MAPINFO_Load(mapinfo, &map)) {
-        printf("[AUTHSounds_Load]: The bank of the sounds isn't known: no mapinfo.bin in the parent folder\n");
+        printf("[AUTHSounds_Load]: The bank of the sounds isn't known: no mapinfo.bin of the map\n");
         return false;
     }
     const char* names[AUTHSOUNDS_PROGRAM_BANKS];
     uint32_t nameCount = MAPINFO_ProgramBanks(&map, keyPointers, keyCount, names, AUTHSOUNDS_PROGRAM_BANKS);
+    const char* source = "the program of the map";
+    if (nameCount == 0) {
+        for (uint32_t i = 0; i < map.bankCount && nameCount < AUTHSOUNDS_PROGRAM_BANKS; i++) {
+            if (strcmp(map.banks[i].name, "FREE") != 0)
+                names[nameCount++] = map.banks[i].name;
+        }
+        source = "the SNDD chunk";
+    }
     int bestScore = 0, secondScore = 0;
     bool found = false;
     for (uint32_t n = 0; n < nameCount; n++) {
@@ -310,8 +318,8 @@ static bool LoadProgramBank(const AUTH_Sequence* sequence, const char* sceneFold
             SND_Free(&candidate);
         }
     }
-    printf("[AUTHSounds_Load]: %u banks loaded with %s by the program of the map: %s, %d commands with a sequence (%d in the next bank)\n",
-        nameCount, keys[0], found ? name : "none", bestScore, secondScore);
+    printf("[AUTHSounds_Load]: %u banks loaded with %s by %s: %s, %d commands with a sequence (%d in the next bank)\n",
+        nameCount, keys[0], source, found ? name : "none", bestScore, secondScore);
     MAPINFO_Free(&map);
     if (found && bestScore <= secondScore) {
         SND_Free(bank);
@@ -369,7 +377,7 @@ static int AddSequenceCues(const SND_Bank* bank, const SND_Sequence* sequence, f
     return first;
 }
 
-static void LoadEffects(const AUTH_Sequence* sequence, const char* sceneFolder, const char* filepath) {
+static void LoadEffects(const AUTH_Sequence* sequence, const char* sceneFolder, const char* mapinfo, const char* name) {
     bool any = false;
     for (uint32_t i = 0; i < sequence->commandCount; i++) {
         uint16_t group;
@@ -378,7 +386,7 @@ static void LoadEffects(const AUTH_Sequence* sequence, const char* sceneFolder, 
         any |= CommandSequence(&sequence->commands[i], &group, &index);
     }
     SND_Bank bank;
-    if (!any || filepath == NULL || !LoadProgramBank(sequence, sceneFolder, filepath, &bank, g_sounds.info.bank, sizeof(g_sounds.info.bank)))
+    if (!any || mapinfo == NULL || !LoadProgramBank(sequence, sceneFolder, mapinfo, name, &bank, g_sounds.info.bank, sizeof(g_sounds.info.bank)))
         return;
     for (uint32_t i = 0; i < sequence->commandCount; i++) {
         const SND_Sequence* effects = CommandSoundSequence(&bank, &sequence->commands[i]);
@@ -405,7 +413,7 @@ void AUTHSounds_Free(void) {
     memset(&g_sounds, 0, sizeof(g_sounds));
 }
 
-void AUTHSounds_Load(const char* sceneFolder, const char* filepath, const AUTH_Sequence* sequence) {
+void AUTHSounds_Load(const char* sceneFolder, const char* mapinfo, const char* name, const AUTH_Sequence* sequence) {
     AUTHSounds_Free();
     g_sounds.lastTime = -1.0f / AUTH_FRAME_RATE;
     g_sounds.commandCount = sequence->commandCount;
@@ -428,7 +436,7 @@ void AUTHSounds_Load(const char* sceneFolder, const char* filepath, const AUTH_S
         if (g_sounds.commandSounds[i] >= 0)
             AddCue(sequence->commands[i].frame / AUTH_FRAME_RATE, g_sounds.commandSounds[i], 1.0f);
     }
-    LoadEffects(sequence, sceneFolder, filepath);
+    LoadEffects(sequence, sceneFolder, mapinfo, name);
     // The events of a sequence can come after the next commands
     if (g_sounds.cues != NULL)
         qsort(g_sounds.cues, g_sounds.cueCount, sizeof(AUTHCue), CompareCues);

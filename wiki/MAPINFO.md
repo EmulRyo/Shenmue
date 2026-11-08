@@ -351,7 +351,29 @@ Contains one set (78 files) or two sets (2 files, size `0xA8`) of three chunks `
 
 ## SCEX — Cutscenes
 
-Contains `TRCK` chunks: [AUTH](AUTH) cutscenes (259 in the game files), with their `ASEQ`, `ACAM`, `AMOV` and optional `ASTR` chunks. `scene/01/op00` also has two `MLWD` chunks of 0x2C bytes, unknown. An `SCEX` chunk can be empty (size 8).
+Contains `TRCK` chunks: [AUTH](AUTH) cutscenes, with their `ASEQ`, `ACAM`, `AMOV` and optional `ASTR` chunks. `scene/01/op00` also has two `MLWD` chunks of 0x2C bytes, unknown, between the `TRCK` chunks (after the 10th and the 22nd). An `SCEX` chunk can be empty (size 8): `jabe` of the three discs and `scene/03/tery`.
+
+The game files have 259 `TRCK` chunks in 18 files, but 74 of them are empty: only the 8-byte header (`TRCK`, size 8), with no `ASEQ`. They are only found in the three `jomo` files (the Hazuki house), which have 49 `TRCK` chunks each, empty or not, as if each disc filled its own cutscenes in a table of 49:
+
+| File | `TRCK` | Cutscenes | Empty |
+|------|-------:|----------:|------:|
+| `scene/01/jomo` | 49 | 21 | 28 |
+| `scene/02/jomo` | 49 | 30 | 19 |
+| `scene/03/jomo` | 49 | 22 | 27 |
+| `scene/01/op00` | 47 | 47 | 0 |
+| `scene/03/nbik` | 23 | 23 | 0 |
+| `scene/01/op02` | 7 | 7 | 0 |
+| `scene/02/arar`, `scene/03/dxms` | 5 | 5 | 0 |
+| `scene/02/gmct` | 4 | 4 | 0 |
+| `betd` (3 discs), `scene/01/tatq` | 3 | 3 | 0 |
+| `scene/01/yq14`, `scene/02/dski`, `scene/03/msbs`, `scene/03/ydma` | 2 | 2 | 0 |
+| `scene/03/arar` | 1 | 1 | 0 |
+
+The empty chunks are scattered among the others (e.g. `scene/01/jomo` starts with two empty chunks, then a cutscene, two empty chunks...).
+
+### Motions and characters
+
+The cutscenes of a map play the motions ([MOTN](MOTN)) of the map, as the [AUTH](AUTH) files of a PKS named as a map (see [Motions of the maps](MOTN#motions-of-the-maps)): the `m_*.bin` files of the folder of the map (e.g. `scene/03/nbik/m_01bike.bin`), the MOTN files of the [PKS](PKS) files of the folder of the map (e.g. `M_01JA` of `scene/01/jomo/common01.pks`, `M_0605` of `scene/01/op02/shd2.pks`), or the [common motions](MOTN#common-motions) for the small IDs. Of the 450 motions played by the cutscenes (each motion counted once per cutscene, with the last frame played by its commands), 447 are found with that length: 260 in the `m_*.bin` files, 172 in the PKS files of the map (`jomo`, `op02`, `tatq`, `scene/03/arar`, `dxms`) and 15 in the common motions. The other three are `0x1913` in `scene/01/op00`, `0x1004` in `scene/01/yq14` (the same ID that is missing in `scene/01/d000/yq14.pks`) and `0x1CB1` in `scene/02/jomo`.
 
 ## DYNA — Unknown
 

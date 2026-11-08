@@ -4,7 +4,9 @@
 #include <stdbool.h>
 #include <raylib.h>
 
-// Views that show the opened file in the content area of the window. Only one of them is open at a time
+// Views that show the opened file in the content area of the window. Only one of them is open at a time, except the view
+// of the cutscenes (VIEW_AUTH) over the view of the map (VIEW_MAPINFO) when it plays a cutscene of the map: the first open
+// view in ViewID order is the one shown, and the map is shown again when the cutscene is closed
 
 typedef enum {
     VIEW_NONE = -1,

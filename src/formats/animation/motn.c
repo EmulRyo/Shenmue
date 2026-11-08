@@ -74,17 +74,30 @@ static bool ReadTable(MOTN_Bank* bank) {
     return true;
 }
 
-bool MOTN_Load(const char* filepath, MOTN_Bank* bank) {
-    memset(bank, 0, sizeof(MOTN_Bank));
-    bank->data = File_LoadToMemoryDecompressed(filepath, &bank->size);
-    if (bank->data == NULL)
-        return false;
+// Reads the table of the data of the bank, which it owns. Frees it if it is not a valid MOTN file
+static bool ReadBank(MOTN_Bank* bank, const char* name) {
     if (!ReadTable(bank)) {
-        fprintf(stderr, "[MOTN_Load]: Invalid MOTN file %s\n", filepath);
+        fprintf(stderr, "[MOTN_Load]: Invalid MOTN file %s\n", name);
         MOTN_Free(bank);
         return false;
     }
     return true;
+}
+
+bool MOTN_Load(const char* filepath, MOTN_Bank* bank) {
+    memset(bank, 0, sizeof(MOTN_Bank));
+    bank->data = File_LoadToMemoryDecompressed(filepath, &bank->size);
+    return bank->data != NULL && ReadBank(bank, filepath);
+}
+
+bool MOTN_LoadFromMemory(const uint8_t* data, size_t size, const char* name, MOTN_Bank* bank) {
+    memset(bank, 0, sizeof(MOTN_Bank));
+    bank->data = malloc(size + 1);
+    if (bank->data == NULL)
+        return false;
+    memcpy(bank->data, data, size);
+    bank->size = size;
+    return ReadBank(bank, name);
 }
 
 int32_t MOTN_FindMotion(const MOTN_Bank* bank, uint32_t id) {

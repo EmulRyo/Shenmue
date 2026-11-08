@@ -20,6 +20,8 @@
 #include "ui/tree.h"
 #include "views/authSounds.h"
 #include "views/authView.h"
+#include "views/mapFiles.h"
+#include "views/mapinfoView.h"
 
 #define AUTHVIEW_LABEL_SIZE     128
 #define AUTHVIEW_PATH_SIZE      1024
@@ -98,6 +100,10 @@ typedef struct {
     float           radius;
     FreeCamera     camera;     // Free camera
     char            sceneFolder[AUTHVIEW_PATH_SIZE]; // Folder of the scene of the file (e.g. .../scene/01), empty if none
+    char            mapinfoPath[AUTHVIEW_PATH_SIZE]; // mapinfo.bin of the map of the cutscene: of the parent folder of
+                                                     // an AUTH file, or the open file for a cutscene of a mapinfo.bin
+    int             cutscene;   // TRCK chunk of the SCEX chunk of the open mapinfo.bin, -1 for an AUTH file
+    MapFiles        mapFiles;   // For a cutscene of a mapinfo.bin: the CHRT, model and MOTN files of its map
     MT5Render       render;
     uint32_t        modelCount;
     AUTHView_Model* models;
@@ -381,16 +387,39 @@ static void AddFamilyMotionBanks(const char* folder) {
     UnloadDirectoryFiles(folders);
 }
 
-// The MOTN files of the folder of the file; if it has none, those of the other PKS of its family (see
+// The MOTN files of the PKF/PKS files of the map of a cutscene of a mapinfo.bin, extracted or not (e.g. M_01JA of
+// scene/01/jomo/common01.pks)
+static void AddMapMotionBanks(void) {
+    for (uint32_t i = 0; i < g_view.mapFiles.count; i++) {
+        const MapFile* file = &g_view.mapFiles.files[i];
+        if (!IsFileExtension(file->name, ".motn"))
+            continue;
+        MOTN_Bank* banks = realloc(g_view.banks, (g_view.bankCount + 1) * sizeof(MOTN_Bank));
+        if (banks == NULL)
+            return;
+        g_view.banks = banks;
+        bool loaded = file->packed != NULL ?
+            MOTN_LoadFromMemory(file->packed->data, file->packed->size, file->name, &g_view.banks[g_view.bankCount]) :
+            MOTN_Load(file->path, &g_view.banks[g_view.bankCount]);
+        if (loaded)
+            g_view.bankCount++;
+    }
+}
+
+// The MOTN files of the folder of an AUTH file; if it has none, those of the other PKS of its family (see
 // AddFamilyMotionBanks); the m_*.bin files of the map of the scene with the name of that folder, the name of its PKS
 // (e.g. scene/01/yq14/m_01114.bin for scene/01/d000/yq14/SEQDATA2.auth); then the common motions of the game
-// (motion/motion.bin, next to the scene folder), with the small motion IDs (e.g. 0x2DF, the walk of Ryo)
+// (motion/motion.bin, next to the scene folder), with the small motion IDs (e.g. 0x2DF, the walk of Ryo). For a
+// cutscene of a mapinfo.bin: the m_*.bin files of its map (e.g. scene/03/nbik/m_01bike.bin), the MOTN files of the
+// PKF/PKS files of its map (AddMapMotionBanks), then the common motions
 static void LoadMotionBanks(const char* filepath) {
     char folder[AUTHVIEW_PATH_SIZE];
     snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(filepath));
-    AddFolderMotionBanks(folder);
-    if (g_view.bankCount == 0)
-        AddFamilyMotionBanks(folder);
+    if (g_view.cutscene < 0) {
+        AddFolderMotionBanks(folder);
+        if (g_view.bankCount == 0)
+            AddFamilyMotionBanks(folder);
+    }
     if (g_view.sceneFolder[0] != '\0') {
         const char* map = TextFormat("%s/%s", g_view.sceneFolder, GetFileName(folder));
         if (DirectoryExists(map)) {
@@ -403,6 +432,8 @@ static void LoadMotionBanks(const char* filepath) {
             UnloadDirectoryFiles(mapFiles);
         }
     }
+    if (g_view.cutscene >= 0)
+        AddMapMotionBanks();
     char common[AUTHVIEW_PATH_SIZE];
     snprintf(common, sizeof(common), "%s", g_view.sceneFolder);
     if (common[0] != '\0' && ToParent(common) && ToParent(common)) {
@@ -428,10 +459,39 @@ static bool ModelPath(const char* folder, const char* file, char* path, size_t s
     return false;
 }
 
+// Model file of a model name of the CHRT scripts in the files of the map of a cutscene of a mapinfo.bin, preferably of a
+// package (the PKF/PKS files can have models with the same name). path is the file, or <package>/<name> for a packed
+// file. Returns NULL if there is none
+static const MapFile* MapModel(const char* file, const char* package, char* path, size_t size) {
+    while (*file == '$' || *file == '@')
+        file++;
+    char base[64];
+    snprintf(base, sizeof(base), "%s", file);
+    char* dot = strchr(base, '.');
+    if (dot != NULL)
+        *dot = '\0';
+    const MapFile* found = NULL;
+    for (uint32_t i = 0; i < g_view.mapFiles.count; i++) {
+        const MapFile* candidate = &g_view.mapFiles.files[i];
+        if (!IsFileExtension(candidate->name, ".chrm;.mt5") || !EqualsIgnoreCase(GetFileNameWithoutExt(candidate->name), base))
+            continue;
+        if (found == NULL || (package != NULL && EqualsIgnoreCase(candidate->package, package) && !EqualsIgnoreCase(found->package, package)))
+            found = candidate;
+    }
+    if (found != NULL && found->packed != NULL)
+        snprintf(path, size, "%s/%s", found->package, found->name);
+    else if (found != NULL)
+        snprintf(path, size, "%s", found->path);
+    return found;
+}
+
 // Model of a character of a CHRT script: the file of its first Image (of the DefImage with that name, or the name itself),
-// in the folder of the script or in the folder of the models of the scene (e.g. scene/01/model/chara/ykb_m.mt5, Ryo).
-// Returns false if the script has no such character with a model file
-static bool ScriptModel(const CHRT_Script* script, const char* id, const char* folder, char* path, size_t size, bool* human) {
+// in the folder of the script (none for a packed script), in the files of the map of a cutscene of a mapinfo.bin
+// (preferably of the package of the script), or in the folder of the models of the scene (e.g.
+// scene/01/model/chara/ykb_m.mt5, Ryo). packed is the file if it is packed, NULL otherwise. Returns false if the script
+// has no such character with a model file
+static bool ScriptModel(const CHRT_Script* script, const char* id, const char* folder, const char* package, char* path, size_t size,
+    const IPAC_File** packed, bool* human) {
     for (uint32_t i = 0; i < script->commandCount; i++) {
         const CHRT_Command* command = &script->commands[i];
         if (!CHRT_IsCommand(command, "Character") || command->argCount == 0 || command->args[0].type != CHRT_ARG_LITERAL ||
@@ -446,7 +506,10 @@ static bool ScriptModel(const CHRT_Script* script, const char* id, const char* f
             file = character.image;
         char models[AUTHVIEW_PATH_SIZE];
         snprintf(models, sizeof(models), "%s/%s", g_view.sceneFolder, AUTHVIEW_SCENE_MODELS);
-        if (ModelPath(folder, file, path, size) || (g_view.sceneFolder[0] != '\0' && ModelPath(models, TextToLower(file), path, size))) {
+        const MapFile* mapFile = NULL;
+        if ((folder != NULL && ModelPath(folder, file, path, size)) || (mapFile = MapModel(file, package, path, size)) != NULL ||
+            (g_view.sceneFolder[0] != '\0' && ModelPath(models, TextToLower(file), path, size))) {
+            *packed = mapFile != NULL ? mapFile->packed : NULL;
             *human = character.human;
             return true;
         }
@@ -455,48 +518,75 @@ static bool ScriptModel(const CHRT_Script* script, const char* id, const char* f
 }
 
 // Model of a character in a CHRT file
-static bool ScriptFileModel(const char* scriptPath, const char* id, char* path, size_t size, bool* human) {
+static bool ScriptFileModel(const char* scriptPath, const char* id, char* path, size_t size, const IPAC_File** packed, bool* human) {
     CHRT_Script script;
     if (!FileExists(scriptPath) || !CHRT_Load(scriptPath, &script))
         return false;
     char folder[AUTHVIEW_PATH_SIZE];
     snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(scriptPath));
-    bool found = ScriptModel(&script, id, folder, path, size, human);
+    bool found = ScriptModel(&script, id, folder, NULL, path, size, packed, human);
     CHRT_Free(&script);
     return found;
 }
 
-// Model file of a character: in the CHRT scripts of the folder of the cutscene (e.g. the bus driver BUSS of
-// scene/01/d000/buss), in the folder of the character in the scene (scene/01/stream/humans/YAMA), or in the characters of
-// the mapinfo.bin of the map, the parent folder (Ryo, AKIR, in scene/01/d000). Returns the script where it was found, NULL
-// if none
-static const char* FindCharacterModel(const char* id, const CHRT_Script* mapScript, const char* mapFolder, char* path, size_t size,
-    bool* human) {
-    char folder[AUTHVIEW_PATH_SIZE];
-    snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(g_view.path));
-    FilePathList scripts = LoadDirectoryFilesEx(folder, ".chrt", false);
-    const char* source = NULL;
-    for (unsigned int i = 0; i < scripts.count && source == NULL; i++) {
-        if (ScriptFileModel(scripts.paths[i], id, path, size, human))
-            source = TextFormat("%s", GetFileName(scripts.paths[i]));
+// Model of a character in the CHRT files of the map of a cutscene of a mapinfo.bin (e.g. the CHARA.chrt of
+// scene/01/jomo/common01.pks), extracted or not. Returns the script where it was found, NULL if none
+static const char* MapScriptsModel(const char* id, char* path, size_t size, const IPAC_File** packed, bool* human) {
+    for (uint32_t i = 0; i < g_view.mapFiles.count; i++) {
+        const MapFile* file = &g_view.mapFiles.files[i];
+        CHRT_Script script;
+        if (!IsFileExtension(file->name, ".chrt") || !(file->packed != NULL ?
+            CHRT_LoadFromMemory(file->packed->data, file->packed->size, file->name, &script) : CHRT_Load(file->path, &script)))
+            continue;
+        char folder[AUTHVIEW_PATH_SIZE];
+        if (file->path != NULL)
+            snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(file->path));
+        bool found = ScriptModel(&script, id, file->path != NULL ? folder : NULL, file->package, path, size, packed, human);
+        CHRT_Free(&script);
+        if (found)
+            return TextFormat("%s%s%s", file->package, file->package[0] != '\0' ? "/" : "", file->name);
     }
-    UnloadDirectoryFiles(scripts);
+    return NULL;
+}
+
+// Model file of a character: in the CHRT scripts of the folder of the cutscene (e.g. the bus driver BUSS of
+// scene/01/d000/buss), or of the PKF/PKS files of the map for a cutscene of a mapinfo.bin; in the folder of the character
+// in the scene (scene/01/stream/humans/YAMA); or in the characters of the mapinfo.bin of the map, the parent folder of an
+// AUTH file (Ryo, AKIR, in scene/01/d000). packed is the file if it is packed. Returns the script where it was found,
+// NULL if none
+static const char* FindCharacterModel(const char* id, const CHRT_Script* mapScript, const char* mapFolder, char* path, size_t size,
+    const IPAC_File** packed, bool* human) {
+    const char* source = NULL;
+    if (g_view.cutscene >= 0)
+        source = MapScriptsModel(id, path, size, packed, human);
+    else {
+        char folder[AUTHVIEW_PATH_SIZE];
+        snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(g_view.path));
+        FilePathList scripts = LoadDirectoryFilesEx(folder, ".chrt", false);
+        for (unsigned int i = 0; i < scripts.count && source == NULL; i++) {
+            if (ScriptFileModel(scripts.paths[i], id, path, size, packed, human))
+                source = TextFormat("%s", GetFileName(scripts.paths[i]));
+        }
+        UnloadDirectoryFiles(scripts);
+    }
     if (source != NULL)
         return source;
     char humans[AUTHVIEW_PATH_SIZE];
     snprintf(humans, sizeof(humans), "%s/%s/%s/CHARA.chrt", g_view.sceneFolder, AUTHVIEW_HUMANS, id);
-    if (g_view.sceneFolder[0] != '\0' && ScriptFileModel(humans, id, path, size, human))
+    if (g_view.sceneFolder[0] != '\0' && ScriptFileModel(humans, id, path, size, packed, human))
         return TextFormat("%s/%s/CHARA.chrt", AUTHVIEW_HUMANS, id);
-    if (mapScript != NULL && ScriptModel(mapScript, id, mapFolder, path, size, human))
-        return "mapinfo.bin of the map";
+    if (mapScript != NULL && ScriptModel(mapScript, id, mapFolder, NULL, path, size, packed, human))
+        return g_view.cutscene >= 0 ? "mapinfo.bin" : "mapinfo.bin of the map";
     return NULL;
 }
 
-// Index of the loaded model of a file, for one character. Returns -1 if it can't be loaded
-static int LoadModelFile(const char* path) {
+// Index of the loaded model of a file (on disk, or packed: path is then its package and name), for one character.
+// Returns -1 if it can't be loaded
+static int LoadModelFile(const char* path, const IPAC_File* packed) {
     AUTHView_Model* model = &g_view.models[g_view.modelCount++];
     snprintf(model->path, sizeof(model->path), "%s", path);
-    model->loaded = MT5Render_LoadModel(path, &model->model);
+    model->loaded = packed != NULL ? MT5Render_LoadPackedModel(packed, &g_view.mapFiles.packed, &model->model) :
+        MT5Render_LoadModel(path, &model->model);
     if (model->loaded) {
         model->lift = -MT5Render_Bottom(&model->model);
         model->top = MT5Render_Top(&model->model);
@@ -574,15 +664,13 @@ static bool LoadCharacterModels(void) {
         return false;
 
     // The characters of the map
-    char mapFolder[AUTHVIEW_PATH_SIZE], mapinfoPath[AUTHVIEW_PATH_SIZE];
-    snprintf(mapFolder, sizeof(mapFolder), "%s", GetDirectoryPath(g_view.path));
-    ToParent(mapFolder);
-    snprintf(mapinfoPath, sizeof(mapinfoPath), "%s/mapinfo.bin", mapFolder);
+    char mapFolder[AUTHVIEW_PATH_SIZE];
+    snprintf(mapFolder, sizeof(mapFolder), "%s", GetDirectoryPath(g_view.mapinfoPath));
     MAPINFO_File mapinfo;
     CHRT_Script mapScript;
-    bool hasMapinfo = FileExists(mapinfoPath) && MAPINFO_Load(mapinfoPath, &mapinfo);
+    bool hasMapinfo = FileExists(g_view.mapinfoPath) && MAPINFO_Load(g_view.mapinfoPath, &mapinfo);
     bool hasMapScript = hasMapinfo && mapinfo.characters != NULL &&
-        CHRT_LoadFromMemory(mapinfo.characters, mapinfo.charactersSize, mapinfoPath, &mapScript);
+        CHRT_LoadFromMemory(mapinfo.characters, mapinfo.charactersSize, g_view.mapinfoPath, &mapScript);
 
     for (uint32_t i = 0; i < sequence->characterCount; i++) {
         const AUTH_Character* character = &sequence->characters[i];
@@ -591,15 +679,16 @@ static bool LoadCharacterModels(void) {
         if (!HasMovement(character))
             continue;
         char path[AUTHVIEW_PATH_SIZE];
+        const IPAC_File* packed = NULL;
         characterModel->source = FindCharacterModel(character->id, hasMapScript ? &mapScript : NULL, mapFolder, path, sizeof(path),
-            &characterModel->human);
+            &packed, &characterModel->human);
         if (characterModel->source != NULL) {
             // A copy of the source is kept: TextFormat reuses its buffers
             char* source = malloc(strlen(characterModel->source) + 1);
             if (source != NULL)
                 strcpy(source, characterModel->source);
             characterModel->source = source;
-            characterModel->model = LoadModelFile(path);
+            characterModel->model = LoadModelFile(path, packed);
         }
         if (characterModel->model < 0)
             printf("[AUTHView_Open]: No model for %s (%s)\n", character->id, characterModel->source != NULL ? "invalid model file" : "not found");
@@ -646,27 +735,39 @@ void AUTHView_Close(void) {
     free(g_view.labels);
     free(g_view.characterLabels);
     free(g_view.shownCharacters);
+    MapFiles_Free(&g_view.mapFiles);
     memset(&g_view, 0, sizeof(g_view));
 }
 
-bool AUTHView_Open(const char* filepath) {
-    AUTH_Sequence sequence;
-    if (!AUTH_Load(filepath, &sequence))
-        return false;
-
+// Shows a loaded cutscene, of the AUTH file filepath or of the TRCK chunk cutscene of the SCEX chunk of the mapinfo.bin
+// filepath (cutscene -1 for an AUTH file), replacing the current one
+static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutscene) {
     AUTHView_Close();
     snprintf(g_view.path, sizeof(g_view.path), "%s", filepath);
-    g_view.sequence = sequence;
+    g_view.sequence = *sequence;
+    g_view.cutscene = cutscene;
     g_view.current = -1;
     g_view.selectedCharacter = -1;
     for (char* c = g_view.path; *c != '\0'; c++) {
         if (*c == '\\')
             *c = '/';
     }
+    // The map of an AUTH file is the parent folder of its folder (of its PKS)
+    char mapFolder[AUTHVIEW_PATH_SIZE];
+    snprintf(mapFolder, sizeof(mapFolder), "%s", GetDirectoryPath(g_view.path));
+    if (cutscene < 0)
+        ToParent(mapFolder);
+    snprintf(g_view.mapinfoPath, sizeof(g_view.mapinfoPath), "%s", cutscene < 0 ? TextFormat("%s/mapinfo.bin", mapFolder) : g_view.path);
     FindSceneFolder(g_view.path, g_view.sceneFolder, sizeof(g_view.sceneFolder));
-    LoadMotionBanks(filepath);
-    printf("%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files\n", GetFileName(g_view.path),
-        sequence.duration, sequence.characterCount, sequence.commandCount, sequence.soundCount, g_view.bankCount);
+    if (cutscene >= 0 && !MapFiles_Load(mapFolder, ".mt5;.chrm;.chrt;.motn", &g_view.mapFiles)) {
+        fputs("[AUTHView_Open]: Memory error\n", stderr);
+        AUTHView_Close();
+        return false;
+    }
+    LoadMotionBanks(g_view.path);
+    printf("%s%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files\n", GetFileName(g_view.path),
+        cutscene >= 0 ? TextFormat(" #%d", cutscene) : "", sequence->duration, sequence->characterCount, sequence->commandCount,
+        sequence->soundCount, g_view.bankCount);
     if (!LoadMotions() || !CreateLabels() || !LoadCharacterModels()) {
         fputs("[AUTHView_Open]: Memory error\n", stderr);
         AUTHView_Close();
@@ -674,13 +775,35 @@ bool AUTHView_Open(const char* filepath) {
     }
     MT5Render_Init(&g_view.render);
     g_view.open = true;
-    AUTHSounds_Load(g_view.sceneFolder[0] != '\0' ? g_view.sceneFolder : NULL, g_view.path, &g_view.sequence);
+    // The program of the map loads the bank of the sounds with the name of the PKS of an AUTH file, or of the map
+    AUTHSounds_Load(g_view.sceneFolder[0] != '\0' ? g_view.sceneFolder : NULL, g_view.mapinfoPath,
+        GetFileName(GetDirectoryPath(g_view.path)), &g_view.sequence);
     ComputeBounds();
     ResetCamera();
     FreeCamera_SetFly(&g_view.camera, g_options.fly);
     g_view.playing = true;
     g_view.jumped = true;
     return true;
+}
+
+bool AUTHView_Open(const char* filepath) {
+    AUTH_Sequence sequence;
+    return AUTH_Load(filepath, &sequence) && Start(&sequence, filepath, -1);
+}
+
+bool AUTHView_OpenMapCutscene(const char* filepath, uint32_t cutscene) {
+    MAPINFO_File file;
+    if (!MAPINFO_Load(filepath, &file))
+        return false;
+    AUTH_Sequence sequence;
+    bool loaded = cutscene < file.cutsceneCount && AUTH_LoadFromMemory(file.data + file.cutscenes[cutscene].offset,
+        file.cutscenes[cutscene].size, TextFormat("%s #%u", filepath, cutscene), &sequence);
+    MAPINFO_Free(&file);
+    return loaded && Start(&sequence, filepath, (int)cutscene);
+}
+
+bool AUTHView_IsMapCutscene(void) {
+    return g_view.open && g_view.cutscene >= 0;
 }
 
 bool AUTHView_IsOpen(void) {
@@ -747,6 +870,14 @@ static Camera3D CutsceneCamera(void) {
 
 
 void AUTHView_Toolbar(void) {
+    // The view of the map is open behind its cutscenes
+    if (AUTHView_IsMapCutscene() && MAPINFOView_IsOpen()) {
+        if (Toolbar_Button(ICON_ARROW_LEFT, "Map", "Close the cutscene and go back to its map", KEY_BACKSPACE)) {
+            AUTHView_Close();
+            return;
+        }
+        Toolbar_Separator();
+    }
     if (Toolbar_Button(g_view.playing ? ICON_PLAYER_PAUSE : ICON_PLAYER_PLAY, NULL, "Play or pause", KEY_SPACE))
         TogglePlay();
     if (Toolbar_Button(ICON_PLAYER_PREVIOUS, NULL, "Go to the start", KEY_HOME))
@@ -1276,8 +1407,8 @@ void AUTHView_Status(ViewStatus* status) {
     snprintf(status->file, sizeof(status->file), "%s", g_view.path);
     AUTHSounds_Info sounds;
     AUTHSounds_GetInfo(&sounds);
-    snprintf(status->info, sizeof(status->info), "%s, %u characters, %u commands, voices %u/%u, effects %u/%u%s%s", FormatTime(Duration()),
-        sequence->characterCount, sequence->commandCount, sounds.voices, sounds.voiceCommands, sounds.effects, sounds.effectCommands,
+    snprintf(status->info, sizeof(status->info), "%s%s, %u characters, %u commands, voices %u/%u, effects %u/%u%s%s",
+        g_view.cutscene >= 0 ? TextFormat("Cutscene %d, ", g_view.cutscene) : "", FormatTime(Duration()), sequence->characterCount, sequence->commandCount, sounds.voices, sounds.voiceCommands, sounds.effects, sounds.effectCommands,
         sounds.bank[0] != '\0' ? " in " : "", sounds.bank);
     if (g_options.cutsceneCamera)
         snprintf(status->hint, sizeof(status->hint), "Click the timeline: seek");
