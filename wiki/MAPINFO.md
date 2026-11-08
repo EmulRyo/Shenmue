@@ -69,7 +69,7 @@ The empty chunks (`ATTR`, `REGD`, `LSCN`, `CMPS`, `MVTR`, `HGML`) have no data: 
 
 ## SCN3 — Scene program
 
-The program of the map. In 119 files it is **native SH-4 machine code** (the CPU of the Dreamcast): version `0x20000`. In the other 17 (`scene/01/0000`, `betd`, `jd99`, `mf99`...) it is a bytecode: version `0x100`. All the offsets are relative to the start of the chunk.
+The program of the map. In 119 files it is **native SH-4 machine code** (the CPU of the Dreamcast): version `0x20000`. In the other 17 (`scene/01/0000`, `betd`, `jd99`, `mf99`...) it is a bytecode: version `0x100`. All the offsets are relative to the start of the chunk. The `scenario/` folder has the program of every map as a bytecode, in a separate [SCN](SCN) file.
 
 | Offset | Size | Type   | Name        | Description |
 |-------:|-----:|--------|-------------|-------------|
@@ -85,6 +85,7 @@ The program of the map. In 119 files it is **native SH-4 machine code** (the CPU
 | 0x28   | 8    | —      | —           | Always 0 |
 | 0x30   | —    | —      | code        | Code, up to `dataStart`. In the 119 SH-4 files it starts with the same bytes `86 2F 96 2F A6 2F D6 2F` (`mov.l r8,@-r15` … `mov.l r13,@-r15`) |
 | `dataStart` | — | —   | data        | Data used by the code: floats, colors, tables of offsets and null terminated strings (paths such as `scene/02/model`, model names such as `C1305S3G.MT5`, sprite names such as `SCROLL27.SPR`) |
+| `end`  | —    | —      | relocations | Version `0x100` only: list of [relocations](SCN#relocations), ended by 8 null bytes. Only `scene/03/door` has entries (49); the other 16 chunks have only the 8 null bytes |
 
 The data of 129 files contains the values `20.0, 800.0, 1.0, 0xFFFFFFFF`, the same as the default [fog](#fog--fog).
 

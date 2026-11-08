@@ -13,6 +13,7 @@
 
 **Maps**
 - [MAPINFO](MAPINFO)
+- [SCN](SCN)
 
 **Scripts**
 - [CHRT](CHRT)
