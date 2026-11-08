@@ -158,3 +158,25 @@ void File_GetOutputFolder(const char* filepath, const char* outputPath, char* ou
     else
         snprintf(outputFolder, size, "%.*s%.*s", (int)(filename - filepath), filepath, basenameLength, filename);
 }
+
+void File_GetBaseName(const char* filepath, char* name, size_t size) {
+    snprintf(name, size, "%s", File_GetFilename(filepath));
+    bool gzip = false;
+    for (int i = 0; i < 2; i++) {
+        char* dot = strrchr(name, '.');
+        if (dot == NULL || dot == name)
+            break;
+        if (i == 0)
+            gzip = strcmp(dot, ".gz") == 0 || strcmp(dot, ".GZ") == 0;
+        *dot = '\0';
+        if (!gzip)
+            break;
+    }
+}
+
+void File_SanitizeName(char* name) {
+    for (char* c = name; *c != '\0'; c++) {
+        if (strchr("<>:\"/\\|?*", *c) != NULL || (unsigned char)*c < 0x20)
+            *c = '_';
+    }
+}

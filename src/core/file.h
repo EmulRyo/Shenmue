@@ -15,5 +15,9 @@ bool        File_Save(const char* filepath, const uint8_t* buffer, size_t size);
 const char* File_GetFilename(const char* filepath); // Returns the position after the last path separator
 // Output folder: "outputPath/<file basename>" or "<file folder>/<file basename>" if no outputPath is given
 void        File_GetOutputFolder(const char* filepath, const char* outputPath, char* outputFolder, size_t size);
+// Name of the file without its folder and its extension, and without the extension before .gz in gzipped files
+void        File_GetBaseName(const char* filepath, char* name, size_t size);
+// Replaces the characters that can't be in a filename
+void        File_SanitizeName(char* name);
 
 #endif

@@ -16,5 +16,10 @@ bool MOTNView_IsOpen(void);
 void MOTNView_Draw(Rectangle area);
 void MOTNView_Status(ViewStatus* status);
 void MOTNView_Toolbar(void);
+// Whether a model is loaded to export
+bool MOTNView_CanExport(void);
+// Asks where to export the model (glTF binary) with its skeleton and, if it is a body, with every motion of the file
+// that can pose it as an animation (see MT5Export_Save)
+void MOTNView_ExportDialog(void);
 
 #endif

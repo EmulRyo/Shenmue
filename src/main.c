@@ -7,6 +7,8 @@
 #include "raygui.h"
 #include "core/hashTable.h"
 #include "views/imageView.h"
+#include "views/motnView.h"
+#include "views/mt5View.h"
 #include "views/views.h"
 #include "app/fileOpen.h"
 #include "app/filenameDB.h"
@@ -22,23 +24,6 @@ static void Init() {
     Style_Init();
     NFD_Init();
     g_filenameDB = FilenameDB_Load("resources/FilenameDatabase.json");
-}
-
-static void SaveFileDialog() {
-    nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[1] = { { "Images", "png,jpg,bmp" } };
-    nfdresult_t result = NFD_SaveDialogU8(&outPath, filters, 1, NULL, NULL);
-    if (result == NFD_OKAY) {
-        if (ImageView_IsOpen())
-            ImageView_Export(outPath);
-        else
-            printf("No image to save.\n");
-
-        NFD_FreePathU8(outPath);
-    }
-    else if (result == NFD_ERROR) {
-        printf("Error: %s\n", NFD_GetError());
-    }
 }
 
 static void ProcessDroppedFiles() {
@@ -121,10 +106,19 @@ static void DrawToolbar(Rectangle area) {
         TADBatch_Dialog(g_filenameDB);
     if (Toolbar_Button(ICON_FOLDER_FILE_OPEN, "Open", "Open files", TOOLBAR_CTRL | KEY_O))
         FileOpen_Dialog();
-    if (!ImageView_IsOpen())
+    // The image, the model or the model with its motions of the open view
+    bool model = MT5View_IsOpen(), motions = MOTNView_CanExport();
+    if (!model && !motions && !ImageView_IsOpen())
         GuiDisable();
-    if (Toolbar_Button(ICON_FILE_EXPORT, "Export", "Export the image", TOOLBAR_CTRL | KEY_S))
-        SaveFileDialog();
+    const char* tooltip = model ? "Export the model (glTF or OBJ)" : motions ? "Export the model with the motions (glTF)" : "Export the image";
+    if (Toolbar_Button(ICON_FILE_EXPORT, "Export", tooltip, TOOLBAR_CTRL | KEY_S)) {
+        if (model)
+            MT5View_ExportDialog();
+        else if (motions)
+            MOTNView_ExportDialog();
+        else
+            ImageView_ExportDialog();
+    }
     GuiEnable();
     Views_Toolbar();
     Toolbar_End();

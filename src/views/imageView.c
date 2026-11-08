@@ -2,8 +2,10 @@
 #include <stdint.h>
 #include <string.h>
 #include <math.h>
+#include <nfd.h>
 #include <raylib.h>
 #include "raygui.h"
+#include "core/file.h"
 #include "formats/texture/pvr.h"
 #include "formats/texture/spr.h"
 #include "ui/properties.h"
@@ -354,6 +356,43 @@ bool ImageView_Export(const char* filepath) {
     if (g_image.data == NULL)
         return false;
     return ExportImage(g_image, filepath);
+}
+
+void ImageView_ExportDialog(void) {
+    static char lastFolder[1024];
+    if (g_image.data == NULL) {
+        printf("No image to export.\n");
+        return;
+    }
+
+    // The name of the file without its extensions (also .gz), with the texture of the SPR file if it has several
+    char name[256];
+    File_GetBaseName(g_path, name, sizeof(name));
+    if (HasList() && g_spr.selected >= 0) {
+        size_t length = strlen(name);
+        snprintf(name + length, sizeof(name) - length, "_%d_%s", g_spr.selected, g_spr.file.textures[g_spr.selected].name);
+    }
+    if (name[0] == '\0')
+        snprintf(name, sizeof(name), "texture");
+    File_SanitizeName(name);
+    strncat(name, ".png", sizeof(name) - strlen(name) - 1);
+
+    // It opens in the folder of the last export, or in that of the texture
+    char folder[1024];
+    snprintf(folder, sizeof(folder), "%s", lastFolder[0] != '\0' ? lastFolder : GetDirectoryPath(g_path));
+
+    nfdu8char_t* outPath = NULL;
+    nfdu8filteritem_t filters[3] = { { "PNG image", "png" }, { "BMP image", "bmp" }, { "JPG image", "jpg" } };
+    nfdresult_t result = NFD_SaveDialogU8(&outPath, filters, 3, folder[0] != '\0' ? folder : NULL, name);
+    if (result == NFD_OKAY) {
+        if (ImageView_Export(outPath))
+            snprintf(lastFolder, sizeof(lastFolder), "%s", GetDirectoryPath(outPath));
+        else
+            printf("Failed to export the image to %s\n", outPath);
+        NFD_FreePathU8(outPath);
+    }
+    else if (result == NFD_ERROR)
+        printf("Error: %s\n", NFD_GetError());
 }
 
 void ImageView_Status(ViewStatus* status) {

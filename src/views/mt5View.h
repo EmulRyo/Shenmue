@@ -21,5 +21,8 @@ void MT5View_Draw(Rectangle area);
 void MT5View_Status(ViewStatus* status);
 // Adds its actions to the toolbar
 void MT5View_Toolbar(void);
+// Asks where to export the model as shown (glTF binary or OBJ, see MT5Export_Save), at the current animation frame,
+// suggesting a name from the model and the folder and format of the last export (or the folder of the model)
+void MT5View_ExportDialog(void);
 
 #endif

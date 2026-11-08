@@ -8,9 +8,12 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
+#include <nfd.h>
 #include "raygui.h"
+#include "core/file.h"
 #include "formats/animation/motn.h"
 #include "render/freeCamera.h"
+#include "render/mt5Export.h"
 #include "render/mt5Pose.h"
 #include "render/mt5Render.h"
 #include "render/scene3D.h"
@@ -526,6 +529,47 @@ void MOTNView_Draw(Rectangle area) {
     const char* status = TextFormat("Frame %.0f/%.0f   %.2f / %.2f s", floorf(g_view.frame), LastFrame(), g_view.frame / MOTN_FRAME_RATE,
         LastFrame() / MOTN_FRAME_RATE);
     DrawTextEx(font, status, (Vector2) { controls.x, controls.y + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
+}
+
+bool MOTNView_CanExport(void) {
+    return g_view.open && g_view.modelLoaded;
+}
+
+void MOTNView_ExportDialog(void) {
+    static char lastFolder[MOTNVIEW_PATH_SIZE];
+    if (!MOTNView_CanExport())
+        return;
+
+    // The name of the model and of the file of the motions
+    char model[128], motions[128], name[300];
+    File_GetBaseName(g_view.modelPaths[g_view.model], model, sizeof(model));
+    File_GetBaseName(g_view.path, motions, sizeof(motions));
+    snprintf(name, sizeof(name), "%s_%s", model, motions);
+    File_SanitizeName(name);
+    strncat(name, ".glb", sizeof(name) - strlen(name) - 1);
+
+    // It opens in the folder of the last export, or in that of the file
+    char folder[MOTNVIEW_PATH_SIZE];
+    snprintf(folder, sizeof(folder), "%s", lastFolder[0] != '\0' ? lastFolder : GetDirectoryPath(g_view.path));
+
+    nfdu8char_t* outPath = NULL;
+    nfdu8filteritem_t filters[1] = { { "glTF binary", "glb" } };
+    nfdresult_t result = NFD_SaveDialogU8(&outPath, filters, 1, folder[0] != '\0' ? folder : NULL, name);
+    if (result == NFD_OKAY) {
+        char path[MOTNVIEW_PATH_SIZE + 8];
+        snprintf(path, sizeof(path), "%s%s", outPath, IsFileExtension(outPath, ".glb") ? "" : ".glb");
+        // The motions only if the model is a body
+        MT5Export_Motions exportMotions = { &g_view.bank, &g_view.bodyNodes };
+        if (MT5Export_Save(&g_view.render3D, 0, g_view.body ? &exportMotions : NULL, path)) {
+            snprintf(lastFolder, sizeof(lastFolder), "%s", GetDirectoryPath(path));
+            printf("Exported the model to %s\n", path);
+        }
+        else
+            printf("Failed to export the model to %s\n", path);
+        NFD_FreePathU8(outPath);
+    }
+    else if (result == NFD_ERROR)
+        printf("Error: %s\n", NFD_GetError());
 }
 
 void MOTNView_Status(ViewStatus* status) {

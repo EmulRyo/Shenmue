@@ -78,6 +78,8 @@ set(SRC
 
     src/render/freeCamera.c
     src/render/freeCamera.h
+    src/render/mt5Export.c
+    src/render/mt5Export.h
     src/render/mt5Mesh.c
     src/render/mt5Mesh.h
     src/render/mt5Pose.c

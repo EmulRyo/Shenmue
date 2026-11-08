@@ -6,7 +6,10 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
+#include <nfd.h>
 #include "raygui.h"
+#include "core/file.h"
+#include "render/mt5Export.h"
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
@@ -148,6 +151,50 @@ void MT5View_Draw(Rectangle area) {
     rlEnableBackfaceCulling();
 
     FreeCamera_End3D();
+}
+
+void MT5View_ExportDialog(void) {
+    static char lastFolder[1024];
+    static bool lastOBJ;
+    if (!g_view.open)
+        return;
+
+    // The name of the model, with the frame of the animated ones, and the format of the last export
+    char name[256];
+    File_GetBaseName(g_view.path, name, sizeof(name));
+    if (name[0] == '\0')
+        snprintf(name, sizeof(name), "model");
+    if (g_view.model.mesh.frameCount > 0) {
+        size_t length = strlen(name);
+        snprintf(name + length, sizeof(name) - length, "_frame%u", g_view.frame + 1);
+    }
+    File_SanitizeName(name);
+    const nfdu8filteritem_t glb = { "glTF binary", "glb" }, obj = { "Wavefront OBJ", "obj" };
+    nfdu8filteritem_t filters[2] = { lastOBJ ? obj : glb, lastOBJ ? glb : obj };
+    strncat(name, lastOBJ ? ".obj" : ".glb", sizeof(name) - strlen(name) - 1);
+
+    // It opens in the folder of the last export, or in that of the model
+    char folder[1024];
+    snprintf(folder, sizeof(folder), "%s", lastFolder[0] != '\0' ? lastFolder : GetDirectoryPath(g_view.path));
+
+    nfdu8char_t* outPath = NULL;
+    nfdresult_t result = NFD_SaveDialogU8(&outPath, filters, 2, folder[0] != '\0' ? folder : NULL, name);
+    if (result == NFD_OKAY) {
+        // A name typed with another extension is exported in the format of the last export
+        char path[1100];
+        bool known = IsFileExtension(outPath, ".glb") || IsFileExtension(outPath, ".obj");
+        snprintf(path, sizeof(path), "%s%s", outPath, known ? "" : (lastOBJ ? ".obj" : ".glb"));
+        if (MT5Export_Save(&g_view.model, g_view.frame, NULL, path)) {
+            snprintf(lastFolder, sizeof(lastFolder), "%s", GetDirectoryPath(path));
+            lastOBJ = IsFileExtension(path, ".obj");
+            printf("Exported the model to %s\n", path);
+        }
+        else
+            printf("Failed to export the model to %s\n", path);
+        NFD_FreePathU8(outPath);
+    }
+    else if (result == NFD_ERROR)
+        printf("Error: %s\n", NFD_GetError());
 }
 
 void MT5View_Status(ViewStatus* status) {

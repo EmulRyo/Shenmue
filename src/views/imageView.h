@@ -22,5 +22,7 @@ void ImageView_Draw(Rectangle area);
 void ImageView_Status(ViewStatus* status);
 // Saves the image in a format given by the extension (png, jpg, bmp). Returns false if there is no image or on error
 bool ImageView_Export(const char* filepath);
+// Asks where to save the image, suggesting a name from the texture and the folder of the last export (or of the texture)
+void ImageView_ExportDialog(void);
 
 #endif
