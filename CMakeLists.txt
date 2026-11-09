@@ -36,6 +36,11 @@ if (WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE mfplat mfuuid ole32 wmcodecdspuuid)
 endif()
 
+# Icon of the executable and of the window
+if (WIN32)
+    target_sources(${PROJECT_NAME} PRIVATE icon/Shenmue.rc)
+endif()
+
 # The threads of the TAD extraction
 if (NOT WIN32)
     find_package(Threads REQUIRED)
