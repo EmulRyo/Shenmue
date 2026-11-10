@@ -16,6 +16,7 @@ Tool to explore and extract the files of Shenmue I & II (PC version). It is writ
 - Play `AUTH` cutscenes, and those of the `mapinfo.bin` files: the list of their commands (motions, voices and sound effects), the camera and the characters in 3D, animated by their motions, in the models of their map, seen from a free camera or from the camera of the cutscene, and a timeline.
 - Play the `MOTN` motions of the characters on their models, and export a model with its skeleton and the motions as animations to glTF (`.glb`).
 - View the `mapinfo.bin` files of the maps: the models of the map and its doors, with its collisions and areas, lights, cameras and characters, seen from a free camera or from the cameras of the map, and play its cutscenes.
+- Name the characters and the maps of Shenmue I in the scripts, the cutscenes and the maps, from `resources/Shenmue1Characters.tsv` and `resources/Shenmue1Maps.tsv` (embedded in the executable).
 
 The file formats are described in the [wiki](https://github.com/EmulRyo/Shenmue/wiki) (source pages in [`wiki/`](wiki)).
 

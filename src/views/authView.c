@@ -8,6 +8,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include "raygui.h"
+#include "app/gameDB.h"
 #include "formats/animation/auth.h"
 #include "formats/animation/motn.h"
 #include "formats/map/mapinfo.h"
@@ -177,6 +178,11 @@ static const char* IDText(uint32_t id) {
     return TextFormat("%s", text);
 }
 
+// Name of the character of an ID value, its ID if it has none
+static const char* CharacterText(uint32_t id) {
+    return GameDB_CharacterDisplay(IDText(id));
+}
+
 // File name of a sound path, without the extension
 static const char* SoundName(uint32_t sound) {
     if (sound >= g_view.sequence.soundCount)
@@ -207,7 +213,7 @@ static float CommandLength(const AUTH_Command* command) {
 }
 
 static const char* CommandText(const AUTH_Command* command) {
-    const char* id = IDText(Arg(command, 0));
+    const char* id = CharacterText(Arg(command, 0));
     switch (command->opcode) {
     case AUTH_COMMAND_START:
         return "Start";
@@ -225,7 +231,7 @@ static const char* CommandText(const AUTH_Command* command) {
     case AUTH_COMMAND_SOUND:
         if (command->argCount >= 9)
             return TextFormat("Sound %s %s 0x%08X to %s %.2f s", id, SoundName(Arg(command, 2)), Arg(command, 1),
-                IDText(Arg(command, 3)), AUTH_ArgFloat(command, 8));
+                CharacterText(Arg(command, 3)), AUTH_ArgFloat(command, 8));
         return TextFormat("Sound %s %s 0x%08X", id, SoundName(Arg(command, 2)), Arg(command, 1));
     default:
         return TextFormat("Command %u (%u arguments)", command->opcode, command->argCount);
@@ -234,7 +240,7 @@ static const char* CommandText(const AUTH_Command* command) {
 
 // What the command does, and to what: its character and its motion or sound, without the other arguments
 static const char* CommandName(const AUTH_Command* command) {
-    const char* id = IDText(Arg(command, 0));
+    const char* id = CharacterText(Arg(command, 0));
     switch (command->opcode) {
     case AUTH_COMMAND_START:
         return "Start";
@@ -255,7 +261,7 @@ static const char* CommandName(const AUTH_Command* command) {
     }
 }
 
-// The frame and the name of the commands; the ID of the characters
+// The frame and the name of the commands; the ID and the name of the characters
 static bool CreateLabels(void) {
     const AUTH_Sequence* sequence = &g_view.sequence;
     g_view.labels = malloc((sequence->commandCount + 1) * sizeof(*g_view.labels));
@@ -268,7 +274,7 @@ static bool CreateLabels(void) {
         snprintf(g_view.labels[i], AUTHVIEW_LABEL_SIZE, "%5u  %s", command->frame, CommandName(command));
     }
     for (uint32_t i = 0; i < sequence->characterCount; i++) {
-        snprintf(g_view.characterLabels[i], AUTHVIEW_LABEL_SIZE, "%s", sequence->characters[i].id);
+        snprintf(g_view.characterLabels[i], AUTHVIEW_LABEL_SIZE, "%s", GameDB_CharacterLabel(sequence->characters[i].id));
         g_view.shownCharacters[i] = true;
     }
     return true;
@@ -1161,7 +1167,7 @@ static void DrawCharacterLabels(Camera3D camera, Rectangle area, Font font, floa
         if (!Scene3D_ScreenPoint(camera, area, head, &point))
             continue;
 
-        const char* lines[3] = { character->id, CharacterSound(character->idValue), NULL };
+        const char* lines[3] = { GameDB_CharacterDisplay(character->id), CharacterSound(character->idValue), NULL };
         const AUTH_Command* motion = CharacterMotion(character->idValue);
         if (motion != NULL) {
             const char* name = MotionName(Arg(motion, 1));
@@ -1359,6 +1365,7 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
     const AUTHView_CharacterModel* characterModel = &g_view.characterModels[index];
     Properties_Text(properties, "ID", character->id);
     Properties_Hex(properties, "ID value", character->idValue);
+    GameDB_CharacterProperties(properties, character->id);
     if (HasMovement(character)) {
         Properties_Text(properties, "Model", characterModel->model >= 0 ? GetFileName(g_view.models[characterModel->model].path) :
             characterModel->source != NULL ? "invalid model file" : "not found");
@@ -1410,7 +1417,7 @@ static void DrawProperties(Rectangle bounds) {
     int current = CurrentCommand();
     if (g_view.selectedCharacter >= 0) {
         const AUTH_Character* character = &sequence->characters[g_view.selectedCharacter];
-        Properties_Begin(properties, bounds, TextFormat("Character %s", character->id));
+        Properties_Begin(properties, bounds, TextFormat("Character %s", GameDB_CharacterDisplay(character->id)));
         CharacterProperties(properties, (uint32_t)g_view.selectedCharacter);
     }
     else if (current >= 0) {
@@ -1462,13 +1469,21 @@ void AUTHView_Draw(Rectangle area) {
     DrawTextEx(font, status, (Vector2) { x, controls.y + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
 }
 
+// The cutscene of the mapinfo.bin and its map, if they are known, before the rest of the status
+static const char* CutsceneText(void) {
+    const GameDB_Map* map = GameDB_MapOfFile(g_view.mapinfoPath);
+    if (g_view.cutscene >= 0)
+        return map != NULL ? TextFormat("Cutscene %d of %s, ", g_view.cutscene, map->name) : TextFormat("Cutscene %d, ", g_view.cutscene);
+    return map != NULL ? TextFormat("%s, ", map->name) : "";
+}
+
 void AUTHView_Status(ViewStatus* status) {
     const AUTH_Sequence* sequence = &g_view.sequence;
     snprintf(status->file, sizeof(status->file), "%s", g_view.path);
     AUTHSounds_Info sounds;
     AUTHSounds_GetInfo(&sounds);
     snprintf(status->info, sizeof(status->info), "%s%s, %u characters, %u commands, voices %u/%u, effects %u/%u%s%s",
-        g_view.cutscene >= 0 ? TextFormat("Cutscene %d, ", g_view.cutscene) : "", FormatTime(Duration()), sequence->characterCount, sequence->commandCount, sounds.voices, sounds.voiceCommands, sounds.effects, sounds.effectCommands,
+        CutsceneText(), FormatTime(Duration()), sequence->characterCount, sequence->commandCount, sounds.voices, sounds.voiceCommands, sounds.effects, sounds.effectCommands,
         sounds.bank[0] != '\0' ? " in " : "", sounds.bank);
     if (g_options.cutsceneCamera)
         snprintf(status->hint, sizeof(status->hint), "Click the timeline: seek");

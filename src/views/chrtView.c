@@ -8,6 +8,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "raygui.h"
+#include "app/gameDB.h"
 #include "formats/script/chrt.h"
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
@@ -234,7 +235,7 @@ static void ComputeBounds(void) {
     g_view.radius = fmaxf(Vector3Distance(min, max) * 0.5f, 0.1f);
 }
 
-// The ID of each character
+// The ID and the name of each character
 static bool CreateLabels(void) {
     g_view.labels = malloc((g_view.characterCount + 1) * sizeof(*g_view.labels));
     g_view.shown = malloc((g_view.characterCount + 1) * sizeof(bool));
@@ -243,7 +244,7 @@ static bool CreateLabels(void) {
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
         const CHRTView_Character* character = &g_view.characters[i];
         g_view.shown[i] = true;
-        snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s", character->info.id);
+        snprintf(g_view.labels[i], CHRTVIEW_LABEL_SIZE, "%s", GameDB_CharacterLabel(character->info.id));
     }
     return true;
 }
@@ -425,7 +426,7 @@ void CHRTView_Toolbar(void) {
     if (Toolbar_Button(ICON_ARROW_DOWN_FILL, NULL, "Next character", TOOLBAR_REPEAT | KEY_TAB))
         SelectNext(1);
     Toolbar_Separator();
-    Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the IDs of the characters", KEY_L, &g_options.showLabels);
+    Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the names of the characters", KEY_L, &g_options.showLabels);
     bool sleeping = !g_options.hideSleeping;
     if (Toolbar_Toggle(ICON_EYE_ON, "Sleeping", "Show the sleeping characters", KEY_H, &sleeping))
         g_options.hideSleeping = !sleeping;
@@ -446,7 +447,7 @@ static void UpdateInput(Rectangle area) {
         g_view.frame++;
 }
 
-// ID of the characters, over the top of their model. A click on a label selects the character
+// Name of the characters (their ID if they have none), over the top of their model. A click on a label selects the character
 static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSize) {
     int32_t clicked = -1;
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
@@ -456,7 +457,8 @@ static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSiz
             !Scene3D_ScreenPoint(camera, area, Vector3Add(character->center, (Vector3) { 0.0f, character->radius, 0.0f }), &point))
             continue;
 
-        const char* text = character->info.sleep ? TextFormat("%s (sleep)", character->info.id) : character->info.id;
+        const char* name = GameDB_CharacterDisplay(character->info.id);
+        const char* text = character->info.sleep ? TextFormat("%s (sleep)", name) : name;
         Color color = (int32_t)i == g_view.selected ? YELLOW : character->info.sleep ? GRAY : LIGHTGRAY;
         Rectangle box = Scene3D_DrawLabel(point, text, font, fontSize, color);
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(GetMousePosition(), box))
@@ -480,8 +482,9 @@ static void DrawProperties(Rectangle bounds) {
     CHRTView_Character* character = &g_view.characters[g_view.selected];
     CHRT_Character* info = &character->info;
     const float* p = info->position;
-    Properties_Begin(properties, bounds, TextFormat("Character %s", info->id));
+    Properties_Begin(properties, bounds, TextFormat("Character %s", GameDB_CharacterDisplay(info->id)));
     Properties_Text(properties, "ID", info->id);
+    GameDB_CharacterProperties(properties, info->id);
     Properties_Text(properties, "Image", info->image != NULL ? info->image : "none");
     // The characters not positioned stay in their row
     bool changed = false;

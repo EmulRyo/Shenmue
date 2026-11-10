@@ -6,6 +6,8 @@ set(SRC
     src/app/fileOpen.h
     src/app/filenameDB.c
     src/app/filenameDB.h
+    src/app/gameDB.c
+    src/app/gameDB.h
     src/app/style.c
     src/app/style.h
     src/app/tadBatch.c

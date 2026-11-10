@@ -72,3 +72,5 @@ function(embed_resource file symbol)
 endfunction()
 
 embed_resource(FilenameDatabase.txt g_filenameDatabase)
+embed_resource(Shenmue1Characters.tsv g_shenmue1Characters)
+embed_resource(Shenmue1Maps.tsv g_shenmue1Maps)

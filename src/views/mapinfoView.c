@@ -9,6 +9,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "raygui.h"
+#include "app/gameDB.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/chrt.h"
 #include "render/mt5Render.h"
@@ -735,6 +736,9 @@ static const char* ScnText(uint32_t version) {
 
 static void AddInfoItems(void) {
     const MAPINFO_File* file = &g_view.file;
+    const GameDB_Map* map = GameDB_MapOfFile(g_view.filename);
+    if (map != NULL)
+        AddItem(ITEM_INFO, 0, map->area[0] != '\0' ? TextFormat("Map: %s (%s)", map->name, map->area) : TextFormat("Map: %s", map->name), false);
     const MAPINFO_Chunk* scn = MAPINFO_FindChunk(file, "SCN3");
     if (scn != NULL)
         AddItem(ITEM_INFO, 0, TextFormat("SCN3: %s (0x%X), 0x%X bytes", ScnText(file->scnVersion), file->scnVersion, scn->size), false);
@@ -803,22 +807,36 @@ static const char* FormatTime(float seconds) {
     return TextFormat("%d:%02d.%02d", centiseconds / 6000, centiseconds / 100 % 60, centiseconds % 100);
 }
 
+// The names of the characters of a cutscene (their ID for those without a name), separated by commas, up to max of
+// them (followed by "..." if it has more)
+static const char* CutsceneNames(const MapCutscene* cutscene, int max) {
+    static char names[MAPINFOVIEW_LABEL_SIZE * 2];
+    names[0] = '\0';
+    int length = 0, count = 0;
+    for (const char* id = cutscene->ids; *id != '\0' && length < (int)sizeof(names);) {
+        const char* end = strchr(id, ' ');
+        size_t size = end != NULL ? (size_t)(end - id) : strlen(id);
+        if (count == max) {
+            snprintf(names + length, sizeof(names) - length, ", ...");
+            break;
+        }
+        char text[16];
+        snprintf(text, sizeof(text), "%.*s", (int)size, id);
+        length += snprintf(names + length, sizeof(names) - length, "%s%s", count > 0 ? ", " : "", GameDB_CharacterDisplay(text));
+        count++;
+        id += size;
+        while (*id == ' ')
+            id++;
+    }
+    return names;
+}
+
 // Its number and up to MAPINFOVIEW_CUTSCENE_IDS of its characters
 static const char* CutsceneText(uint32_t index) {
     const MapCutscene* cutscene = &g_view.cutscenes[index];
     if (!cutscene->valid)
         return TextFormat("%3u  empty", index);
-    char ids[MAPINFOVIEW_LABEL_SIZE];
-    snprintf(ids, sizeof(ids), "%s", cutscene->ids);
-    char* end = ids;
-    for (int i = 0; i < MAPINFOVIEW_CUTSCENE_IDS && end != NULL; i++) {
-        end = strchr(end, ' ');
-        if (end != NULL && i + 1 < MAPINFOVIEW_CUTSCENE_IDS)
-            end++;
-    }
-    if (end != NULL)
-        snprintf(end, sizeof(ids) - (end - ids), " ...");
-    return TextFormat("%3u  %s", index, ids);
+    return TextFormat("%3u  %s", index, CutsceneNames(cutscene, MAPINFOVIEW_CUTSCENE_IDS));
 }
 
 // The items of each kind, in ItemKind order
@@ -861,7 +879,7 @@ static bool CreateItems(void) {
         AddItem(ITEM_SHAPE, i, TextFormat("%u  %s", i, ShapeType(&file->shapes[i])), false);
     g_view.firstItems[ITEM_CHARACTER] = g_view.itemCount;
     for (uint32_t i = 0; i < g_view.characterCount; i++)
-        AddItem(ITEM_CHARACTER, i, g_view.characters[i].info.id, g_view.characters[i].error != NULL);
+        AddItem(ITEM_CHARACTER, i, GameDB_CharacterLabel(g_view.characters[i].info.id), g_view.characters[i].error != NULL);
     g_view.firstItems[ITEM_CUTSCENE] = g_view.itemCount;
     for (uint32_t i = 0; i < file->cutsceneCount; i++)
         AddItem(ITEM_CUTSCENE, i, CutsceneText(i), false);
@@ -1053,7 +1071,7 @@ void MAPINFOView_Toolbar(void) {
     }
     GuiEnable();
     Toolbar_Separator();
-    Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the IDs of the characters and of the cameras", KEY_L, &g_options.labels);
+    Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the names of the characters and the IDs of the cameras", KEY_L, &g_options.labels);
     Toolbar_Separator();
     if (!IsAnyEdited())
         GuiDisable();
@@ -1232,7 +1250,7 @@ static void DrawLabel(Camera3D camera, Rectangle area, Font font, float fontSize
         Scene3D_DrawLabel(point, text, font, fontSize, color);
 }
 
-// IDs of the visible characters and cameras, and of the selected ones
+// Names of the visible characters (their ID if they have none) and IDs of the cameras, and of the selected ones
 static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSize) {
     const MAPINFO_File* file = &g_view.file;
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
@@ -1241,7 +1259,7 @@ static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSiz
         bool visible = g_options.layers[LAYER_CHARACTERS] && g_view.characters[i].shown && IsItemVisible(ITEM_CHARACTER, i);
         if (character->positioned && (visible || selected))
             DrawLabel(camera, area, font, fontSize, Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT + 0.1f, 0.0f }),
-                character->id, selected ? g_selectedColor : character->sleep ? GRAY : g_characterColor);
+                GameDB_CharacterDisplay(character->id), selected ? g_selectedColor : character->sleep ? GRAY : g_characterColor);
     }
     for (uint32_t i = 0; i < file->cameraCount && !g_view.mapCamera; i++) {
         bool selected = &file->cameras[i] == SelectedCamera();
@@ -1349,7 +1367,13 @@ static const char* g_cameraCurves[AUTH_CAMERA_CURVES] = { "X", "Y", "Z", "Target
 // The chunks of the file, when nothing is selected
 static void FileProperties(Properties* properties) {
     const MAPINFO_File* file = &g_view.file;
+    const GameDB_Map* map = GameDB_MapOfFile(g_view.filename);
     Properties_Note(properties, "Select an item of the tree");
+    if (map != NULL) {
+        Properties_Text(properties, "Map", map->name);
+        if (map->area[0] != '\0')
+            Properties_Text(properties, "Area", map->area);
+    }
     Properties_Section(properties, TextFormat("%u chunks", file->chunkCount));
     for (uint32_t i = 0; i < file->chunkCount; i++)
         Properties_Text(properties, file->chunks[i].id, TextFormat("0x%X bytes at 0x%X", file->chunks[i].size, file->chunks[i].offset));
@@ -1449,6 +1473,7 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
     CHRT_Character* info = &character->info;
     const char* package = PackageName(character->package);
     Properties_Text(properties, "ID", info->id);
+    GameDB_CharacterProperties(properties, info->id);
     Properties_Text(properties, "Package", package != NULL ? package : "CHRD chunk");
     Properties_Text(properties, "Image", info->image != NULL ? info->image : "none");
     bool changed = false;
@@ -1484,6 +1509,7 @@ static void CutsceneProperties(Properties* properties, uint32_t index) {
     Properties_Text(properties, "Duration", TextFormat("%s (%u frames)", FormatTime(cutscene->duration / AUTH_FRAME_RATE), cutscene->duration));
     Properties_Int(properties, "Characters", cutscene->characterCount);
     Properties_Text(properties, "IDs", cutscene->ids);
+    Properties_Text(properties, "Names", CutsceneNames(cutscene, INT32_MAX));
     Properties_Int(properties, "Commands", cutscene->commandCount);
     Properties_Int(properties, "Motions", cutscene->motions);
     Properties_Int(properties, "Voices", cutscene->voices);
@@ -1524,7 +1550,7 @@ static void DrawProperties(Rectangle bounds) {
         ModelProperties(properties, &g_view.models[item->index]);
         break;
     case ITEM_CHARACTER:
-        Properties_Begin(properties, bounds, TextFormat("Character %s", g_view.characters[item->index].info.id));
+        Properties_Begin(properties, bounds, TextFormat("Character %s", GameDB_CharacterDisplay(g_view.characters[item->index].info.id)));
         CharacterProperties(properties, item->index);
         break;
     case ITEM_CUTSCENE:
