@@ -1,0 +1,61 @@
+id	ipac	scenes	name	area	notes
+ARAR		02,03	Asia Travel Company	Dobuita	ALL Ticket Cutscene
+BETD		01,02,03	Hazuki Residence Exterior	Yamanose	Bad Ending (Disc 3)
+D000		01,02,03	Dobuita	Dobuita	00 = Bus; 01 = Road by Nagai Industries; 02 = Road by You Arcade
+DAZA		01,02	Asia Travel Company	Dobuita	Unknown duplicate
+DBHB		01,02,03	Heartbeats Bar	Dobuita	
+DBYO		01,02,03	Bar Yokosuka	Dobuita	
+DCBN		01,02,03	Tomato Convenience Store	Dobuita	
+DCHA		01,02,03	Ajiichi Chinese Restaurant	Dobuita	
+DGCT		01,02,03	YOU Arcade	Dobuita	
+DHQB		01	Heartbeats Bar	Dobuita	Unknown duplicate
+DJAZ		01,02,03	MJQ Jazz Bar	Dobuita	
+DKPA		01,02,03	Nana's Karaoke Bar	Dobuita	
+DKTY		01,02,03	Antique Shop	Dobuita	
+DMAJ		01,02,03	Daisangen Mahjong Parlor	Dobuita	00 = Normal Entry
+DNOZ		01,02	Sakuragaoka	Sakuragaoka	Unknown duplicate
+DPIZ		01,02,03	Bob's Pizzeria	Dobuita	
+DRHT		01,02,03	Liu's Barber and Hair Salon	Dobuita	
+DRME		01,02,03	Manpukuken Ramen	Dobuita	
+DRSA		01,02,03	Russiya China Shop	Dobuita	
+DSBA		01,02,03	Yamaji Soba Noodles	Dobuita	
+DSKI		01,02,03	Global Travel Agency	Dobuita	
+DSLI		01,02,03	Bar Linda	Dobuita	
+DSLT		01,02,03	Slot House	Dobuita	
+DSUS		01,02,03	Takara Sushi	Dobuita	
+DTKY		01,02,03	Maeda Barber Shop	Dobuita	
+DURN		01,02,03	Lapis Fortune Teller	Dobuita	
+DYKZ		01,02,03	Nagai Industries	Dobuita	
+GMCT		02	YOU Arcade	Dobuita	Unknown duplicate
+JABE		01,02,03	Abe Store Candy Shop	Sakuragaoka	
+JD00		01,02,03	Sakuragaoka	Sakuragaoka	
+JD99		01	Sakuragaoka (BETA 0.4)	Sakuragaoka	
+JHD0		01,02,03	Hazuki Residence Exterior	Hazuki Residence	
+JOMO		01,02,03	Hazuki Residence Interior	Hazuki Residence	
+JU00		01,02,03	Yamanose	Yamanose	
+JU99		01	Yamanose (BETA 0.4)	Yamanose	
+M3FB		03	Harbor - Mad Angels on Forklift Box Ambush Cutscene	Harbor	01 - Guy on Box Cutscene
+MA00		03	Harbor (Forklift Race + 1st Day of Job)	Harbor	99 - Forklift Race
+MB9Q		03	UNKNOWN (Cutscene?)		01 - Crashes with Black Screen
+MBQC		03	UNKNOWN (Cutscene?)		01 - Crashes with Black Screen
+MC5Q		03	Harbor - Shadow Step Cutscene	Harbor	01 - Black Screen
+MEND		03	Harbor (Fight Scene With Chai + Ending)	Harbor	
+MFBT		03	Harbor - (70 Man Battle Area)	Harbor	99 - 70 Man Battle
+MFSY		02,03	Harbor (Main Playable Area)	Harbor	99 = Floating Above Ocean
+MFSY	ALPHA	02,03	Alpha Trading Office	Harbor	
+MFSY	SHOKUDO	02,03	Harbor Cafeteria	Harbor	
+MK99		01	Old Warehouse District (BETA 0.4)	Harbor	
+MKSG		02,03	Old Warehouse District	Harbor	
+MKYU		02,03	Harbor Lounge	Harbor	
+MO99		01	Warehouse No. 8	Harbor	Unknown duplicate
+MS08		02,03	Warehouse No. 8	Harbor	
+MS8A		02	Warehouse No. 8	Harbor	Unknown duplicate
+MS8S		02	Warehouse No. 8	Harbor	Unknown duplicate
+MSBS		03	Hazuki Residence Exterior	Yamanose	00 = Scene with Ryo praying in Dojo, sees Iwao with Sword. Then goes onto random cutscenes
+OP00		01	Hazuki Residence - Intro cutscenes	Cutscene	
+TATQ		01,02,03	Tattoo Parlor	Dobuita	
+TERY		03	New Yokosuka Harbor	Harbor	Unknown duplicate, possibly related to the bike part
+TOKI		01,02	Russiya China Shop	Dobuita	Unknown duplicate
+YDB1		02,03	Hazuki Residence Basement	Hazuki Residence	
+YDMA		03	Hazuki Residence Exterior	Yamanose	00 = Ryo leaves Residence with backpack (ending)
+YQ14		01	Heartbeats Bar Exterior Alley QTE	Dobuita	

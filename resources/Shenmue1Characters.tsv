@@ -1,0 +1,388 @@
+id	model	name	jpname	area	place	maps	scenes	wiki
+AKMI	HOS_L	Akemi Sato	明美	Dobuita	Bar Yokosuka	D000,DBYO	01,02,03	http://shenmue.neoseeker.com/wiki/Akemi_Sato
+ISDA	JMC_L	Akihiro Ishida	商社マン	Harbor	Outside Worker	MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Akihiro_Ishida
+	NVC_S	Akihisa Shigematsu		Harbor	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels#Mad_Angels_Members
+TKNB	PAN_L	Akihito Anzai	中年男Ｃ	Dobuita	Residence	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Akihito_Anzai
+HDEI	SGN_L	Akiim Chant	東南アジア系作業員	Harbor	Outside Worker	MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Akiim_Chant
+ENKI	YAA_L	Akio Enoki	榎	Dobuita	Outside Gang Leader	D000,JD00	01,02,03	http://shenmue.neoseeker.com/wiki/Akio_Enoki
+	NBQ_S	Akira Fujiwara		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+NGAI	ZZE_L	Akira Nagai	永井	Dobuita	Nagai Industries	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Akira_Nagai
+SATO	OYB_L	Arihiro Sato	中年男Ｂ	Dobuita	Residence	D000,MFBT	01,02,03	http://shenmue.neoseeker.com/wiki/Arihiro_Sato
+	CVO_S	Atsushi Kuwata		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+FLD7	FLG_L	Atsushi Sayama	フォーク作業員	Dobuita	Forklift Operator	MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Atsushi_Sayama
+KYMA	SHE_L	Azusa Kayama	梓	Harbor	Alpha Trading Office	MFSY	02,03	http://shenmue.neoseeker.com/wiki/Azusa_Kayama
+BOB_	BOB_L	Bob Dickson	外人	Harbor	70 Man Battle	DJAZ,M3FB,MA00	01,02,03	http://shenmue.neoseeker.com/wiki/Bob_Dickson
+ITOI	WAP_L	Bukichi Itoi	糸井	Dobuita	Mary's Patches and Embrodiery	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Bukichi_Itoi
+CATC	CT3_M	Cat (black)				MFSY	02,03	
+KYAS	KYS_L	Cathy Wilkins	外人	Dobuita	Walking Around	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Cathy_Wilkins
+CATA	CT5_M	Cat (white)				D000,JU00	01,02,03	
+CATB	CT4_M	Cat (yellow)				D000	01,02,03	
+CHAI	CHA_M	Chai		Cutscene	N/A	DURN,GMCT,JD00,MC5Q,MEND,MS8A,TERY	01,02,03	http://shenmue.neoseeker.com/wiki/Chai
+CHRL	BIK_L	Charlie Grant		Cutscenes	Tatoo Parlor	DURN,JD00,MBQC,MFSY,TATQ,TERY	01,02,03	http://shenmue.neoseeker.com/wiki/Charlie_Grant
+KISY	KIS_M	Chen Gui Zhang	貴章	Harbor	Old Warehouse #8	D000,JD00,JHD0,MEND,MFBT,MFSY,MK80,MS08,MS8A	01,02,03	http://shenmue.neoseeker.com/wiki/Guizhang_Chen
+	NVP_S	Daisuke Joujima		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Daisuke_Joujima
+	CVB_S	Daisuke Ono		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+DICK	GIA_L	Dick Philips		Dobuita	Drunk Wanderer	D000,DURN,M3FB,MA00,MB9Q	01,02,03	http://shenmue.neoseeker.com/wiki/Dick_Philips
+DOGA	DG2_M	Dog (brown)				D000	01,02,03	
+DOGB	DG3_M	Dog (white)				MA00,MFSY	02,03	
+	BTO_L	Eiji Tonomura		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+EIKK	HPX_L	Eiko Kusano	若い女	Dobuita	Residence	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Eiko_Kusano
+TJMA	RFD_L	Eri Tajima	絵梨	Dobuita	Walking Around	D000,MFSY	01,02,03	http://shenmue.neoseeker.com/wiki/Eri_Tajima
+ETKO	JOJ_M	Etsuko Sekine	エツ子	Dobuita	Asia Travel Co.	ARAR,D000,DAZA	01,02,03	http://shenmue.neoseeker.com/wiki/Etsuko_Sekine
+	NVH_S	Fumihiko Hotei		Dobuita	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+	CVP_S	Fumio Ebina		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+KOND	X77_L	Fusako Kondo	近藤	Sakuragaoka	Gossip Outside Phone Booth	D000,JD00	01,02,03	http://shenmue.neoseeker.com/wiki/Fusako_Kondo
+MISM	KYF_L	Fusayo Mishima	三島	Sakuragaoka	Residence	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Fusayo_Mishima
+YJJI	YEF_L	Genzo Todaka	老人	Dobuita	Residence	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Genzo_Todaka
+	NVQ_S	Gichi Imachi		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Gichi_Imachi
+GJHM	HJW_L	Gilbert Flakes	ギルバート	Dobuita	MJQ Jazz Bar Pool	D000,DJAZ	01,02,03	http://shenmue.neoseeker.com/wiki/Gilbert_Flakes
+GORO	KMB_L	Goro Mihashi	ゴロー	Harbor	Yo Bro!	DURN,MA00,MFSY,YD8S	01,02,03	http://shenmue.neoseeker.com/wiki/Goro_Mihashi
+ONO_	ONO_L	Goro Ono	小野	Dobuita	Knocking Motorcycle Shop	D000,YDB1	01,02,03	http://shenmue.neoseeker.com/wiki/Goro_Ono
+	NVL_S	Goshi Uchiyama		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Goshi_Uchiyama
+	CVZ_S	Hajime Sato Jin		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+HARY	GIE_L	Harry Thompson	ハリー	Harbor	Mad Angels	D000,DHQB,M3FB,MB9Q	01,03	http://shenmue.neoseeker.com/wiki/Harry_Thompson
+HREO	HPI_L	Harue Okuno	若い女	Dobuita	Hattori Sporting Goods (Shopping)	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Harue_Okuno
+HIRA	TUB_L	Haru Hirata	はる	Dobuita	Hirata Tobacco Shop Kiosk	D000,DURN	01,02,03	http://shenmue.neoseeker.com/wiki/Haru_Hirata
+ASNO	SGA_L	Haruo Asano	浅野	Harbor		MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Haruo_Asano
+HMRO	BTM_L	Hidekazu Himuro				DURN	01,02,03	
+EIIU	YWT_M	Hidekazu Yukawa				DSUS	01,02,03	
+HIDE	TJH_L	Hideki Tajima	男の子			D000,JD00	01,02,03	http://shenmue.neoseeker.com/wiki/Hideki_Tajima
+SKGK	SOU_L	Hideo Shiga	作業員	Harbor		MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Hideo_Shiga
+TAKE	ZZC_L	Hiroaki Takeuchi	竹内	Harbor	Forklift Worker	MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Hiroaki_Takeuchi
+HROT	HPD_L	Hiroko Tahashi	若い女			D000	01,02,03	http://shenmue.neoseeker.com/wiki/Hiroko_Tahashi
+FLD1	FLA_L	Hiromasa Ono	大野	Harbor	Forklift Worker	MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Hiromasa_Ono
+KOMN	KMN_L	Hiromi Komine	小峯	Dobuita	Komine Bakery	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Hiromi_Komine
+	NVG_S	Hironobu Kikuchi						
+KWMT	NPB_L	Hiroshi Kawamoto	若い男	Harbor		D000,OP00	01,02,03	http://shenmue.neoseeker.com/wiki/Hiroshi_Kawamoto
+MURI	FSC_L	Hiroshi Murai	村井	Harbor	Fisherman	MFSY	02,03	
+	NBR_S	Hiroshi Sakiyama						http://shenmue.neoseeker.com/wiki/Hiroshi_Sakiyama
+FLD9	SGF_L	Hiroshi Sugiyama	杉山	Harbor	Forklift Worker	MFSY	02,03	http://shenmue.neoseeker.com/wiki/Hiroshi_Sugiyama
+ASOU	ASO_L	Hiroshi Tamura	田村	Dobuita	Tamura's Butcher	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Hiroshi_Tamura
+NMKI	SGC_L	Hiroshi Ueda	上田	Harbor		MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Hiroshi_Ueda
+KEBD	KVD_L	Hirotaka Chiba	千葉	Harbor		MFSY,MKSG	02,03	http://shenmue.neoseeker.com/wiki/Hirotaka_Chiba
+	NBG_S	Hiroyuki Kiba						
+HRKO	ORI_L	Hiroyuki Orihara	折原	Dobuita	Bar Linda	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Hiroyuki_Orihara
+HISA	FRO_L	Hisaka Sawano	ひさか	Harbor	Hokuhoku Lunches' Stand	D000,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Hisaka_Sawano
+HTSK	SAB_L	Hitoshi Kai	甲斐	Harbor		MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Hitoshi_Kai
+HTSI	SGH_L	Hitoshi Numakubo	沼久保	Harbor	Forklift Worker	MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Hitoshi_Numakubo
+GJBF	HWB_L	Honey Jackson	ハニー	Dobuita/Harbor	Tom's Hotdogs	D000,MA00,MFSY	01,02,03	http://shenmue.neoseeker.com/wiki/Honey_Jackson
+MADA	TOK_L	Ichiro Maeda	前田	Dobuita	Maeda's Barbershop	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Ichiro_Maeda
+SKRD	NKK_L	Ichiro Sakurada	桜田	Yamanose	Residence	D000,JOMO	01,02,03	http://shenmue.neoseeker.com/wiki/Ichiro_Sakurada
+	CVU_S	Ichiro Tano		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+INE_	INE_M	Ine Hayata	稲	Hazuki Residence	Hazuki Residence	JHD0,JOMO,OP00,YDMA	01,02,03	http://shenmue.neoseeker.com/wiki/Ine
+	NBM_S	Isao Terashima		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+IWAO	IWA_M	Iwao Hazuki		Cutscene	N/A	JHD0,JOMO,MSBS,OP00,YD01	01,02,03	http://shenmue.neoseeker.com/wiki/Iwao_Hazuki
+SNGA	JME_L	Izumi Sunaga	須永	Dobuita	Alpha Trading Office (Sips Coffee with Person by Old Warehouse District)	MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Izumi_Sunaga
+	NVU_S	Jack Nickinen		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+	NVJ_S	Jake Lambert		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Jake_Lambert
+JIMY	JIM_M	Jimmy Yan		Cutscene	Asia Travel Co.	ARAR,D000,GMCT	02,03	http://shenmue.neoseeker.com/wiki/Jimmy_Yan
+	NVD_S	Jin Kano						
+JOE_	JOE_L	Jo Higuchi	樋口			D000,MA00,MFSY	01,02,03	http://shenmue.neoseeker.com/wiki/Jou_Higuchi
+JONZ	GIF_L	Jones Henders	ジョーンズ			D000,DBHB,DHQB,M3FB,MB9Q	01,02,03	
+NMTO	FRA_L	Junichiro Nemoto	根本	Dobuita	Smiley Flower Shop	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Junichiro_Nemoto
+JUKY	YAM_L	Junko Yamamoto	順子	Dobuita	Manpukuken Ramen	D000,JABE	01,02,03	http://shenmue.neoseeker.com/wiki/Junko_Yamamoto
+	NBA_S	Kaido Akimichi Kunieda						http://shenmue.neoseeker.com/wiki/Akimichi_Kunieda
+	MTB_L	Kaido Rin						
+KAME	FUU_L	Kame Shibukawa	渋川	Sakuragaoka	Lady looking for Yamamoto's House	D000,JD00	01,02,03	http://shenmue.neoseeker.com/wiki/Kame_Shibukawa
+	CVY_S	Kaname Honjo						
+TKHS	THK_L	Kaoru Takahashi	女の子			D000,JD00	01,02,03	http://shenmue.neoseeker.com/wiki/Kaoru_Takahashi
+BSJM	BTK_L	Katsutoshi Busujima			Mad Angels			http://shenmue.neoseeker.com/wiki/Katsutoshi_Busujima
+KAYO	KYK_L	Kayoko Ito	佳代子			D000,JU00	01,02,03	http://shenmue.neoseeker.com/wiki/Kayoko_Ito
+	NBB_S	Kazuhiro Ino						
+	NVI_S	Kazuki Goya						
+MNWA	MIR_L	Kazumi Minowa	チンピラ			ARAR,MA00,MFSY	02,03	http://shenmue.neoseeker.com/wiki/Kazumi_Minowa
+AKSK	JEA_L	Kazuo Akasaka	赤坂	Dobuita	Water Dragon 2 Thrift Store	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Kazuo_Akasaka
+NRSK	NRS_L	Kazuomi Narasaki	釣り人	Harbor	Fisherman (Generic voice)	MFSY	02,03	http://shenmue.neoseeker.com/wiki/Kazuomi_Narasaki
+	BTF_L	Kazushi Shoji		70 Man Battle				http://shenmue.neoseeker.com/wiki/Kazushi_Shoji
+TAGW	DRV_L	Kazuyuki Tagawa	作業員	Harbor		MFSY	02,03	http://shenmue.neoseeker.com/wiki/Kazuyuki_Tagawa
+	NBF_S	Kei Yamashita						http://shenmue.neoseeker.com/wiki/Kei_Yamashita
+OISI	KOT_L	Keizo Oishi	大石	Dobuita	Bunkado Antique Shop	D000,DKTY	01,02,03	http://shenmue.neoseeker.com/wiki/Keizo_Oishi
+	NBK_S	Kengo Kamijo						http://shenmue.neoseeker.com/wiki/Kengo_Kamijo
+	CVW_S	Kenichi Okabayashi						
+KNJI	GKA_L	Kenji Aoyama	男の子			D000	01,02,03	http://shenmue.neoseeker.com/wiki/Kenji_Aoyama
+KENI	BCA_L	Kenta Iwasaki	男の子			D000	01,02,03	http://shenmue.neoseeker.com/wiki/Kenta_Iwasaki
+	NBO_S	Kentaro Sekizaki						
+SIMZ	SVB_L	Kenta Shimizu	清水	Harbor		MFSY	02,03	http://shenmue.neoseeker.com/wiki/Kenta_Shimizu
+UDGW	WDB_L	Kimie Udagawa	君枝	Dobuita	Water Dragon 2 Thrift Store	D000,JD00	01,02,03	http://shenmue.neoseeker.com/wiki/Kimie_Udagawa
+	NBC_S	Kiminari Misawa						http://shenmue.neoseeker.com/wiki/Kiminari_Misawa
+KIM_	KIM_L	Kim Shihan	釣り人	Harbor	Fisherman (Generic voice)	MFSY	02,03	
+FKSM	FKS_L	Kinuyo Sawano	絹代	Dobuita	Hokuhoku Lunches	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Kinuyo_Sawano
+MYKN	KRN_L	Kirino Matsuyama	霧乃	Dobuita	Slot House	D000,DSLT	01,02,03	http://shenmue.neoseeker.com/wiki/Kirino_Matsuyama
+CATM	KC1_M	Kitten			Yamanose Shrine	JD00,JU00	01,02,03	
+KYSN	OYA_L	Kiyoshi Nishida	中年男Ｂ			D000	01,02,03	http://shenmue.neoseeker.com/wiki/Kiyoshi_Nishida
+SOBA	SBY_L	Kiyoshi Yamanaka	山中	Dobuita	Yamaji Soba Noodles	D000,DSBA	01,02,03	http://shenmue.neoseeker.com/wiki/Kiyoshi_Yamanaka
+FLD5	FLE_L	Koichi Tsuda	フォーク作業員	Harbor		MFSY	02,03	http://shenmue.neoseeker.com/wiki/Koichi_Tsuda
+KJHS	TPL_L	Koji Hase	浩司	Dobuita	Nagai Industries	ARAR,D000	01,02,03	http://shenmue.neoseeker.com/wiki/Kouji_Hase
+KJIY	BIB_L	Koji Yabe	矢部	Dobuita	Biker, You Arcade	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Koji_Yabe
+	NBH_S	Ko Muratani						http://shenmue.neoseeker.com/wiki/Ko_Muratani
+	CVE_S	Kosaku Noda						http://shenmue.neoseeker.com/wiki/Kosaku_Noda
+JONO	YPB_L	Kosaku Shirono	高島	Dobuita	Generic drunk	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Kosaku_Shirono
+	CVD_S	Kosuke Saito						http://shenmue.neoseeker.com/wiki/Kosuke_Saito
+KOTA	KTA_L	Kota Mitsui	広太			D000,JD00,JU00	01,02,03	http://shenmue.neoseeker.com/wiki/Kota_Mitsui
+KTRO	SMK_L	Kotaro Sumiya	男の子			D000,JD00	01,02,03	http://shenmue.neoseeker.com/wiki/Kotaro_Sumiya
+	CVL_S	Kyoichiro Konno						http://shenmue.neoseeker.com/wiki/Kyoichiro_Konno
+KYOH	KHY_L	Kyoko Hayashi	京子	Dobuita	Bar Linda	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Kyoko_Hayashi
+KUKT	HPY_L	Kyoko Takai	若い女	Harbor		D000	01,02,03	http://shenmue.neoseeker.com/wiki/Kyoko_Takai
+FLDG	FLP_L	Kyosuke Hatanaka	フォーク作業員	Harbor		MA00,MFSY	02,03	
+KKEN	NZG_L	Kyosuke Nishida				JD00	01	http://shenmue.neoseeker.com/wiki/Kyosuke_Nishida
+SORY	KOK_M	Lan Di		Cutscene	N/A	BETD,JOMO,MEND,OP00	01,02,03	http://shenmue.neoseeker.com/wiki/LanDi
+RYBI	RED_L	Lidia Bennett	外人	Dobuita	Walking Around	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Lidia_Bennett
+SINF	SIN_M	Ling Sha Hua		Cutscene	N/A	DURN,JOMO,MEND,OP02,TOKI	01,02,03	http://shenmue.neoseeker.com/wiki/Shenhua_Ling
+RINS	RSS_L	Lin Xiang Xuan	老人			D000	01,02,03	http://shenmue.neoseeker.com/wiki/Xiangxuan_Lin
+ONRR	ONL_L	Liu En Ling	恩鈴	Dobuita	Liu Barber and Hair Salon	D000,DCHA,DRHT	01,02,03	http://shenmue.neoseeker.com/wiki/Enling_Liu
+RKKI	X32_L	Liu Gong Hui	公恵			D000,DURN,JD00,JU00	01,02,03	http://shenmue.neoseeker.com/wiki/Gonghui_Liu
+KYUR	KUU_L	Liu Ji You	紀佑	Dobuita	Liu Barber and Hair Salon	D000,DCHA,DRHT	01,02,03	http://shenmue.neoseeker.com/wiki/Jiyou_Liu
+CMAL	CMA_L	Lu Tang Chen	呂			D000	01,02,03	
+HINA	MIB_L	Mai Sawano				MFSY	02,03	
+	CVH_S	Makoto Kanamori						
+	NVK_S	Makoto Ogishima						
+	BTC_L	Makoto Ojima						
+HATR	HTR_L	Mamoru Hattori	服部	Dobuita	Hattori Sporting Goods	D000	01,02,03	
+TAKI	ZZA_L	Manabu Takimoto	中年男Ｄ			D000	01,02,03	
+KURA	BLA_M	Man in black A		Cutscene	N/A	BETD,OP00	01,02,03	
+KURB	BLB_M	Man in black B		Cutscene	N/A	MEND,OP00	01,03	
+MRIG	MAL_L	Mario Grianni	マリオ	Dobuita	Bob's Pizzeria	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Mario_Grianni
+MEYS	KAO_L	Mari Yamashita	山下	Harbor	Tomato Convenience Store/Harbor Lounge	MFSY,MKYU	02,03	
+MARK	GIC_L	Mark Kimberly	マーク	Harbor	Forklift Driving	DBHB,DURN,MA00,MFSY	01,02,03	
+KURT	SGL_L	Masahiro Kurata	作業員	Harbor		MFSY	02,03	
+	CVC_S	Masamune Tokuda						
+MASR	BGA_L	Masaru Aoi	勝	Dobuita	Yaokatsu Produce	D000,DXMS	01,02,03	
+	CVT_S	Masashi Yoneda						
+	NBD_S	Masato Wada						
+	CVA_S	Masaya Tokumitsu						
+FUKU	FUK_M	Masayuki Fukuhara	福原	Hazuki Residence	Hazuki Dojo	BETD,GMCT,JHD0,JOMO,MEND,OP00,YDB1,YDMA	01,02,03	http://shenmue.neoseeker.com/wiki/Fukuhara_Masayuki
+TAIJ	SYU_M	Master Chen		Cutscene	Old Warehouse #8	D000,JHD0,MEND,MFSY,MS08,MS8A	01,02,03	
+MAYM	SIB_L	Mayumi Mishima	まゆみ	Dobuita	Residence	D000,JD00	01,02,03	
+MEGM	SIA_L	Megumi Mishima	恵	Yamanose	Yamanose Shrine	D000,JU00	01,02,03	
+YOB2	YED_L	Michiko Miyoshi	中年女			D000	01,02,03	
+IZWA	FRG_L	Midori Aizawa	碧	Dobuita	Water Dragon Thrift Store	D000	01,02,03	
+MIHO	MIH_L	Miho Sagawa	女			D000,MA00,MFSY	01,02,03	
+MIKI	SHB_L	Miki Maeda	ミキ			D000	01,02,03	
+HRNO	HPF_L	Minako Hirano	美奈子	Dobuita	Tomato Convenience Store	D000,DCBN	01,02,03	http://shenmue.neoseeker.com/wiki/Minako_Hirano
+MRUA	ASD_L	Minoru Asada	浅田			D000	01,02,03	
+OKYS	OKA_L	Minoru Okayasu	チンピラ			DURN,JD00,MFSY,TERY	01,02,03	
+NOMR	NMR_L	Mitsugu Nomura	野村	Sakuragaoka	Near the taxi	D000	01,02,03	
+FLD8	FLH_L	Mitsuharu Koda	フォーク作業員	Harbor		MFSY	02,03	
+MTUR	MTK_L	Mitsuko Mitsura	若い女			D000	01,02,03	
+MTRI	YPA_L	Mitsuru Iwata	高島			D000,DBYO	01,02,03	
+MTUK	MRU_L	Mitsuru Kumeta	久米田	Dobuita	Takara Sushi	D000	01,02,03	
+KEBI	KVI_L	Mitsuyoshi Muta	牟田	Harbor		MA00,MFSY	02,03	
+MORN	SGM_L	Mohamad Hassan	東南アジア系作業員			MA00,MFSY	02,03	
+	CVR_S	Motohiro Anzai						
+AOKI	BUR_L	Motoyuki Aoki	青木	Dobuita	Funny Bear Burgers	D000	01,02,03	
+NANS	NAN_L	Nanako Shinohara	奈々子	Dobuita	Nana's Karaoke Bar	D000	01,02,03	
+SAGA	SAG_L	Naoki Shoji	庄司	Harbor		MFSY	02,03	
+	BTN_L	Naomichi Aizawa						
+TMNY	YAC_L	Naomichi Tsukamoto				D000	01	
+FLDC	FLL_L	Naomi Koshiba	フォーク作業員	Harbor		MFSY	02,03	
+ITOH	RFB_L	Naoyuki Ito	伊藤	Sakuragaoka	Residence	D000,FBGG,JD00,JOMO	01,02,03	
+SUMI	SMY_L	Natsuki Sumiya	住谷	Sakuragaoka		D000	01,02,03	
+NAMS	NAT_L	Natsumi Sakuragi				DURN	01,02,03	
+NAKA	SGB_L	Noboru Nakatani	作業員	Harbor		MA00,MFSY	02,03	
+	BTH_L	Norihiko Kazuhara						
+NORK	SHA_L	Noriko Nakamura	紀子			D000	01,02,03	
+TURU	SCA_L	Noriyuki Tsuruoka	鶴岡	Dobuita	Jupitor's Jackets	D000	01,02,03	
+HRSK	NZM_M	Nozomi Harasaki	原崎	Dobuita	Aida Florist	D000,DNOZ,JD00,JU00,MEND,MFSY,NBIK,TERY	01,02,03	
+YOS2	YEB_L	Osamu Murakawa	中年男Ｄ			D000	01,02,03	
+FLD2	FLB_L	Osamu Ushio	フォーク作業員	Harbor		MA00,MFSY	02,03	
+PAUR	PAL_L	Paulo McCoy				M3FB,MA00	03	
+PEDR	JNC_L	Pedro Warren				MA00,MFBT,TERY	03	
+ISYM	SHY_L	Rena Isayama	伊佐山			D000,MFSY	01,02,03	
+RIKA	GKB_L	Rika Sato	女の子			D000,JU00	01,02,03	
+SNDO	BGM_L	Rikiya Shindo	チンピラ			MFSY	02,03	
+RBRT	GID_L	Robert Wells	ロバート			DJAZ,DURN,M3FB,MA00,MB9Q	01,02,03	
+	NVB_S	Roy Miller						
+YOB1	YEC_L	Rumiko Ishiwatari	中年女			D000	01,02,03	
+AKIR	AAA_M	Ryo Hazuki		Player	Player	0000,ARAR,BETD,D000,DAZA,DBHB,DBYO,DCBN,DCHA,DGCT,DHQB,DJAZ,DKPA,DKTY,DMAJ,DNOZ,DOOR,DPIZ,DRHT,DRME,DRSA,DSBA,DSKI,DSLI,DSLT,DSUS,DTKY,DURN,DXMS,DYKZ,FBGG,GMCT,JABE,JD00,JD99,JHD0,JOMO,JU00,JU99,M3FB,MA00,MB9Q,MBQC,MC5Q,MEND,MF99,MFBT,MFSY,MK80,MK99,MKSG,MKYU,MO99,MS08,MS8A,MS8S,MSBS,NBIK,OP00,OP02,TATQ,TERY,TOKI,YD01,YD8S,YDB1,YDMA,YQ14	01,02,03	http://shenmue.neoseeker.com/wiki/Ryo
+JAKR	JKB_M	Ryo Hazuki (Childhood)		Cutscene	N/A	JD00,JHD0,JOMO,YD01	01,02,03	http://shenmue.neoseeker.com/wiki/Ryo
+RYKO	JMA_L	Ryoko Hattori	涼子	Harbor		MA00,MFSY	02,03	
+MAGO	QHT_L	Ryoko Nishizawa	西沢	Dobuita	Bunkado Antique Shop	D000,DKTY	01,02,03	
+KEBH	KVH_L	Ryosuke Hoya	保谷	Harbor		MFSY	02,03	
+TMRA	KWD_L	Ryozo Yada	矢田	Harbor	Alpha Trading Office	DURN,MA00,MFSY	01,02,03	
+TATM	DOR_L	Ryuji Tatsumi	辰巳	Dobuita	Water Dragon Thrift Store	D000	01,02,03	
+	NVR_S	Saburo Yoshino						
+SCKO	HPJ_L	Sachiko Okae	若い女			D000	01,02,03	
+TEYI	SGO_L	Sadam Daei	東南アジア系作業員			MA00,MFSY	02,03	
+KEBL	KVL_L	Sakae Uzawa	鵜沢	Harbor		MA00,MFSY	02,03	
+SAKI	GRL_L	Saki Shirakura	女	Harbor		D000,MFSY	01,02,03	
+SATM	SNT_L	Santa Maeno	三太	Dobuita		D000	01,02,03	
+FLDD	FLM_L	Satoru Tsukakoshi	フォーク作業員	Harbor		MFSY	02,03	
+STSI	KMA_L	Satoshi Nagata				D000,MFBT,TERY	01,03	
+SIND	SND_L	Satoshi Shinoda	篠田	Dobuita	Global Travel Agency	D000,DSKI	01,02,03	
+FLD3	FLC_L	Seiji Uchishiro	フォーク作業員	Harbor		MFSY	02,03	
+YKDM	YDA_L	Seiya Kumagai	男の子			D000	01,02,03	
+SETA	SEU_L	Setsu Abe	阿部	Sakuragaoka	Abe Store Candy Shop	D000,JABE	01,02,03	
+	NVM_S	Shigeki Murayama						
+YAMA	YMG_L	Shigeo Yamagishi	山岸	Sakuragaoka/Dobuita	Residence/Suzume Park	D000,JD00	01,02,03	
+KJMA	KJM_L	Shigeru Kojima	釣り人	Harbor	Fisherman	MFSY	02,03	
+KEBJ	KVJ_L	Shingo Kanno	管野	Harbor		MA00,MFSY,YD8S	01,02,03	
+TSUC	MCZ_L	Shingo Mochizuki	望月	Dobuita	Biker, You Arcade	D000	01,02,03	
+MRSK	PPL_L	Shingo Murasaki	チンピラ			JD00,MFSY,TERY	01,03	
+YMST	UBA_L	Shinichi Yamashita	若い男	Harbor		D000,MFSY	01,02,03	
+SNJY	SAD_L	Shinji Yamatani	山谷	Harbor		MA00,MFSY	02,03	
+SNKC	SAK_L	Shinkichi Noda	信吉	Dobuita	Uokichi Seafood	D000	01,02,03	
+MITA	SGG_L	Shinobu Mita	作業員	Harbor		MA00,MFSY	02,03	
+BUSS	OGM_L	Shinya Onoue				D000,MSBS	01,02,03	
+KURI	KZM_L	Shiro Kurita	栗田	Dobuita	Kurita Military Surplus	D000	01,02,03	
+FLD4	FLD_L	Shogo Sugai	菅井	Harbor	Forklift Worker	MFSY	02,03	
+KEBF	KVF_L	Shoichi Tezuka	手塚	Harbor		MFSY	02,03	
+SYKU	HSB_L	Shoko Usui	若い女			D000,JU00	01,02,03	
+	NVA_S	Shota Yamaguchi						
+ENDO	SGI_L	Shozo Endo	作業員	Harbor		MFSY	02,03	
+KEBG	KVG_L	Shozo Kuga	久我	Harbor		DURN,MA00,MFSY	01,02,03	
+SYZU	KOG_L	Shozo Mizuki	水木	Harbor	Homeless Near Old Warehouse District	MA00,MFSY,MKSG	02,03	http://shenmue.neoseeker.com/wiki/Shozo_Mizuki
+FLDF	FLO_L	Shuichiro Ida	井田	Harbor	Forklift Worker	MA00,MFSY	02,03	
+	CVI_S	Shunsuke Tada						
+SMTH	GIB_M	Smith Bradley		Cutscenes		D000,DURN,M3FB,MA00,MB9Q,TATQ,YQ14	01,02,03	
+HOND	HND_L	Soichi Honda	本田	Dobuita	Honda Drugstore	D000	01,02,03	
+SGRH	OYD_L	Suguru Hirano	中年男Ｄ	Sakuragaoka	Residence	D000	01,02,03	http://shenmue.neoseeker.com/wiki/Suguru_Hirano
+SMIK	SAC_L	Sumio Kosuge	小菅	Harbor		MFSY	02,03	
+AKTG	YGG_L	Susumu Aketagawa	明田川	Dobuita	Yamaji Soba Noodles	D000	01,02,03	
+KUDO	FSB_L	Susumu Kudo	釣り人	Harbor	Fisherman	MFSY	02,03	
+KEBA	KEB_L	Tadashi Akita	秋田	Harbor		MFSY,MKSG	02,03	
+TDSI	KMD_L	Tadashi Hama	チンピラ			JD00,MBQC,MFSY,TERY	01,03	
+MURA	JMD_L	Tadashi Muraoka	商社マン	Harbor		MA00,MFSY	02,03	
+KEBK	KVK_L	Tadashi Uwajima	宇和島	Harbor		MA00,MFSY,YD8S	01,02,03	
+	NBE_S	Tadatsugu Kimura						
+TAEN	OBA_L	Taeko Nomura	中年女			D000,JD00	01,02,03	
+DJUN	KWB_L	Taiki Nimura	仁村	Harbor	Warehouse No. 18 (When looking for work)	MFSY	02,03	
+MIKM	X70_L	Takafumi Mitsuzuka	三塚	Dobuita	Slot House	D000,DSLT	01,02,03	
+BIKB	MJB_L	Takahiro Iwami				D000,MBQC,MFSY	01,02,03	
+MITI	JMF_L	Takako Michii	道井	Harbor		MA00,MFSY	02,03	
+HORS	TAT_M	Takashi Takashiro	彫師	Dobuita	Tattoo Parlor	D000,TATQ	01,02,03	
+BIKA	MJA_L	Takashi Watanabe				D000,MBQC,MFSY	01,02,03	
+FLDB	FLK_L	Takayoshi Hanazawa	フォーク作業員	Harbor		MFSY	02,03	
+	NBP_S	Takayuki Shibata						
+	CVV_S	Takefumi Kagawa						
+	NBS_S	Takeo Narumi						
+	NBL_S	Takeru Majima						
+HIRI	ZZB_L	Takeshi Hirai	平井	Dobuita	MJQ Jazz Bar (Bartender)	D000,DJAZ	01,02,03	
+SERA	TUW_L	Takeshi Sera	世良	Dobuita	Asia Travel Company (Male)	D000,DBHB,DHQB,M3FB,MB9Q	01,02,03	
+	NVS_S	Takichi Yamada						
+MYTY	YAE_L	Takuya Maruyama				D000	01	
+UNO_	CHU_L	Tao Duo Ji	陶	Dobuita	Ajiichi Chinese Restaurant	D000,DCHA,DURN	01,02,03	
+RNKT	FUW_L	Tao Lin Xia				D000,DCHA	01,02,03	
+YAMO	YMO_L	Tatsuhito Yamaoka	山岡			MFSY	02,03	
+	CVM_S	Tatsuki Mitsumine						
+	BTI_L	Tatsuya Honda						
+TTYA	TTY_L	Tatsuya Yamamoto	達也	Sakuragaoka	Near the Capsule Toy Machines	D000,JU00	01,02,03	
+TERY	ACS_M	Terry Ryan		Cutscene	Mad Angels	D000,FBGG,MFBT,TERY	02,03	
+SAJO	BAU_L	Teruhiko Saijo	西条	Dobuita	Bar Yokosuka	D000,DBYO	01,02,03	http://shenmue.neoseeker.com/wiki/Teruhiko_Saijo
+	CVK_S	Terumasa Moriya						
+	CVF_S	Tetsu Shimizu						
+NGSM	YAB_L	Tetsuya Nagashima	長島			D000,JD00,MFSY,YD8S	01,02,03	
+TOKI	TKI_L	Toki Aida	会田	Dobuita	Aida Florist	D000,TOKI	01,02,03	
+KEBE	KVE_L	Tokumasa Kogo	向後	Harbor		MA00,MFSY,MKSG	02,03	
+TMMR	MYT_L	Tomi Maruyama	丸山	Harbor	Cafeteria	MFSY	02,03	
+TOM_	AME_L	Tom Johnson	トム	Dobuita	Tom's Hot Dogs Truck	D000,MA00,MFSY	01,02,03	
+GRYU	BTA_L	Tomoaki Tange						
+TMHN	KWA_L	Tomohito Niizato	新里	Harbor		MFSY,MS8S	02,03	
+FLDE	FLN_L	Tomo Uemoto	フォーク作業員	Harbor		MFSY	02,03	
+TONY	GIJ_M	Tony Abrams		Cutscenes		D000,DURN,M3FB,MA00,MB9Q,TATQ,YQ14	01,02,03	
+	BTP_L	Toshihito Takii						
+TOSK	TOS_L	Toshiki Kagawa	俊樹	Dobuita	Nagai Industries	D000	01,02,03	
+TOMH	SGP_L	Toshimichi Fukui	作業員	Harbor		MA00,MFSY	02,03	
+TTAY	TPR_L	Tota Yoshino	吉野	Dobuita	Nagai Industries	D000	01,02,03	
+TYHG	YKZ_L	Toya Hasegawa	長谷川	Dobuita	Nagai Industries	D000	01,02,03	
+	NBI_S	Tsukasa Ishigaki						
+TKSA	SGK_L	Tsukasa Takagi	作業員	Harbor		MA00,MFSY,MS8S	02,03	
+TYMK	RFA_L	Tsuyoshi Murakami	村上	Harbor	Forklift Worker	MFSY	02,03	
+	BTD_L	Tsuyoshi Seino						
+YOPA	YOP_L	Tsuyoshi Takashima	高島			D000	01,02,03	
+YKHI	KHI_L	Wang Guang Ji	王	Dobuita	Ajiichi Chinese Restaurant/Near the vending machine	D000,DCHA	01,02,03	http://shenmue.neoseeker.com/wiki/Guangji_Wang
+KOGA	SGE_L	Wataru Koga	作業員	Harbor		MA00,MFSY	02,03	
+GJBM	HJB_L	Wilson Bonett	ウイルソン	Dobuita	MJQ Jazz Bar (Sailor)	D000,DJAZ	01,02,03	
+GRKN	SSI_L	Wu Li Xian	呉	Dobuita	Bar Yokosuka (Customer)	D000	01,02,03	
+ASDA	KAS_L	Xia Xiu Yu	夏	Dobuita	Russiya China Shop	D000,DRSA,DURN,TOKI	01,02,03	
+KKBN	KOM_L	Xie Gao Wen	高文			D000,JD00	01,02,03	http://shenmue.neoseeker.com/wiki/Gaowen_Xia
+YASU	YSO_L	Yasuo Ito	康夫			D000,JD00,JU00	01,02,03	
+FLDA	FLJ_L	Yasuo Kusano	フォーク作業員	Harbor		MA00,MFSY	02,03	
+FLD6	FLF_L	Yasuomi Kujirai	鯨井	Harbor	Forklift Worker	MA00,MFSY	02,03	
+	BTE_L	Yasushi Shima						
+KEBB	KVB_L	Yasutomo Miyagi	宮城	Harbor		DURN,MA00,MFSY,MKSG	01,02,03	
+YAYI	YYI_L	Yayoi Arisugawa	女	Harbor		D000,MA00,MFSY	01,02,03	
+YOHI	YHI_L	Yohei Kondo	洋平	Dobuita	Tomato Convenience Store	D000,DCBN,MA00,MFSY	01,02,03	
+SKMT	SMT_L	Yohei Sakamoto	坂元	Sakuragaoka	Construction Site	D000	01,02,03	
+YOKO	HOB_L	Yoko Minato	ヨーコ	Dobuita	Bar Yokosuka	D000,DBYO	01,02,03	http://shenmue.neoseeker.com/wiki/Yoko_Minato
+ECHO	QHB_L	Yong Zhu Yan	永	Dobuita	Bar Yokosuka (Customer)	D000	01,02,03	
+YOSE	BWW_L	Yoshie Aoi	良江	Dobuita	Yaokatsu Produce	D000,DXMS	01,02,03	
+HATO	BAT_L	Yoshifumi Hato	波戸	Dobuita	Bar Heartbeats	D000,DBHB,DHQB,DURN	01,02,03	
+HANA	SVA_L	Yoshiharu Hanaoka	花岡	Harbor		D000,JOMO,MFSY	01,02,03	
+HTNK	KAZ_L	Yoshihide Hatanaka	チンピラ			JD00,MBQC,MFSY,TERY	01,03	
+YOSI	SGJ_L	Yoshihiko Tashiro	作業員	Harbor		MFSY	02,03	
+	NBJ_S	Yoshihiro Horiuchi						
+	NVO_S	Yoshihiro Oguchi						
+NSMR	X72_L	Yoshihito Nishii	西井			D000,DSLT	01,02,03	
+YSKT	OYC_L	Yoshikazu Takahashi	中年男Ｃ			D000	01,02,03	
+	CVN_S	Yoshinori Kondo						
+	CVX_S	Yoshio Ishikawa						
+YSHY	FLI_L	Yoshio Yamada	作業員	Harbor		MA00,MFSY	02,03	
+KEBC	KVC_L	Yoshio Yamagata	山形	Harbor		MFSY,MKSG	02,03	
+	BTG_L	Yoshiyuki Tokuchi						
+YMGC	SGD_L	Yosuke Yamaguchi	作業員	Harbor		D000,MA00,MFSY	02,03	
+	BTJ_L	Yuichi Tsuge						
+YJIH	RFC_L	Yuji Hirano	優二			D000	01,02,03	
+NITO	GAT_L	Yuji Nito	仁藤	Dobuita	YOU Arcade	D000,DGCT,DSLT,GMCT	01,02,03	
+YUKK	X61_L	Yuka Komine	結花			D000	01,02,03	
+MSTA	JMG_L	Yuka Mashita	真下	Harbor		D000,MA00,MFSY	01,02,03	
+IRIE	JMB_L	Yukiko Irie	入江	Harbor		MFSY	02,03	
+STAK	TOF_L	Yukio Satake	中年男Ｄ			D000	01,02,03	
+	BTB_L	Yukito Tomonari						
+NMNO	SHX_L	Yumiko Minamino	南野	Dobuita	Schoolgirl thug near the road to Sakuragaoka	D000,MFSY	01,02,03	
+YUMM	HSA_L	Yumi Morino	若い女			D000,JU00	01,02,03	
+YURI	FRB_L	Yuriko Kikuchi	優理子	Dobuita		D000	01,02,03	
+	NBN_S	Yutaka Koizumi		70 Man Battle	Mad Angels			http://shenmue.neoseeker.com/wiki/Mad_Angels
+ARAI	PAN_L							
+ATSI	KIM_L	Fisherman	釣り人	Harbor	Fisherman			
+BREN	YEA_L							
+DOGC	DG1_M,DG1_S							
+DTRY	KOB_L							
+EDST	HRN_L	Young woman	若い女					
+FUK2	FUC_M,FUD_M	Masayuki Fukuhara	福原	Hazuki Residence	Hazuki Dojo			http://shenmue.neoseeker.com/wiki/Fukuhara_Masayuki
+GJHF	HWW_L	Foreigner	外人					
+IZAW	FRG_L	Midori Aizawa	碧	Dobuita	Water Dragon Thrift Store			
+JOHN	CHR_L	Foreigner	外人					
+KAOR	KAO_L							
+KBSO	MOU_L							
+KOKA	KOU_L	Worker	作業員					
+KYHN	QHJ_L	Boy	男の子					
+KYKW	HPE_L	Young woman	若い女					
+KZKI	YEC_L	Middle-aged woman	中年女					
+MIK2	HHM_L	Miki Maeda	ミキ					
+MIRI	X18_L							
+MKII	HPH_L	Young woman	若い女					
+MNKO	SHB_L	Woman	女					
+MSYU	MAS_L	Foreigner	外人					
+MWAK	HPG_L	Young woman	若い女					
+NOR2	HHN_L	Noriko Nakamura	紀子					
+OGRA	SAG_L	Worker	作業員	Harbor				
+REKA	QHU_L							
+SAGB	SAG_L	Worker	作業員	Harbor				
+SAGC	SAG_L	Worker	作業員	Harbor				
+SAGD	SAG_L	Worker	作業員	Harbor				
+SAGE	SAG_L	Worker	作業員	Harbor				
+SAGK	SOU_L							
+SBNK	KIN_L							
+SESI	ESI_L					DURN	01,02,03	
+SIIN	JEN_L	Foreigner	外人					
+SMSI	MSI_L							
+SNJI	NRS_L	Fisherman	釣り人	Harbor	Fisherman			
+SONZ	TEN_L							
+SOSI	OSI_L					DURN	01,02,03	
+SSYP	SYP_M							
+STP1	HPC_L	Young woman	若い女					
+STRI	TSI_M					DURN	01,02,03	
+SZEN	YED_L	Middle-aged woman	中年女					
+TJM2	HHT_L	Eri Tajima	絵梨	Dobuita	Walking Around			http://shenmue.neoseeker.com/wiki/Eri_Tajima
+TKYM	BBA_L	Middle-aged woman	中年女					
+TMOS	SAG_L	Worker	作業員	Harbor				
+TOM2	AMG_L					MFSY	03	
+TOMS	SAG_L							
+UGDW	X18_L							
+X25L	X25_L	Middle-aged woman	中年女					
+X26L	X26_L	Middle-aged woman	中年女					
+YBBA	YEG_L	Old woman	老婆					
+YNHS	YNF_L	Foreigner	外人					
+YOS1	YEA_L	Middle-aged man C	中年男Ｃ					
+YUJI	SAG_L	Worker	作業員	Harbor		MBQC	03	
+YUM2	HHY_L	Yumi Morino	若い女					

@@ -56,3 +56,4 @@ The databases of `resources/` are embedded in the executable when it is built, s
 
 - [Raymonf](https://github.com/Raymonf) of [Wulinshu](https://wulinshu.com/) for the TAD hash database (now `resources/FilenameDatabase.txt`) used to restore the original filenames.
 - [ShenmueDKSharp](https://github.com/philyeahz/ShenmueDKSharp) for the documentation of some of the file formats.
+- The [Shenmue-Mods Knowledgebase](https://github.com/Shenmue-Mods/Knowledgebase) for the names of the maps and the characters of Shenmue I (`resources/Shenmue1Maps.tsv` and `resources/Shenmue1Characters.tsv`).
