@@ -23,8 +23,7 @@ static HashTable g_filenameDB;
 static void Init() {
     Style_Init();
     NFD_Init();
-    // Next to the executable, as the build copies it: the working directory can be another one
-    g_filenameDB = FilenameDB_Load(TextFormat("%sresources/FilenameDatabase.json", GetApplicationDirectory()));
+    g_filenameDB = FilenameDB_Load();
 }
 
 static void ProcessDroppedFiles() {

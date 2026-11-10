@@ -36,6 +36,9 @@ typedef struct TAD_Context {
     uint8_t* buffer;
 }TAD_Context;
 
+// Hash of a path, as in the first field of the entries (hash[0]). A path that ends with a dot and 8 hexadecimal digits
+// (/tex/assets/x.png.3cc1a28a) gets the second group of digits that the names of the archive have, whatever its value
+uint32_t      TAD_HashPath(const char* path);
 void          TAD_ExtractAllFiles(const char* tadFilePath, HashTable filenameDB, const char* outputPath);
 TADFileEntry* TAD_GetEntry(uint8_t* buffer, size_t entryID);
 void          TAD_PrintEntry(TADFileEntry* entry, size_t entryID, size_t totalEntries, const char* startBuffer);

@@ -10,6 +10,63 @@
 #include "core/file.h"
 #include "formats/archive/tad.h"
 
+#define TAD_HASH_SEED 0x066EE5D0u
+
+static uint32_t MurmurHash2(const char* data, size_t length, uint32_t seed) {
+    const uint32_t m = 0x5BD1E995u;
+    const uint8_t* bytes = (const uint8_t*)data;
+    uint32_t h = seed ^ (uint32_t)length;
+    while (length >= 4) {
+        uint32_t k = bytes[0] | (uint32_t)bytes[1] << 8 | (uint32_t)bytes[2] << 16 | (uint32_t)bytes[3] << 24;
+        k *= m;
+        k ^= k >> 24;
+        k *= m;
+        h = h * m ^ k;
+        bytes += 4;
+        length -= 4;
+    }
+    switch (length) {
+    case 3: h ^= (uint32_t)bytes[2] << 16; // Fall through
+    case 2: h ^= (uint32_t)bytes[1] << 8;  // Fall through
+    case 1: h ^= bytes[0]; h *= m;
+    }
+    h ^= h >> 13;
+    h *= m;
+    h ^= h >> 15;
+    return h;
+}
+
+static bool IsHexGroup(const char* s) {
+    if (s[0] != '.')
+        return false;
+    for (int i = 1; i <= 8; i++) {
+        if (!((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f')))
+            return false;
+    }
+    return true;
+}
+
+uint32_t TAD_HashPath(const char* path) {
+    // Lowercase, keeping only a-z, 0-9, '.' and '_'
+    char normalized[1024];
+    size_t length = 0;
+    for (const char* c = path; *c != '\0' && length < sizeof(normalized) - 10; c++) {
+        char ch = *c >= 'A' && *c <= 'Z' ? *c + ('a' - 'A') : *c;
+        if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '_')
+            normalized[length++] = ch;
+    }
+    normalized[length] = '\0';
+
+    // The names of the archive end with two groups of 8 hexadecimal digits: the second one isn't hashed, only its length
+    // counts (fullLength). The paths of the database have only the first one
+    size_t fullLength = length;
+    if (length >= 9 && IsHexGroup(normalized + length - 9))
+        fullLength += 9;
+
+    uint64_t lengths = (uint64_t)fullLength * length % 0xFFFFFFFFu;
+    return MurmurHash2(normalized, length, TAD_HASH_SEED) * 0x1003Fu + (uint32_t)lengths * 0x2001Fu;
+}
+
 TADFileEntry* TAD_GetEntry(uint8_t* buffer, size_t entryID) {
     TADFileEntry* entry = (TADFileEntry*)(buffer + 0x3C + entryID * 0x20);
     return entry;

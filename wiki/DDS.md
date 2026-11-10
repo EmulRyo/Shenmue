@@ -129,7 +129,7 @@ If `alpha0 > alpha1` the 8 alphas are `alpha0`, `alpha1` and 6 interpolated betw
 
 ## Orientation
 
-The rows of a level go from the top of the image to the bottom, but the files of `tex/assets/textureoverride/` (204 `.dds` and 7 `.png`) are stored **upside down**: their first row is the bottom of the image. They replace the textures of the [MT5](MT5) models, and they are the vertical flip of the original [PVR](PVR) textures of those models: e.g. `b01mp06g_0` (a street map of `scene/01/d000/b01mp06g.mt5`, whose texts read upside down) or `bikk3p0g_2` (`scene/01/jhd0/bikk3p0g.mt5`). The header doesn't say it: these files have the same flags as the others, and 7 of them have the `NVTT` signature of the interface textures.
+The rows of a level go from the top of the image to the bottom, but the files of `tex/assets/textureoverride/` (209 `.dds` and 7 `.png`) are stored **upside down**: their first row is the bottom of the image. They replace the textures of the [MT5](MT5) models, and they are the vertical flip of the original [PVR](PVR) textures of those models: e.g. `b01mp06g_0` (a street map of `scene/01/d000/b01mp06g.mt5`, whose texts read upside down) or `bikk3p0g_2` (`scene/01/jhd0/bikk3p0g.mt5`). The header doesn't say it: these files have the same flags as the others, and 7 of them have the `NVTT` signature of the interface textures.
 
 The other textures are stored the right way up:
 
@@ -137,7 +137,7 @@ The other textures are stored the right way up:
 - `modeloverride/`: the textures without header have the orientation of the original PVR textures of their models (e.g. `gacrrisg_0` to `_2`, `gacrgggg_0`), and so do their versions with a DDS header.
 - The cube maps: the sky is in the +Y face and the ground in the −Y face.
 
-Among the files with an unknown name, those with the `NVTT` signature are interface textures the right way up, but some of the 11 compressed ones without it are upside down like those of `textureoverride/` (maps of streets with upside-down texts, the buttons X, Y, A, B of the controller).
+Among the files with an unknown name, those with the `NVTT` signature are interface textures the right way up, but some of the 6 compressed ones without it are upside down like those of `textureoverride/` (maps of streets with upside-down texts, the buttons X, Y, A, B of the controller).
 
 ## Cube maps
 
@@ -155,22 +155,22 @@ In `tex/assets/` many DDS files don't have the extension `.dds`:
 
 | Extension | Files | Contents                                                                 |
 |-----------|------:|--------------------------------------------------------------------------|
-| `.tga`    | 305   | DDS DXT5 with mipmaps (`ui/`)                                            |
-| `.png`    | 159   | DDS DXT5 with mipmaps (152 in `ui/`, 7 in `textureoverride/`)            |
-| `.png`    | 29    | [BC blocks without header](#textures-without-header) (`modeloverride/`)  |
+| `.tga`    | 321   | DDS DXT5 with mipmaps (`ui/`)                                            |
+| `.png`    | 190   | DDS DXT5 with mipmaps (183 in `ui/`, 7 in `textureoverride/`)            |
+| `.png`    | 30    | [BC blocks without header](#textures-without-header) (`modeloverride/`)  |
 
-None of the `.png` and `.tga` files of the game is a PNG or TGA image. The names end with 8 hexadecimal digits before the extension (`a_off.3cc1a28a.png`), which aren't the CRC32 of the file; the same name can appear with several extensions (`a_off.3cc1a28a.png` and `a_off.f9af2f10.tga`).
+None of the `.png` and `.tga` files of the game is a PNG or TGA image. The extension is the one of the path that the game asks for, and the 8 hexadecimal digits that follow it in the name (`ui/common/buttons/a_off.png.3cc1a28a`) aren't the CRC32 of the file but, in most files, the hash of that path (see [Names with a hash](TAD-TAC#names-with-a-hash)); the same name can appear with several extensions (`a_off.png.3cc1a28a` and `a_off.tga.f9af2f10`, the hashes of `/ui/common/buttons/a_off.png?usage=0` and `/ui/common/buttons/a_off.tga?usage=0`).
 
 ## Textures without header
 
-The 29 `.png` files of `tex/assets/modeloverride/<model>/` have neither a magic nor a header: they are only the BC blocks of the texture, with all its mipmaps down to 1×1. Their format and size are given only by the size of the file, which is that of exactly one chain of levels:
+The 30 `.png` files of `tex/assets/modeloverride/<model>/` have neither a magic nor a header: they are only the BC blocks of the texture, with all its mipmaps down to 1×1. Their format and size are given only by the size of the file, which is that of exactly one chain of levels:
 
 | File size | Format | Size     | Files |
 |----------:|--------|----------|------:|
 | 56        | BC1    | 8×8      | 1     |
 | 696       | BC1    | 32×32    | 3     |
 | 1384      | BC1    | 64×32 or 32×64 | 2 (one of each) |
-| 2744      | BC1    | 64×64    | 12    |
+| 2744      | BC1    | 64×64    | 13    |
 | 5480      | BC1    | 128×64   | 2     |
 | 5488      | BC3    | 64×64    | 1     |
 | 10936     | BC1    | 128×128  | 6     |
@@ -183,7 +183,7 @@ Each folder of a model has a file `.fbx` (that despite its extension starts with
 
 ## Statistics
 
-Over the 851 DDS files of Shenmue I (822 with a header, 29 without):
+Over the 852 DDS files of Shenmue I (822 with a header, 30 without):
 
 | Format              | Mipmaps | Files |
 |---------------------|---------|------:|
@@ -193,7 +193,7 @@ Over the 851 DDS files of Shenmue I (822 with a header, 29 without):
 | BC1 (DXT1)          | No      | 33    |
 | B8G8R8A8 cube map   | Yes     | 9     |
 | B8G8R8X8 cube map   | Yes     | 3     |
-| BC1 without header  | Yes     | 27    |
+| BC1 without header  | Yes     | 28    |
 | BC3 without header  | Yes     | 2     |
 
 The sizes aren't always powers of two, mostly in the interface (1920×1080, 480×308, 324×324...) but also in `textureoverride/` (504×512).

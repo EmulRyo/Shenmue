@@ -54,7 +54,21 @@ if (APPLE)
     target_link_libraries(${PROJECT_NAME} "-framework OpenGL")
 endif()
 
-add_custom_command(TARGET ${PROJECT_NAME}  POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-                ${CMAKE_CURRENT_SOURCE_DIR}/resources
-                "$<TARGET_FILE_DIR:Shenmue>/resources")
+# The databases of resources/ go inside the executable: tools/embed.c turns each one into a C array at build time
+add_executable(embed tools/embed.c)
+set_target_properties(embed PROPERTIES FOLDER tools)
+
+function(embed_resource file symbol)
+    set(output ${CMAKE_CURRENT_BINARY_DIR}/generated/${symbol}.c)
+    add_custom_command(
+        OUTPUT ${output}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/generated
+        COMMAND embed ${CMAKE_CURRENT_SOURCE_DIR}/resources/${file} ${output} ${symbol}
+        DEPENDS embed ${CMAKE_CURRENT_SOURCE_DIR}/resources/${file}
+        COMMENT "Embedding resources/${file}"
+        VERBATIM)
+    target_sources(${PROJECT_NAME} PRIVATE ${output})
+    source_group(generated FILES ${output})
+endfunction()
+
+embed_resource(FilenameDatabase.txt g_filenameDatabase)

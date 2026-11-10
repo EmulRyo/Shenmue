@@ -4,7 +4,7 @@ Tool to explore and extract the files of Shenmue I & II (PC version). It is writ
 
 ## Features
 
-- Extract the `.tad`/`.tac` archives of the game, restoring the original filenames from `resources/FilenameDatabase.json`.
+- Extract the `.tad`/`.tac` archives of the game, restoring the original filenames from `resources/FilenameDatabase.txt` (embedded in the executable).
 - Extract the files contained in `AFS`/`IDX`, `PKF` and `PKS` containers, detecting the extension of every file from its magic number.
 - Decompress gzip compressed files automatically.
 - View `PVR`, `SPR` and `DDS` textures and save them as PNG, JPG or BMP. The DDS textures that the game stores with the extension `.png` or `.tga` are opened too, also those without header (their format and size are guessed from the size of the file), the cube maps are shown as a cross of their 6 faces, and the textures of `textureoverride`, stored upside down, are flipped.
@@ -33,7 +33,7 @@ If the repository was cloned without `--recursive`, run `git submodule update --
 
 ## Usage
 
-Run the program from the repository folder (it reads `resources/FilenameDatabase.json`).
+The databases of `resources/` are embedded in the executable when it is built, so it can be run from any folder.
 
 - **Extract TAD files**: select one or several `.tad` files of the game (each next to its `.tac`), then the output folder. The files of all of them are extracted to the same tree in that folder, at their path in the game (`scene/01/...`). When it ends, the status bar shows how many files were extracted and where: click it to open the folder, right click to close it.
 - **Open files**: open one of the supported files. Files can also be dragged and dropped onto the window.
@@ -54,5 +54,5 @@ Run the program from the repository folder (it reads `resources/FilenameDatabase
 
 ## Acknowledgements
 
-- [Raymonf](https://github.com/Raymonf) of [Wulinshu](https://wulinshu.com/) for the TAD hash database (`resources/FilenameDatabase.json`) used to restore the original filenames.
+- [Raymonf](https://github.com/Raymonf) of [Wulinshu](https://wulinshu.com/) for the TAD hash database (now `resources/FilenameDatabase.txt`) used to restore the original filenames.
 - [ShenmueDKSharp](https://github.com/philyeahz/ShenmueDKSharp) for the documentation of some of the file formats.
