@@ -67,7 +67,8 @@ typedef enum {
 
 static const char* g_layerNames[LAYER_COUNT] = {
     "Information", "Map", "Doors", "Cameras", "Lights", "Shapes", "Characters", "Cutscenes",
-    "COLI", "HGHT", "EVNT", "UNDU", "SOND", "PROP",
+    // The COLS groups, by the meaning of their IDs: COLIsion, HeiGHT, EVeNT, UNDUlation, SOuND, PROPerty
+    "Collisions", "Floor heights", "Events", "Slopes", "Sounds", "Properties",
 };
 
 static const char* g_shapeTypes[] = { "point", "segment", "polyline", "circle", "triangle", "rectangle", "polygon" };
@@ -754,11 +755,15 @@ static void AddInfoItems(void) {
         if (strcmp(file->banks[i].name, "FREE") != 0)
             AddItem(ITEM_INFO, 0, TextFormat("Sound bank %u: %s", file->banks[i].slot, file->banks[i].name), false);
     }
-    const char* values[] = { "MAPR", "MAPT", "DIRT", "SCRL" };
+    // The chunks of a single value, by the probable meaning of their IDs: number of MAP models (MAP01...), MAP Type,
+    // DIRecTion, SCRoLl
+    const char* values[][2] = {
+        { "MAPR", "Map models" }, { "MAPT", "Map type" }, { "DIRT", "Direction" }, { "SCRL", "Scroll" },
+    };
     for (int i = 0; i < 4; i++) {
         uint32_t value;
-        if (MAPINFO_ChunkValue(file, values[i], &value))
-            AddItem(ITEM_INFO, 0, TextFormat("%s: %d", values[i], (int32_t)value), false);
+        if (MAPINFO_ChunkValue(file, values[i][0], &value))
+            AddItem(ITEM_INFO, 0, TextFormat("%s (%s): %d", values[i][1], values[i][0], (int32_t)value), false);
     }
     const char* floats[] = { "SCOF", "BLKS" };
     for (int i = 0; i < 2; i++) {
@@ -1417,11 +1422,12 @@ static void LightProperties(Properties* properties, uint32_t index) {
 // The fields of the prefix that the group of the shape has, then its points
 static void ShapeProperties(Properties* properties, uint32_t index) {
     const MAPINFO_Shape* shape = &g_view.file.shapes[index];
-    Properties_Text(properties, "Group", g_layerNames[LAYER_GROUPS + shape->group]);
+    Properties_Text(properties, "Group", TextFormat("%s (%s)", g_layerNames[LAYER_GROUPS + shape->group],
+        MAPINFO_GroupName(shape->group)));
     Properties_Text(properties, "Type", ShapeType(shape));
     Properties_Int(properties, "Block", shape->block);
     if (shape->group == MAPINFO_GROUP_COLI)
-        Properties_Int(properties, "COLI type", shape->value);
+        Properties_Int(properties, "Collision type", shape->value);
     else if (shape->group == MAPINFO_GROUP_EVNT || shape->group == MAPINFO_GROUP_SOND)
         Properties_Int(properties, "Value", shape->value);
     else if (shape->group == MAPINFO_GROUP_PROP) {

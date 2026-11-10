@@ -280,14 +280,14 @@ The chunk header is followed by 1 to 3 blocks with a 4-digit ID (`0000`, `0001`.
 | 0x04   | 4    | uint32  | `size` | Size of the records in bytes, **header not included** (0 for an empty group) |
 | 0x08   | —    | —       | records | Records, one after the other. Each record is a prefix that depends on the group, followed by a shape |
 
-| Group  | Prefix | Description |
-|--------|--------|-------------|
-| `COLI` | `uint32 type` (0, 9, 100, 1, 10, 7, 200...) | Collision walls and obstacles |
-| `HGHT` | `float height` | *Probably* areas with a different floor height (-1.8, 5.4...) |
-| `EVNT` | `uint32 unknown` (`0xFF`, `0x100FF`, `0x40001`, `0x40002`...) | *Probably* event areas |
-| `UNDU` | `float heights[4]` | Sloped floor ("undulation"): *probably* the height at each corner of the shape (the fourth one is usually 0 for triangles) |
-| `SOND` | `uint32 unknown` | *Probably* sound areas |
-| `PROP` | `char[4] type` + `uint32 unknown[4]` (20 bytes) | Areas with a property: `CAM2` (609), `STIR` (260), `WALK` (129), `CAM3` (127), `CNT0` (98), `PRIV` (45), `INSH` (39), `CAM1`, `TALK`, `STOP` |
+| Group  | Meaning | Prefix | Description |
+|--------|---------|--------|-------------|
+| `COLI` | COLIsion | `uint32 type` (0, 9, 100, 1, 10, 7, 200...) | Collision walls and obstacles |
+| `HGHT` | HeiGHT | `float height` | *Probably* areas with a different floor height (-1.8, 5.4...) |
+| `EVNT` | EVeNT | `uint32 unknown` (`0xFF`, `0x100FF`, `0x40001`, `0x40002`...) | *Probably* event areas |
+| `UNDU` | UNDUlation | `float heights[4]` | Sloped floor ("undulation"): *probably* the height at each corner of the shape (the fourth one is usually 0 for triangles) |
+| `SOND` | SOuND | `uint32 unknown` | *Probably* sound areas |
+| `PROP` | PROPerty | `char[4] type` + `uint32 unknown[4]` (20 bytes) | Areas with a property: `CAM2` (609), `STIR` (260), `WALK` (129), `CAM3` (127), `CNT0` (98), `PRIV` (45), `INSH` (39), `CAM1`, `TALK`, `STOP` |
 
 ### Shape
 
@@ -406,14 +406,14 @@ Contains chunks with 4-character IDs, many of them character IDs (`BIKA`, `BIKB`
 
 Chunks of 0xC bytes: the header and one 4-byte value.
 
-| Chunk  | Type   | Description |
-|--------|--------|-------------|
-| `MAPR` | int32  | Unknown: 1 (97 files), -1 (19), 0 (6), or 2 to 22 |
-| `MAPT` | int32  | Unknown. Always 1 |
-| `DIRT` | int32  | *Probably* a direction in degrees: 0 to 343 (90, 220, 335, 260, 180...) |
-| `SCRL` | int32  | Unknown: -1 (57 files), 0, 1 or 23 |
-| `SCOF` | float  | Unknown: -4 (6 files), -6 (3) or -2 (3) |
-| `BLKS` | float  | Unknown: 100 |
+| Chunk  | Type   | Probable meaning | Description |
+|--------|--------|------------------|-------------|
+| `MAPR` | int32  | number of MAP models | 1 (97 files), -1 (19), 0 (6), or 2 to 22. In the 26 folders with loose `MAP.MT5`, `MAP01.MT5`, `MAP02.MT5`... models and no `mpk*.pkf` packages, *probably* the number of numbered models: equal to it in 17 (0 with only `MAP.MT5`, 11 in `betd`, 22 in `nbik`...), lower in 6 (12 of 13 in `dnoz`, 15 of 17 in `mbqc` and `mc5q`, 0 of 1 in `toki` of `scene/02`), and -1 in `jhd0` (1). -1 in the folders without map models (`yd01`, `op00`, `ms08`...) and in `jomo`. 1 in all the files with `MAPT` |
+| `MAPT` | int32  | MAP Type | Always 1. Present in 93 of the 96 folders whose map models are in `mpk*.pkf` packages (all but the 3 `jomo`), and in no other |
+| `DIRT` | int32  | DIRecTion | *Probably* a direction in degrees: 0 to 343 (90, 220, 335, 260, 180...). The same in a map of every disc |
+| `SCRL` | int32  | SCRoLl | Unknown: -1 (57 files), 0, 1 or 23 |
+| `SCOF` | float  | — | Unknown: -4 (6 files), -6 (3) or -2 (3) |
+| `BLKS` | float  | BLocKS | Unknown: 100 |
 
 ## List chunks
 
