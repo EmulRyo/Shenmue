@@ -89,6 +89,18 @@ The program of the map. In 119 files it is **native SH-4 machine code** (the CPU
 
 The data of 129 files contains the values `20.0, 800.0, 1.0, 0xFFFFFFFF`, the same as the default [fog](#fog--fog).
 
+### SH-4 code
+
+In version `0x20000` the code, from `codeStart` to `dataStart`, is a list of functions, each one followed by its literals. It uses the SH-4 instruction set of the SH7750 with its FPU, but no privileged instruction (no `ldc` to `SR`, `rte`, `sleep`...).
+
+- **Code at `codeStart`:** in all 119 files, a routine that starts saving `r8`, `r9`, `r10`, `r13`, `r14` and `pr` on the stack `r15` (`86 2F 96 2F A6 2F D6 2F E6 2F 22 4F`).
+- **Functions:** the other 23,864 functions start with `mov.l r14,@-r13` and `sts.l pr,@-r13` (`E6 2D 22 4D`), followed by `add #-n,r13` and `mov r13,r14`: they use `r13` as their stack and `r14` as their frame pointer. They end with `lds.l @r13+,pr`, `rts` and, in its delay slot, `mov.l @r13+,r14` (`26 4D 0B 00 D6 6E`, also found 23,864 times). The entry point (`entry`) is one of them.
+- **Position-independent code:** the calls between the functions of the program are `bsrf Rn` (or `bsr` for the near ones), and the long jumps inside a function are `braf Rn` (268,755 in the 119 files). `Rn` is loaded just before with `mov.l @(disp,PC),Rn`: the target is the address of the `braf`/`bsrf` + 4 + that literal (e.g. `D1 02 23 01 09 00`: `mov.l`, `braf r1`, `nop`, with its literal two words after).
+- **Calls outside the program:** `jsr @Rn` (323,828). In 94% of them `Rn` is read from memory, not loaded from a literal.
+- **Literals:** each `mov.w`/`mov.l @(disp,PC)` reads a 16- or 32-bit literal placed after an unconditional branch (`rts`, `bra`, `braf`), aligned to its size with `00 00` or `09 00` (`nop`). Some literals are not read by any instruction.
+
+Following the flow from `codeStart`, the entry point and every function that starts with the prologue, 84% of the words are instructions (8,951,779), 14.6% literals (1,558,416) and 1.3% are not reached. The rest are alignment words, unused literals, dead code left after branches (e.g. an epilogue after a `braf`), and code reached only through an address: in `scene/01/d000` the routine at `0x64`, whose address the code at `codeStart` loads with `mova`. The branches and literals never leave the code, the delay slots never hold a branch, and no word is both an instruction and a literal.
+
 ### Strings of the code
 
 In version `0x20000`, the code loads the strings of the data with `mov.l @(disp,PC),Rn` (`Dndd`): the 32-bit literal at `(pc & ~3) + 4 + disp × 4` is the offset of the string from `dataStart`. Each function ends with an `rts` (`000B`), followed by its literals. The functions of `scene/01/d000` that load the cutscenes load, in this way, the path of the scene (`/scene/01/D000/`), the name of each PKS of the cutscenes, their `seqdataN.bin` files (e.g. `D0W0` and `seqdata1.bin`…`seqdataC.bin`), the name of the [AFS](AFS) of their voices (`E1020`) and the sound banks of the [AUTH](AUTH#sound-bank) files (`a1_yamaw.snd`, with the music `bgm085.snd` and `battle_1.snd`). The family of PKS `djhn_01`…`djhn_07` and `djhn_mot` is loaded by one function, its `seqdata1.bin`…`seqdata7.bin` by another one, and the bank `a1_yanji.snd` with the AFS `01JUCEA` by a third one.

@@ -34,7 +34,7 @@ If the repository was cloned without `--recursive`, run `git submodule update --
 
 ## Tests
 
-The tests check the formats against the files of the game, with the values documented in the wiki (numbers of files, chunks, header fields...). They need the files of Shenmue I extracted from the `.tad` files, in `content/Shenmue1` by default (another folder can be given with `-DSHENMUE_CONTENT=<folder>`); without them, the tests are skipped.
+The tests check the formats against the files of the game, with the values documented in the wiki (numbers of files, chunks, header fields...). They need the files of Shenmue I extracted from the `.tad` files, in `content/Shenmue1` by default (another folder can be given with `-DSHENMUE_CONTENT=<folder>`); without them, the tests that need them are skipped. Other tests check the decoders alone, such as the SH-4 disassembler with the encodings of the instruction set.
 
 ```
 cmake --build build --target ShenmueTests

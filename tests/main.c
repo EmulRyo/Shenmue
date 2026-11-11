@@ -5,7 +5,8 @@
 #include "test.h"
 
 // ShenmueTests <content folder> [test...]: runs the given tests, or all of them. Returns 0 if they pass, 1 if one
-// failed, and TEST_SKIPPED (the SKIP_RETURN_CODE of CTest) if the content folder isn't there
+// failed, and TEST_SKIPPED (the SKIP_RETURN_CODE of CTest) if the tests need the files of the game and the content
+// folder isn't there
 
 #define TEST_SKIPPED 77
 
@@ -13,12 +14,16 @@ void Test_MapinfoChunks(const TestContext* context);
 void Test_Scn3Chunks(const TestContext* context);
 void Test_ScnFiles(const TestContext* context);
 void Test_ScnPairs(const TestContext* context);
+void Test_Sh4Encodings(const TestContext* context);
+void Test_Sh4Code(const TestContext* context);
 
 static const Test s_tests[] = {
-    { "mapinfo_chunks", Test_MapinfoChunks },
-    { "scn3_chunks",    Test_Scn3Chunks },
-    { "scn_files",      Test_ScnFiles },
-    { "scn_pairs",      Test_ScnPairs },
+    { "mapinfo_chunks", Test_MapinfoChunks, true },
+    { "scn3_chunks",    Test_Scn3Chunks,    true },
+    { "scn_files",      Test_ScnFiles,      true },
+    { "scn_pairs",      Test_ScnPairs,      true },
+    { "sh4_encodings",  Test_Sh4Encodings,  false },
+    { "sh4_code",       Test_Sh4Code,       true },
 };
 
 static int s_checks;
@@ -66,26 +71,32 @@ int main(int argc, char** argv) {
         return 1;
     }
     TestContext context = { argv[1] };
-    if (!Corpus_Exists(context.content)) {
-        printf("Skipped: no game files in %s\n", context.content);
-        return TEST_SKIPPED;
-    }
-    bool passed = true;
-    if (argc == 2) {
-        for (size_t i = 0; i < sizeof(s_tests) / sizeof(s_tests[0]); i++)
-            passed &= RunTest(&s_tests[i], &context);
-    }
+    bool content = Corpus_Exists(context.content);
+    const size_t testCount = sizeof(s_tests) / sizeof(s_tests[0]);
+    bool selected[sizeof(s_tests) / sizeof(s_tests[0])] = { false };
     for (int arg = 2; arg < argc; arg++) {
-        const Test* test = NULL;
-        for (size_t i = 0; i < sizeof(s_tests) / sizeof(s_tests[0]); i++) {
-            if (strcmp(s_tests[i].name, argv[arg]) == 0)
-                test = &s_tests[i];
-        }
-        if (test == NULL) {
+        size_t i = 0;
+        while (i < testCount && strcmp(s_tests[i].name, argv[arg]) != 0)
+            i++;
+        if (i == testCount) {
             fprintf(stderr, "Unknown test %s\n", argv[arg]);
             return 1;
         }
-        passed &= RunTest(test, &context);
+        selected[i] = true;
     }
+    bool passed = true;
+    int run = 0;
+    for (size_t i = 0; i < testCount; i++) {
+        if (argc > 2 && !selected[i])
+            continue;
+        if (s_tests[i].content && !content) {
+            printf("[%s] skipped: no game files in %s\n", s_tests[i].name, context.content);
+            continue;
+        }
+        passed &= RunTest(&s_tests[i], &context);
+        run++;
+    }
+    if (run == 0)
+        return TEST_SKIPPED;
     return passed ? 0 : 1;
 }

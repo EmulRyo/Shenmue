@@ -17,6 +17,7 @@ typedef void (*TestFunction)(const TestContext* context);
 typedef struct {
     const char*     name;
     TestFunction    function;
+    bool            content;    // Needs the files of the game
 } Test;
 
 void Test_Check(bool condition, const char* file, int line, const char* format, ...);
