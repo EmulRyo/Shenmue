@@ -47,6 +47,6 @@ Functions of the game that the scene programs of Shenmue I (the `SCN3` chunk of 
 |---------------|-------------|
 | `id`          | ID of the function, in hexadecimal (the value of `r5` of the call) |
 | `handler`     | Address of its code in `1ST_READ.BIN` of the PAL version (v1.001), from the table at `0x0C2A90A8`. Empty for the three IDs without one (`0x076`, `0x077`, `0x125`) |
-| `arguments`   | Numbers of arguments of the calls of the SH-4 programs, from the game files (e.g. `3`, `1-5, 17`). `0` when the calls never drop arguments. Empty for the IDs that no program calls |
+| `arguments`   | Numbers of arguments of the calls of the programs (the SH-4 code of the `mapinfo.bin` files and the bytecode of the SCN files), from the game files (e.g. `3`, `1-5, 17`). `0` when the calls never drop arguments. Empty for the IDs that no program calls |
 | `name`        | Name given from its code and its calls. Empty when it isn't known yet |
 | `description` | What it does, with its arguments in the order of the parameters. "Probably" marks what is inferred from the values passed by the programs more than from its code |

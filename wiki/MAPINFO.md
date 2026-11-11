@@ -143,7 +143,7 @@ The code also passes the address of the [door table](#door-table) (`ctx[0x04]` +
 
 ### Functions of the game
 
-The ID of a call to `ctx[0x28]` is the index of a table of 461 functions of the game (IDs 0 to `0x1CC`), at `0x0C2A90A8` in `1ST_READ.BIN` of the PAL version (v1.001). The function of `ctx[0x28]` (`0x0C0BB30C`) clears the result, calls the function of the table with `r4` of the call and the stack of the arguments, and returns the result. In the game, the context is part of a work area of 0x25EC bytes (ID `SCNW`): it starts at its byte 0x28. Only `0x76`, `0x77` and `0x125` have no function, and the 119 programs call 342 of the IDs, all of them with a function.
+The ID of a call to `ctx[0x28]` is the index of a table of 461 functions of the game (IDs 0 to `0x1CC`), at `0x0C2A90A8` in `1ST_READ.BIN` of the PAL version (v1.001). The function of `ctx[0x28]` (`0x0C0BB30C`) clears the result, calls the function of the table with `r4` of the call and the stack of the arguments, and returns the result. In the game, the context is part of a work area of 0x25EC bytes (ID `SCNW`): it starts at its byte 0x28. Only `0x76`, `0x77` and `0x125` have no function, and the 119 programs call 342 of the IDs, all of them with a function (347 with the [bytecode](SCN#bytecode) of the SCN files).
 
 The functions with a known meaning (*probably*: inferred from the values passed by the programs):
 

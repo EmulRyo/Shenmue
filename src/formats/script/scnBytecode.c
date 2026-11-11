@@ -181,6 +181,10 @@ static bool FindFunctions(BC_Program* program) {
             continue;
         if ((ins.kind == BC_CALL || (ins.kind == BC_PUSH && ins.area == BC_AREA_PROGRAM)) && IsStart(program, ins.target))
             program->functions[count++] = ins.target;
+        // A function ends with a return: the next instruction starts another one, if no branch goes to it
+        uint32_t next = pc + ins.size;
+        if (ins.kind == BC_RET && IsStart(program, next) && !(program->starts[next] & START_TARGET))
+            program->functions[count++] = next;
     }
     for (uint32_t r = 0; r < scn->relocationCount; r++) {
         SCN_Relocation relocation = SCN_GetRelocation(scn, r);

@@ -21,6 +21,10 @@ All the SCN files are version `0x100` (bytecode). In the `mapinfo.bin` files, th
 
 For the 119 maps with SH-4 code, the data that follows the code is almost the same in both versions: 32,028 of the 32,396 strings of the data of the SCN files are also in the data of the chunks (paths, model, sprite and sound names, and debug messages such as `Daily practice %d: Check: in range, setting training flag to true`). On average, the first 48% of the data is identical byte for byte. The [door table](MAPINFO#door-table) and the strings of the [jukebox](MAPINFO#jukebox) are also in the data of the SCN files.
 
+The code of both versions has the same functions, in the same order: the function *i* of the bytecode is the function *i + 1* of the SH-4 code, whose function 0 is the code at `codeStart` (resume and yield, which the bytecode doesn't need). The 119 pairs have 23,864 functions, all paired. In 23,668 of them (99.2%) the calls to the program's own functions, to the [functions of the game](MAPINFO#functions-of-the-game) and to the services of the context are the same, in the same order. The SCN files are a slightly different revision of the same programs: the other 196 functions have a few more or fewer calls, e.g. calls to `Print` (`0x000`) with debug messages, or a fourth `VoiceArchive` (`0x0CA`) in a function that `daza`, `dbhb`, `dbyo`, `dcha` and other maps share. The bytecode makes 255,303 calls to the game, against 255,148 for the SH-4 code.
+
+The arguments of the paired calls are the same when both versions give them as constants or strings of the data (551,861 arguments), except 184: e.g. in `scene/01/d000` some phone numbers have 6 digits in the SH-4 code (`"615647"`) and 5 in the bytecode (`"61564"`), and some floats are 1.0 in one version and -1.0 in the other.
+
 ## Layout
 
 ```

@@ -14,6 +14,7 @@
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
 #include "formats/script/scnBytecode.h"
+#include "formats/script/scnPair.h"
 #include "formats/script/sh4Listing.h"
 #include "formats/script/sh4Program.h"
 #include "ui/properties.h"
@@ -61,6 +62,13 @@ typedef struct {
     SH4_Program     program;
     bool            bytecode;   // Analyzed bytecode: bc is valid
     BC_Program      bc;
+    // The bytecode of the SCN file of the map of an SH-4 program, paired with it
+    bool            paired;
+    char            pairName[64];   // e.g. "act01_d000.scn"
+    uint8_t*        pairData;
+    SCN_Program     pairScn;
+    BC_Program      pairBc;
+    SCN_Pair        pair;
     char            (*functionLabels)[PROGRAMVIEW_LABEL_SIZE];
     uint32_t        gameCount;
     GameFunction*   games;
@@ -104,6 +112,11 @@ void ProgramView_Close(void) {
         SH4_FreeProgram(&g_view.program);
     if (g_view.bytecode)
         BC_FreeProgram(&g_view.bc);
+    if (g_view.paired) {
+        SCN_FreePair(&g_view.pair);
+        BC_FreeProgram(&g_view.pairBc);
+    }
+    free(g_view.pairData);
     free(g_view.functionLabels);
     free(g_view.games);
     free(g_view.gameLabels);
@@ -296,6 +309,71 @@ static bool CreateRelocationLabels(void) {
     return true;
 }
 
+// The bytecode of the map of an SH-4 program, paired with it: scenario/actNN_<map>.scn for scene/NN/<map>/mapinfo.bin
+static void LoadPair(const char* filepath) {
+    // The last 4 parts of the path: scene, NN, <map>, mapinfo.bin
+    char root[1024], path[1200];
+    snprintf(root, sizeof(root), "%s", filepath);
+    const char* parts[4] = { NULL };
+    for (int p = 0; p < 4; p++) {
+        char* separator = strrchr(root, '/');
+        char* backslash = strrchr(root, '\\');
+        if (backslash != NULL && (separator == NULL || backslash > separator))
+            separator = backslash;
+        if (separator == NULL)
+            return;
+        *separator = '\0';
+        parts[p] = separator + 1;
+    }
+    if (strlen(parts[2]) != 2 || strlen(parts[1]) >= 16)
+        return;
+    snprintf(g_view.pairName, sizeof(g_view.pairName), "act%s_%s.scn", parts[2], parts[1]);
+    for (char* c = g_view.pairName; *c != '\0'; c++)
+        *c = (char)tolower((unsigned char)*c);
+    snprintf(path, sizeof(path), "%s/scenario/%s", root, g_view.pairName);
+    size_t size = 0;
+    if (!FileExists(path) || (g_view.pairData = File_LoadToMemoryDecompressed(path, &size)) == NULL)
+        return;
+    if (!SCN_Read(g_view.pairData, size, &g_view.pairScn) || !BC_AnalyzeProgram(&g_view.pairBc, &g_view.pairScn))
+        return;
+    if (!SCN_PairPrograms(&g_view.pair, &g_view.program, &g_view.pairBc)) {
+        BC_FreeProgram(&g_view.pairBc);
+        return;
+    }
+    g_view.paired = true;
+    printf("[ProgramView]: Paired with %s: %u of %u functions with the same calls\n", path, g_view.pair.sameFunctions,
+        g_view.pair.pairedFunctions);
+}
+
+// The comment of a call of the SH-4 program, with the arguments it doesn't know taken from the paired call of the
+// bytecode
+static void PairedCallComment(const SH4_Call* call, char* text, size_t size) {
+    const SH4_Call* other = SCN_PairedCall(&g_view.pair, &g_view.pairBc, (uint32_t)(call - g_view.program.calls));
+    if (other == NULL || call->argumentBytes < 0)
+        return;
+    char prefix[SH4_LINE_COMMENT];
+    SH4_DescribeCall(&g_view.program, call, prefix, sizeof(prefix));
+    char* open = strchr(prefix, '(');
+    if (open == NULL)
+        return;
+    *open = '\0';
+    size_t length = (size_t)snprintf(text, size, "%s(", prefix);
+    for (uint32_t i = 0; i < call->argumentCount && length < size; i++) {
+        const SH4_Value* value = &call->arguments[i];
+        const SH4_Value* known = value->kind == SH4_VALUE_UNKNOWN && i < other->argumentCount ? &other->arguments[i] : NULL;
+        char argument[96] = "?";
+        if (known == NULL)
+            SH4_DescribeValue(&g_view.program, value, argument, sizeof(argument));
+        else if (known->kind == SH4_VALUE_CONSTANT)
+            SH4_DescribeNumber(known->value, argument, sizeof(argument));
+        else if (known->kind == SH4_VALUE_DATA && BC_DataString(&g_view.pairBc, known->value) != NULL)
+            SH4_QuoteString(BC_DataString(&g_view.pairBc, known->value), argument, sizeof(argument));
+        length += (size_t)snprintf(text + length, size - length, i > 0 ? ", %s" : "%s", argument);
+    }
+    if (length < size)
+        snprintf(text + length, size - length, (uint32_t)call->argumentBytes / 4 > call->argumentCount ? ", ...)" : ")");
+}
+
 // Analyzes the program read in g_view.scn
 static bool Load(const char* filepath) {
     snprintf(g_view.path, sizeof(g_view.path), "%s", filepath);
@@ -310,6 +388,8 @@ static bool Load(const char* filepath) {
             header->entry))
             return false;
         g_view.sh4 = true;
+        if (IsFileExtension(filepath, ".bin"))
+            LoadPair(filepath);
     } else {
         if (!BC_AnalyzeProgram(&g_view.bc, &g_view.scn))
             return false;
@@ -366,6 +446,12 @@ static bool ShowFunction(int32_t function) {
         g_view.lineCapacity = max;
     }
     g_view.lineCount = FunctionLines((uint32_t)function, g_view.lines);
+    for (uint32_t i = 0; g_view.paired && i < g_view.lineCount; i++) {
+        const SH4_Call* call = g_view.lines[i].kind == SH4_LINE_INSTRUCTION ?
+            SH4_CallAt(&g_view.program, g_view.lines[i].address) : NULL;
+        if (call != NULL)
+            PairedCallComment(call, g_view.lines[i].comment, sizeof(g_view.lines[i].comment));
+    }
     g_view.function = function;
     g_view.scroll = (Vector2) { 0.0f, 0.0f };
     return true;
@@ -603,6 +689,12 @@ static void FunctionProperties(Properties* properties, uint32_t index) {
         Properties_Int(properties, "Blocks", function->blockCount);
     }
     Properties_Int(properties, "Local callers", callers);
+    if (g_view.paired && g_view.pair.functions[index] >= 0) {
+        Properties_Section(properties, "Bytecode");
+        Properties_Text(properties, "File", g_view.pairName);
+        Properties_Text(properties, "Function", TextFormat("0x%X", g_view.pairBc.functions[g_view.pair.functions[index]]));
+        Properties_Bool(properties, "Same calls", g_view.pair.sameCalls[index]);
+    }
     Properties_Section(properties, "Calls");
     Properties_Int(properties, "Local", kinds[SH4_CALL_LOCAL]);
     Properties_Int(properties, "Game", kinds[SH4_CALL_GAME]);

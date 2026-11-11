@@ -5,12 +5,13 @@
 #include "corpus.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
+#include "formats/script/scnBytecode.h"
 #include "formats/script/sh4Program.h"
 #include "test.h"
 
 // The database of the functions of the game called by the scene programs (resources/Shenmue1GameFunctions.tsv): one row
-// per ID of the table of 1ST_READ.BIN, every ID called by the SH-4 programs has the code of its function, and the
-// numbers of arguments of its calls are those of the database
+// per ID of the table of 1ST_READ.BIN, every ID called by the SH-4 programs and by the bytecode of the SCN files has
+// the code of its function, and the numbers of arguments of its calls are those of the database
 
 #define GAME_FUNCTIONS  0x1CD   // IDs 0 to 0x1CC
 #define LINE_SIZE       1024
@@ -91,6 +92,35 @@ static int ReadRows(const char* path, Row* rows) {
     return count;
 }
 
+typedef struct {
+    uint64_t    calls;
+    uint64_t    namedCalls;
+    uint64_t    withoutHandler;
+    uint64_t    otherCount;     // With a number of arguments not in the database
+    bool        used[GAME_FUNCTIONS];
+} CallCounts;
+
+static void CheckCalls(const Row* rows, const SH4_Call* calls, uint32_t count, const char* name, CallCounts* counts) {
+    for (uint32_t c = 0; c < count; c++) {
+        const SH4_Call* call = &calls[c];
+        if (call->kind != SH4_CALL_GAME)
+            continue;
+        counts->calls++;
+        if (call->id < 0 || call->id >= GAME_FUNCTIONS || !rows[call->id].handler) {
+            counts->withoutHandler++;
+            continue;
+        }
+        counts->used[call->id] = true;
+        counts->namedCalls += rows[call->id].name[0] != '\0';
+        if (call->argumentBytes >= 0 && !ContainsCount(rows[call->id].arguments, call->argumentBytes / 4)) {
+            if (counts->otherCount < 10)
+                CHECK(false, "%s: 0x%X: game function 0x%X with %d arguments, not in \"%s\"", name, call->address,
+                    call->id, call->argumentBytes / 4, rows[call->id].arguments);
+            counts->otherCount++;
+        }
+    }
+}
+
 void Test_GameFunctions(const TestContext* context) {
     Row* rows = calloc(GAME_FUNCTIONS, sizeof(Row));
     if (rows == NULL)
@@ -109,8 +139,9 @@ void Test_GameFunctions(const TestContext* context) {
     CHECK_EQ(duplicates, 0, "repeated names");
 
     CorpusList list = Corpus_MapinfoFiles(context->content);
-    uint64_t calls = 0, namedCalls = 0, withoutHandler = 0, otherCount = 0;
-    bool used[GAME_FUNCTIONS] = { false };
+    CallCounts* counts = calloc(1, sizeof(CallCounts));
+    if (counts == NULL)
+        return;
     for (uint32_t i = 0; i < list.count; i++) {
         MAPINFO_File file;
         if (!MAPINFO_Load(list.files[i].path, &file))
@@ -124,39 +155,41 @@ void Test_GameFunctions(const TestContext* context) {
             MAPINFO_Free(&file);
             continue;
         }
-        for (uint32_t c = 0; c < program.callCount; c++) {
-            const SH4_Call* call = &program.calls[c];
-            if (call->kind != SH4_CALL_GAME)
-                continue;
-            calls++;
-            if (call->id < 0 || call->id >= GAME_FUNCTIONS || !rows[call->id].handler) {
-                withoutHandler++;
-                continue;
-            }
-            used[call->id] = true;
-            namedCalls += rows[call->id].name[0] != '\0';
-            if (call->argumentBytes >= 0 && !ContainsCount(rows[call->id].arguments, call->argumentBytes / 4)) {
-                if (otherCount < 10)
-                    CHECK(false, "%s: 0x%X: game function 0x%X with %d arguments, not in \"%s\"", list.files[i].name,
-                        call->address, call->id, call->argumentBytes / 4, rows[call->id].arguments);
-                otherCount++;
-            }
-        }
+        CheckCalls(rows, program.calls, program.callCount, list.files[i].name, counts);
         SH4_FreeProgram(&program);
         MAPINFO_Free(&file);
     }
+    Corpus_Free(&list);
+    // The bytecode of the SCN files
+    list = Corpus_ScnFiles(context->content);
+    uint64_t sh4Calls = counts->calls;
+    for (uint32_t i = 0; i < list.count; i++) {
+        uint32_t size;
+        uint8_t* data = Corpus_Load(&list.files[i], &size);
+        SCN_Program scn;
+        BC_Program bytecode;
+        if (data != NULL && SCN_Read(data, size, &scn) && BC_AnalyzeProgram(&bytecode, &scn)) {
+            CheckCalls(rows, bytecode.calls, bytecode.callCount, list.files[i].name, counts);
+            BC_FreeProgram(&bytecode);
+        }
+        free(data);
+    }
+    Corpus_Free(&list);
     uint32_t usedCount = 0, usedNamed = 0;
     for (int i = 0; i < GAME_FUNCTIONS; i++) {
-        usedCount += used[i];
-        usedNamed += used[i] && rows[i].name[0] != '\0';
-        CHECK(used[i] || rows[i].arguments[0] == '\0', "ID 0x%X: arguments \"%s\" but no call", i, rows[i].arguments);
+        usedCount += counts->used[i];
+        usedNamed += counts->used[i] && rows[i].name[0] != '\0';
+        CHECK(counts->used[i] || rows[i].arguments[0] == '\0', "ID 0x%X: arguments \"%s\" but no call", i,
+            rows[i].arguments);
     }
-    CHECK_EQ(withoutHandler, 0, "calls to an ID without code");
-    CHECK_EQ(otherCount, 0, "calls with a number of arguments not in the database");
+    CHECK_EQ(counts->withoutHandler, 0, "calls to an ID without code");
+    CHECK_EQ(counts->otherCount, 0, "calls with a number of arguments not in the database");
+    CHECK_EQ(usedCount, 347, "IDs called by the programs");
     Test_Info("%d IDs, %u with code, %u named; the programs call %u of them (%u named)", count, handlers, named,
         usedCount, usedNamed);
-    Test_Info("%llu calls to the game, %llu to a named function (%.1f%%)", (unsigned long long)calls,
-        (unsigned long long)namedCalls, calls ? 100.0 * namedCalls / (double)calls : 0.0);
+    Test_Info("%llu calls to the game (%llu of the SH-4 programs), %llu to a named function (%.1f%%)",
+        (unsigned long long)counts->calls, (unsigned long long)sh4Calls, (unsigned long long)counts->namedCalls,
+        counts->calls ? 100.0 * counts->namedCalls / (double)counts->calls : 0.0);
+    free(counts);
     free(rows);
-    Corpus_Free(&list);
 }

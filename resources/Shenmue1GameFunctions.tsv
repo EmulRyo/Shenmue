@@ -149,8 +149,8 @@ id	handler	arguments	name	description
 093	0x0C174056			
 094	0x0C165874	4		
 095	0x0C164C6C			
-096	0x0C174076			
-097	0x0C174098			
+096	0x0C174076	1		
+097	0x0C174098	0		
 098	0x0C1651D2	2		
 099	0x0C1658B8	2-4		
 09A	0x0C17412C	3, 4	ArrayAccess	Operation chosen by argument 1 (18 operations) on the element of argument 2 of the array of argument 0, of bytes, halfwords or words
@@ -264,7 +264,7 @@ id	handler	arguments	name	description
 106	0x0C165E8A			
 107	0x0C16552C			
 108	0x0C165530			
-109	0x0C165EDA			
+109	0x0C165EDA	3		
 10A	0x0C165534			
 10B	0x0C1608B8	1		
 10C	0x0C160914			
@@ -359,7 +359,7 @@ id	handler	arguments	name	description
 165	0x0C167330	5		
 166	0x0C168368	1-4, 6, 8		
 167	0x0C158CE2	1		
-168	0x0C0C2EF4	22		
+168	0x0C0C2EF4	18, 22		
 169	0x0C0C2EFA	1		
 16A	0x0C166082	3		
 16B	0x0C16089E	2		
@@ -392,7 +392,7 @@ id	handler	arguments	name	description
 186	0x0C17174C	2		
 187	0x0C16BE2E	4		
 188	0x0C16372A	2		
-189	0x0C157B70			
+189	0x0C157B70	3		
 18A	0x0C16BAC8	2		
 18B	0x0C16BB56	8		
 18C	0x0C0C2F06	1-5		
@@ -457,6 +457,6 @@ id	handler	arguments	name	description
 1C7	0x0C16AB54	1-4		
 1C8	0x0C16BFE0	1		
 1C9	0x0C16512A	2		
-1CA	0x0C16BD86			
+1CA	0x0C16BD86	3		
 1CB	0x0C1686EC	3		
 1CC	0x0C165148	1		
