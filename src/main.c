@@ -9,6 +9,7 @@
 #include "views/imageView.h"
 #include "views/motnView.h"
 #include "views/mt5View.h"
+#include "views/programView.h"
 #include "views/views.h"
 #include "app/fileOpen.h"
 #include "app/filenameDB.h"
@@ -107,12 +108,15 @@ static void DrawToolbar(Rectangle area) {
     if (Toolbar_Button(ICON_FOLDER_FILE_OPEN, "Open", "Open files", TOOLBAR_CTRL | KEY_O))
         FileOpen_Dialog();
     // The image, the model or the model with its motions of the open view
-    bool model = MT5View_IsOpen(), motions = MOTNView_CanExport();
-    if (!model && !motions && !ImageView_IsOpen())
+    bool model = MT5View_IsOpen(), motions = MOTNView_CanExport(), program = ProgramView_CanExport();
+    if (!model && !motions && !program && !ImageView_IsOpen())
         GuiDisable();
-    const char* tooltip = model ? "Export the model (glTF or OBJ)" : motions ? "Export the model with the motions (glTF)" : "Export the image";
+    const char* tooltip = model ? "Export the model (glTF or OBJ)" : motions ? "Export the model with the motions (glTF)" :
+        program ? "Export the listing of the program (text)" : "Export the image";
     if (Toolbar_Button(ICON_FILE_EXPORT, "Export", tooltip, TOOLBAR_CTRL | KEY_S)) {
-        if (model)
+        if (program)
+            ProgramView_ExportDialog();
+        else if (model)
             MT5View_ExportDialog();
         else if (motions)
             MOTNView_ExportDialog();

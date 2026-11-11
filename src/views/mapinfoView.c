@@ -21,6 +21,7 @@
 #include "views/authView.h"
 #include "views/mapFiles.h"
 #include "views/mapinfoView.h"
+#include "views/programView.h"
 
 #define MAPINFOVIEW_LABEL_SIZE   160
 #define MAPINFOVIEW_LIST_WIDTH   420.0f
@@ -1092,6 +1093,10 @@ void MAPINFOView_Toolbar(void) {
         !AUTHView_OpenMapCutscene(g_view.filename, (uint32_t)cutscene))
         printf("[MAPINFOView]: Failed to load the cutscene %d\n", cutscene);
     GuiEnable();
+    // The view of the program of the map too
+    if (Toolbar_Button(ICON_CPU, "Program", "Show the program of the map (SCN3 chunk)", KEY_P) &&
+        !ProgramView_OpenMap(g_view.filename))
+        printf("[MAPINFOView]: Failed to load the program of the map\n");
 }
 
 static void UpdateInput(Rectangle scene) {

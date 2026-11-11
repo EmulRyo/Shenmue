@@ -21,7 +21,7 @@ bool MAPINFOView_IsOpen(void);
 void MAPINFOView_Draw(Rectangle area);
 // Fills the texts of the status bar
 void MAPINFOView_Status(ViewStatus* status);
-// Adds its actions to the toolbar (Enter: play the selected cutscene)
+// Adds its actions to the toolbar (Enter: play the selected cutscene, P: show the scene program, see programView.h)
 void MAPINFOView_Toolbar(void);
 // Path of the open mapinfo.bin, NULL if the view isn't open
 const char* MAPINFOView_Path(void);

@@ -7,6 +7,7 @@
 #include "views/mapinfoView.h"
 #include "views/motnView.h"
 #include "views/mt5View.h"
+#include "views/programView.h"
 #include "views/sndView.h"
 #include "views/xwmView.h"
 #include "views/views.h"
@@ -28,6 +29,7 @@ static const View g_views[VIEW_COUNT] = {
     [VIEW_SND]   = { SNDView_Close, SNDView_IsOpen, SNDView_Draw, SNDView_Toolbar, SNDView_Status },
     [VIEW_AUTH]  = { AUTHView_Close, AUTHView_IsOpen, AUTHView_Draw, AUTHView_Toolbar, AUTHView_Status },
     [VIEW_CHRT]  = { CHRTView_Close, CHRTView_IsOpen, CHRTView_Draw, CHRTView_Toolbar, CHRTView_Status },
+    [VIEW_PROGRAM] = { ProgramView_Close, ProgramView_IsOpen, ProgramView_Draw, ProgramView_Toolbar, ProgramView_Status },
     [VIEW_MAPINFO] = { MAPINFOView_Close, MAPINFOView_IsOpen, MAPINFOView_Draw, MAPINFOView_Toolbar, MAPINFOView_Status },
     [VIEW_MOTN]  = { MOTNView_Close, MOTNView_IsOpen, MOTNView_Draw, MOTNView_Toolbar, MOTNView_Status },
     [VIEW_FON]   = { FONView_Close, FONView_IsOpen, FONView_Draw, FONView_Toolbar, FONView_Status },
@@ -35,8 +37,9 @@ static const View g_views[VIEW_COUNT] = {
 
 void Views_CloseOthers(ViewID view) {
     for (int i = 0; i < VIEW_COUNT; i++) {
-        // The view of the map of a cutscene stays open behind it
-        if (i != view && !(view == VIEW_AUTH && i == VIEW_MAPINFO && AUTHView_UsesMap()))
+        // The view of the map of a cutscene or of its program stays open behind it
+        if (i != view && !(view == VIEW_AUTH && i == VIEW_MAPINFO && AUTHView_UsesMap()) &&
+            !(view == VIEW_PROGRAM && i == VIEW_MAPINFO && ProgramView_UsesMap()))
             g_views[i].close();
     }
 }

@@ -20,6 +20,7 @@
 #include "views/mapinfoView.h"
 #include "views/motnView.h"
 #include "views/mt5View.h"
+#include "views/programView.h"
 #include "views/sndView.h"
 #include "views/xwmView.h"
 #include "views/views.h"
@@ -80,6 +81,7 @@ static const Format g_formats[] = {
     { ".auth",      "auth", "AUTH", AUTHView_Open,      VIEW_AUTH },
     { ".motn",      NULL,   "MOTN", MOTNView_Open,      VIEW_MOTN },
     { ".fon",       NULL,   "FON",  FONView_Open,       VIEW_FON },
+    { ".scn",       NULL,   "SCN",  ProgramView_Open,   VIEW_PROGRAM },
     { NULL,         NULL,   "MOTN", MOTNView_Open,      VIEW_MOTN, "motion.bin" },
     { NULL,         NULL,   "MAPINFO", MAPINFOView_Open, VIEW_MAPINFO, "mapinfo.bin" },
 };

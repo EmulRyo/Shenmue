@@ -6,7 +6,7 @@
 
 // Views that show the opened file in the content area of the window. Only one of them is open at a time, except the view
 // of the cutscenes (VIEW_AUTH) over the view of the map of the cutscene (VIEW_MAPINFO), which plays the cutscenes of the
-// map and draws the map around the cutscenes: the first open view in ViewID order is the one shown, and the map is shown
+// map and draws the map around the cutscenes, and the view of the program of the map (VIEW_PROGRAM) over the map: the first open view in ViewID order is the one shown, and the map is shown
 // again when the cutscene is closed
 
 typedef enum {
@@ -17,6 +17,7 @@ typedef enum {
     VIEW_SND,
     VIEW_AUTH,
     VIEW_CHRT,
+    VIEW_PROGRAM,
     VIEW_MAPINFO,
     VIEW_MOTN,
     VIEW_FON,

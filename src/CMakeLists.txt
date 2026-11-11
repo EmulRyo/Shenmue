@@ -71,6 +71,8 @@ set(SRC
     src/formats/script/sh4.h
     src/formats/script/sh4Code.c
     src/formats/script/sh4Code.h
+    src/formats/script/sh4Listing.c
+    src/formats/script/sh4Listing.h
     src/formats/script/sh4Program.c
     src/formats/script/sh4Program.h
     src/formats/script/scnf.c
@@ -132,6 +134,8 @@ set(SRC
     src/views/motnView.c
     src/views/motnView.h
     src/views/mt5View.h
+    src/views/programView.c
+    src/views/programView.h
     src/views/sndView.c
     src/views/sndView.h
     src/views/views.c
