@@ -16,6 +16,7 @@ void Test_ScnFiles(const TestContext* context);
 void Test_ScnPairs(const TestContext* context);
 void Test_Sh4Encodings(const TestContext* context);
 void Test_Sh4Code(const TestContext* context);
+void Test_Sh4Program(const TestContext* context);
 
 static const Test s_tests[] = {
     { "mapinfo_chunks", Test_MapinfoChunks, true },
@@ -24,6 +25,7 @@ static const Test s_tests[] = {
     { "scn_pairs",      Test_ScnPairs,      true },
     { "sh4_encodings",  Test_Sh4Encodings,  false },
     { "sh4_code",       Test_Sh4Code,       true },
+    { "sh4_program",    Test_Sh4Program,    true },
 };
 
 static int s_checks;

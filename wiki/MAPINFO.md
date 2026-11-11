@@ -96,10 +96,50 @@ In version `0x20000` the code, from `codeStart` to `dataStart`, is a list of fun
 - **Code at `codeStart`:** in all 119 files, a routine that starts saving `r8`, `r9`, `r10`, `r13`, `r14` and `pr` on the stack `r15` (`86 2F 96 2F A6 2F D6 2F E6 2F 22 4F`).
 - **Functions:** the other 23,864 functions start with `mov.l r14,@-r13` and `sts.l pr,@-r13` (`E6 2D 22 4D`), followed by `add #-n,r13` and `mov r13,r14`: they use `r13` as their stack and `r14` as their frame pointer. They end with `lds.l @r13+,pr`, `rts` and, in its delay slot, `mov.l @r13+,r14` (`26 4D 0B 00 D6 6E`, also found 23,864 times). The entry point (`entry`) is one of them.
 - **Position-independent code:** the calls between the functions of the program are `bsrf Rn` (or `bsr` for the near ones), and the long jumps inside a function are `braf Rn` (268,755 in the 119 files). `Rn` is loaded just before with `mov.l @(disp,PC),Rn`: the target is the address of the `braf`/`bsrf` + 4 + that literal (e.g. `D1 02 23 01 09 00`: `mov.l`, `braf r1`, `nop`, with its literal two words after).
-- **Calls outside the program:** `jsr @Rn` (323,828). In 94% of them `Rn` is read from memory, not loaded from a literal.
+- **Calls outside the program:** `jsr @Rn` (323,828), through the function pointers of a context (see [Context and calls](#context-and-calls)).
 - **Literals:** each `mov.w`/`mov.l @(disp,PC)` reads a 16- or 32-bit literal placed after an unconditional branch (`rts`, `bra`, `braf`), aligned to its size with `00 00` or `09 00` (`nop`). Some literals are not read by any instruction.
 
 Following the flow from `codeStart`, the entry point and every function that starts with the prologue, 84% of the words are instructions (8,951,779), 14.6% literals (1,558,416) and 1.3% are not reached. The rest are alignment words, unused literals, dead code left after branches (e.g. an epilogue after a `braf`), and code reached only through an address: in `scene/01/d000` the routine at `0x64`, whose address the code at `codeStart` loads with `mova`. The branches and literals never leave the code, the delay slots never hold a branch, and no word is both an instruction and a literal.
+
+### Context and calls
+
+The program runs as a coroutine of the game. The code from `0x30` to `0x73` is the same in the 119 files:
+
+- **Resume (`0x30`):** called with `r5` pointing to a context and `r6` to a state of 3 words (address to run, `r13` and `r14`). It keeps the context in `r8`, stores `r4` at `ctx+0x34`, `r6` at `ctx+0x38` and the address of the yield routine (`0x64`, loaded with `mova`) at `ctx+0x3C`, loads `r9` and `r10` from `ctx+0x0C` and `ctx+0x10`, and calls the address of the state with its `r13` and `r14`. When that call returns, it returns 0.
+- **Yield (`0x64`):** saves `pr` (the return address), `r13`, `r14` and `r0` in the state (`ctx+0x38`, words 0, 1, 2 and 3), and returns from the resume code with the state. The next resume continues after the call to the yield.
+
+No function writes `r8`: in the whole program it holds the context. `r9` and `r10` are *probably* the bases of variables (e.g. `add r9,r4` before a `mov.b r5,@r4`).
+
+| Context | Use |
+|---------|-----|
+| `0x04`  | Base of the data. A string or a table of the data is `ctx[0x04]` + an offset loaded from a literal (52,363 literals in the 119 files), e.g. the paths and file names passed to the game |
+| `0x0C`, `0x10` | Loaded in `r9` and `r10` |
+| `0x14`, `0x18`, `0x1C` | Functions, 1,446 calls |
+| `0x28`  | Function of the game: 255,148 calls |
+| `0x2C`  | Function with an ID: 31,569 calls, 12 IDs from 0 to `0x13` (ID 0 in 30,583) |
+| `0x30`  | Function with an ID: 3,431 calls, IDs 0 to 6 |
+| `0x34`  | `r4` of the resume, passed in `r4` to the functions of `0x1C`, `0x28`, `0x2C` and `0x30` (not to those of `0x14` and `0x18`; checked in `scene/01/d000`) |
+| `0x38`  | State of the coroutine |
+| `0x3C`  | Yield: 32,115 calls |
+
+A call to the game pushes its arguments on the stack `r13` (`mov.l Rn,@-r13`), loads the ID of the function in `r5` (`mov #imm,r5` or a literal), `ctx[0x34]` in `r4` and the function in `r0`, and passes the stack in `r6` in the delay slot of the `jsr`. After the call, `add #n,r13` drops the `n / 4` arguments. For example, in `scene/01/d000`:
+
+```
+mov.l  r4,@-r13         ; ctx[0x04] + offset of "D0W0"
+mov.l  r5,@-r13         ; ctx[0x04] + offset of "seqdata1.bin"
+mov.l  r6,@-r13         ; 4
+mov.l  r7,@-r13         ; 0
+mov.l  @(disp,pc),r5    ; ID 0x13E
+mov.l  @(0x28,r8),r0
+mov.l  @(0x34,r8),r4
+jsr    @r0
+mov    r13,r6
+add    #16,r13          ; 4 arguments
+```
+
+The ID is always a constant: 329 different IDs, from 0 to `0x1CC`. 59 of them are called with different numbers of arguments; for 51 of those the number depends only on the last pushed argument, always a constant, e.g. `0x166` takes 1, 2, 3 or more arguments depending on it (29 different values). The functions of the program call each other with the same convention (`bsrf` instead of the `jsr`): 43,591 calls. 11,672 of the 23,983 functions are not called by any `bsr`/`bsrf`.
+
+The code also passes the address of the [door table](#door-table) (`ctx[0x04]` + offset) to a function of the program: it is the only reference to the table in 93 of the 96 SH-4 programs that have one. In the three `jomo`, other records of the data also point to the names of the door models (6 references).
 
 ### Strings of the code
 

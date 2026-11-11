@@ -71,6 +71,8 @@ set(SRC
     src/formats/script/sh4.h
     src/formats/script/sh4Code.c
     src/formats/script/sh4Code.h
+    src/formats/script/sh4Program.c
+    src/formats/script/sh4Program.h
     src/formats/script/scnf.c
     src/formats/script/scnf.h
 
