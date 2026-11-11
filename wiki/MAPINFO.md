@@ -52,7 +52,7 @@ Counts are the number of files (of 136) that contain the chunk.
 | `MAPT` | 93    | 0xC           | [Single value](#single-value-chunks) |
 | `LSCN` | 86    | 8             | Empty |
 | `DIRT` | 86    | 0xC           | [Single value](#single-value-chunks) |
-| `FOG ` | 80    | 0x58 or 0xA8  | [Fog and background](#fog--fog) |
+| `FOG ` | 78    | 0x58 or 0xA8  | [Fog and background](#fog--fog) |
 | `SCRL` | 62    | 0xC           | [Single value](#single-value-chunks) |
 | `SCEX` | 22    | 8–0x48BC4     | [Cutscenes](#scex--cutscenes) |
 | `CMPS` | 17    | 8             | Empty |
@@ -78,7 +78,7 @@ The program of the map. In 119 files it is **native SH-4 machine code** (the CPU
 | 0x0C   | 4    | uint32 | `entry`     | Entry point. In version `0x20000` the code there always starts with `E6 2D` (`mov.l r14,@-r13`). In version `0x100` it can be an odd offset (`0x30`, `0xCC5`, `0x3C62`...) |
 | 0x10   | 4    | uint32 | `dataStart` | Start of the data that follows the code |
 | 0x14   | 4    | uint32 | `end`       | End of the data. In version `0x20000`, the size of the chunk; in version `0x100`, the size of the chunk minus 8 (16 of 17 files) |
-| 0x18   | 4    | uint32 | `unknown`   | Unknown: 0 to `0x8F4` |
+| 0x18   | 4    | uint32 | `unknown`   | Unknown: 0 to `0xF50`. 0 in 11 files |
 | 0x1C   | 4    | uint32 | —           | Always 0 |
 | 0x20   | 4    | uint32 | `codeStart` | Start of the code. Always `0x30` |
 | 0x24   | 4    | uint32 | `unknown`   | Version `0x100`: same as `end`. Version `0x20000`: 0 |
@@ -341,7 +341,7 @@ A list of commands that end with a 0. The commands load the [SND](SND) sound ban
 
 ## FOG — Fog
 
-Contains one set (78 files) or two sets (2 files, size `0xA8`) of three chunks `DEMO`, `FOG ` and `BACK`, each one with a [chunk header](#chunk-header-8-bytes).
+Contains one set (78 chunks) or two sets (2 chunks, size `0xA8`: `scene/02/mksg` and `scene/03/mfbt`) of three chunks `DEMO`, `FOG ` and `BACK`, each one with a [chunk header](#chunk-header-8-bytes). The 80 `FOG ` chunks are in 78 files: `daza` of `scene/01` and `scene/02` have two identical `FOG ` chunks of 0x58 bytes.
 
 | Chunk  | Size | Data | Description |
 |--------|-----:|------|-------------|

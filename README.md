@@ -32,6 +32,17 @@ cmake -B build && cmake --build build
 
 If the repository was cloned without `--recursive`, run `git submodule update --init`.
 
+## Tests
+
+The tests check the formats against the files of the game, with the values documented in the wiki (numbers of files, chunks, header fields...). They need the files of Shenmue I extracted from the `.tad` files, in `content/Shenmue1` by default (another folder can be given with `-DSHENMUE_CONTENT=<folder>`); without them, the tests are skipped.
+
+```
+cmake --build build --target ShenmueTests
+ctest --test-dir build -C Debug
+```
+
+The test executable can also be run alone, with the folder and the names of some tests: `ShenmueTests content/Shenmue1 scn_files`.
+
 ## Usage
 
 The databases of `resources/` are embedded in the executable when it is built, so it can be run from any folder.

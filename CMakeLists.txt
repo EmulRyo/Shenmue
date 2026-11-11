@@ -74,3 +74,8 @@ endfunction()
 embed_resource(FilenameDatabase.txt g_filenameDatabase)
 embed_resource(Shenmue1Characters.tsv g_shenmue1Characters)
 embed_resource(Shenmue1Maps.tsv g_shenmue1Maps)
+
+# Tests over the files of the game: cmake --build build --target ShenmueTests, then ctest --test-dir build -C Debug
+enable_testing()
+set(SHENMUE_CONTENT "${CMAKE_SOURCE_DIR}/content/Shenmue1" CACHE PATH "Folder with the extracted files of Shenmue I, for the tests")
+add_subdirectory(tests)
