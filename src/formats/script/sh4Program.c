@@ -277,16 +277,17 @@ static int32_t PoppedBytes(const SH4_Program* program, uint32_t address) {
     return ins.immediate;
 }
 
-// Arguments of a call: the last pushes of the block, as many as the bytes popped after it
+// Arguments of a call: the last pushes of the block, as many as the bytes popped after it. The called function reads them
+// from the stack, the last push first (r6 points to it): the first argument is the last push. The arguments pushed
+// before the block are unknown
 static void SetArguments(SH4_Program* program, SH4_Call* call, State* state) {
     call->argumentBytes = PoppedBytes(program, call->address + 4);
     if (call->argumentBytes < 0 || call->argumentBytes % 4 != 0)
         return;
     uint32_t count = (uint32_t)call->argumentBytes / 4;
     call->argumentCount = count < SH4_MAX_ARGUMENTS ? count : SH4_MAX_ARGUMENTS;
-    // Pushes of this block, the oldest first; the arguments pushed before the block are unknown
     for (uint32_t i = 0; i < call->argumentCount; i++) {
-        uint32_t fromEnd = count - i; // 1 = last push
+        uint32_t fromEnd = i + 1; // 1 = last push
         call->arguments[i] = fromEnd <= state->pushCount ? state->pushes[state->pushCount - fromEnd] : Unknown();
     }
     state->pushCount = count < state->pushCount ? state->pushCount - count : 0;

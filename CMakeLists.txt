@@ -74,6 +74,7 @@ endfunction()
 embed_resource(FilenameDatabase.txt g_filenameDatabase)
 embed_resource(Shenmue1Characters.tsv g_shenmue1Characters)
 embed_resource(Shenmue1Maps.tsv g_shenmue1Maps)
+embed_resource(Shenmue1GameFunctions.tsv g_shenmue1GameFunctions)
 
 # Tests over the files of the game: cmake --build build --target ShenmueTests, then ctest --test-dir build -C Debug
 enable_testing()

@@ -40,7 +40,10 @@ uint32_t SH4_FunctionLines(const SH4_Program* program, uint32_t function, SH4_Li
 int SH4_LineAt(const SH4_Line* lines, uint32_t count, uint32_t address);
 // Call at the address of a jsr, bsr or bsrf, NULL if none
 const SH4_Call* SH4_CallAt(const SH4_Program* program, uint32_t address);
-// Text of a call, e.g. "game 0x13E("D0W0", 4)", "call 0x74(?, 1)", "yield"
+// Name of a function of the game by its ID, NULL if unknown: given by the application, which has the database of them
+typedef const char* (*SH4_GameNamer)(int id);
+void SH4_SetGameNamer(SH4_GameNamer namer);
+// Text of a call, e.g. "game 0x13E(0, 4)" ("game 0x13E SequenceData(0, 4)" with a namer), "call 0x74(?, 1)", "yield"
 void SH4_DescribeCall(const SH4_Program* program, const SH4_Call* call, char* text, size_t size);
 // Text of a value: a number, a string of the data, a field of the context...
 void SH4_DescribeValue(const SH4_Program* program, const SH4_Value* value, char* text, size_t size);

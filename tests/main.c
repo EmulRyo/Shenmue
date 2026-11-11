@@ -18,6 +18,7 @@ void Test_Sh4Encodings(const TestContext* context);
 void Test_Sh4Code(const TestContext* context);
 void Test_Sh4Program(const TestContext* context);
 void Test_Sh4Listing(const TestContext* context);
+void Test_GameFunctions(const TestContext* context);
 
 static const Test s_tests[] = {
     { "mapinfo_chunks", Test_MapinfoChunks, true },
@@ -28,6 +29,7 @@ static const Test s_tests[] = {
     { "sh4_code",       Test_Sh4Code,       true },
     { "sh4_program",    Test_Sh4Program,    true },
     { "sh4_listing",    Test_Sh4Listing,    true },
+    { "game_functions", Test_GameFunctions, true },
 };
 
 static int s_checks;

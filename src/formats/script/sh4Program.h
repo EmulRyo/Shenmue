@@ -50,7 +50,8 @@ typedef struct {
     int32_t     id;         // ID in r5, -1 if not constant
     uint32_t    target;     // SH4_CALL_LOCAL: called function (address)
     int32_t     argumentBytes;  // Popped from r13 after the call (add #n,r13), -1 if not found
-    uint32_t    argumentCount;  // Arguments with a known push, up to SH4_MAX_ARGUMENTS, in push order
+    uint32_t    argumentCount;  // Up to SH4_MAX_ARGUMENTS, in the order of the parameters: the first one is the last
+                                // push (the top of the stack). Those pushed before the block of the call are unknown
     SH4_Value   arguments[SH4_MAX_ARGUMENTS];
 } SH4_Call;
 

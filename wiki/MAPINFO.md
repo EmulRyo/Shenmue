@@ -115,20 +115,20 @@ No function writes `r8`: in the whole program it holds the context. `r9` and `r1
 | `0x04`  | Base of the data. A string or a table of the data is `ctx[0x04]` + an offset loaded from a literal (52,363 literals in the 119 files), e.g. the paths and file names passed to the game |
 | `0x0C`, `0x10` | Loaded in `r9` and `r10` |
 | `0x14`, `0x18`, `0x1C` | Functions, 1,446 calls |
-| `0x28`  | Function of the game: 255,148 calls |
+| `0x28`  | Function of the game: 255,148 calls (see [Functions of the game](#functions-of-the-game)) |
 | `0x2C`  | Function with an ID: 31,569 calls, 12 IDs from 0 to `0x13` (ID 0 in 30,583) |
 | `0x30`  | Function with an ID: 3,431 calls, IDs 0 to 6 |
 | `0x34`  | `r4` of the resume, passed in `r4` to the functions of `0x1C`, `0x28`, `0x2C` and `0x30` (not to those of `0x14` and `0x18`; checked in `scene/01/d000`) |
 | `0x38`  | State of the coroutine |
 | `0x3C`  | Yield: 32,115 calls |
 
-A call to the game pushes its arguments on the stack `r13` (`mov.l Rn,@-r13`), loads the ID of the function in `r5` (`mov #imm,r5` or a literal), `ctx[0x34]` in `r4` and the function in `r0`, and passes the stack in `r6` in the delay slot of the `jsr`. After the call, `add #n,r13` drops the `n / 4` arguments. For example, in `scene/01/d000`:
+A call to the game pushes its arguments on the stack `r13` (`mov.l Rn,@-r13`), loads the ID of the function in `r5` (`mov #imm,r5` or a literal), `ctx[0x34]` in `r4` and the function in `r0`, and passes the stack in `r6` in the delay slot of the `jsr`. The function reads the arguments from that stack, from its top: the first argument is the last one pushed. After the call, `add #n,r13` drops the `n / 4` arguments. For example, in `scene/01/d000`, a call with the arguments `0, 4, "seqdata1.bin", "D0W0"`:
 
 ```
-mov.l  r4,@-r13         ; ctx[0x04] + offset of "D0W0"
-mov.l  r5,@-r13         ; ctx[0x04] + offset of "seqdata1.bin"
-mov.l  r6,@-r13         ; 4
-mov.l  r7,@-r13         ; 0
+mov.l  r4,@-r13         ; argument 3: ctx[0x04] + offset of "D0W0"
+mov.l  r5,@-r13         ; argument 2: ctx[0x04] + offset of "seqdata1.bin"
+mov.l  r6,@-r13         ; argument 1: 4
+mov.l  r7,@-r13         ; argument 0: 0
 mov.l  @(disp,pc),r5    ; ID 0x13E
 mov.l  @(0x28,r8),r0
 mov.l  @(0x34,r8),r4
@@ -137,9 +137,30 @@ mov    r13,r6
 add    #16,r13          ; 4 arguments
 ```
 
-The ID is always a constant: 329 different IDs, from 0 to `0x1CC`. 59 of them are called with different numbers of arguments; for 51 of those the number depends only on the last pushed argument, always a constant, e.g. `0x166` takes 1, 2, 3 or more arguments depending on it (29 different values). The functions of the program call each other with the same convention (`bsrf` instead of the `jsr`): 43,591 calls. 11,672 of the 23,983 functions are not called by any `bsr`/`bsrf`.
+The ID is always a constant: 329 different IDs, from 0 to `0x1CC`. 59 of them are called with different numbers of arguments; for 51 of those the number depends only on the first argument, always a constant, e.g. `0x166` takes 1, 2, 3 or more arguments depending on it (29 different values). The functions of the program call each other with the same convention (`bsrf` instead of the `jsr`): 43,591 calls. 11,672 of the 23,983 functions are not called by any `bsr`/`bsrf`.
 
 The code also passes the address of the [door table](#door-table) (`ctx[0x04]` + offset) to a function of the program: it is the only reference to the table in 93 of the 96 SH-4 programs that have one. In the three `jomo`, other records of the data also point to the names of the door models (6 references).
+
+### Functions of the game
+
+The ID of a call to `ctx[0x28]` is the index of a table of 461 functions of the game (IDs 0 to `0x1CC`), at `0x0C2A90A8` in `1ST_READ.BIN` of the PAL version (v1.001). The function of `ctx[0x28]` (`0x0C0BB30C`) clears the result, calls the function of the table with `r4` of the call and the stack of the arguments, and returns the result. In the game, the context is part of a work area of 0x25EC bytes (ID `SCNW`): it starts at its byte 0x28. Only `0x76`, `0x77` and `0x125` have no function, and the 119 programs call 342 of the IDs, all of them with a function.
+
+The functions with a known meaning (*probably*: inferred from the values passed by the programs):
+
+| ID      | Name           | Calls  | Arguments | Description |
+|---------|----------------|-------:|-----------|-------------|
+| `0x000` | Print          | 8,736  | 1 to 5, 17 | Debug message: `printf` with the format in argument 0 (e.g. `"POS POS_RYOU_0 = %f, %f, %f.\n"`) |
+| `0x002` | StartThread    | 8,159  | 2 to 9, 11 | Starts a thread of the program (a structure `SCNT`): the function in argument 0, the number of its arguments in argument 1, then those arguments. Returns the thread |
+| `0x003` | KillThread     | 2,419  | 1 | Ends the thread of argument 0 (0: the current one). Returns 1 if it was running |
+| `0x009` | FloatMath      | 7,790  | 2, 3 | Operation on floats chosen by argument 0 (comparisons, conversions, differences of vectors) |
+| `0x02E` | Fade           | 2,915  | 1, 9 | *Probably* a fade of the screen: a duration and two colors (red, green, blue, alpha). With -1, returns its state |
+| `0x06D` | PlayVoice      | 14,339 | 1 | *Probably* plays the voice clip named in argument 0 (e.g. `"SY11A006"`) |
+| `0x09A` | ArrayAccess    | 37,378 | 3, 4 | One of 18 operations (argument 1) on the element of argument 2 of the array of argument 0, of bytes, halfwords or words |
+| `0x0CA` | VoiceArchive   | 1,312  | 2 | *Probably* opens (argument 0: 1) or closes (0) the archive of voices of argument 1 (e.g. `"E1032"`) |
+| `0x13E` | SequenceData   | 584    | 2, 4 | *Probably* the data of a cutscene in a slot (argument 1, 0 to 69): with argument 0 equal to 0, loads the file of argument 2 (`"seqdata1.bin"`...) of the package of argument 3 (`"D0W0"`...) |
+| `0x16D` | SoundBank      | 1,372  | 4 | Sound banks in slots: with argument 0 equal to 0, loads the bank of argument 2 (or `"FREE"`) in the slot of argument 1 |
+
+The function of `ctx[0x2C]` (`0x0C0BB318`) copies the arguments to the thread and calls `0x0C155DB4` with the ID; that of `ctx[0x30]` (`0x0C0BB32E`) calls `0x0C16110C`.
 
 ### Strings of the code
 

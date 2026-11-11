@@ -11,6 +11,8 @@ extern const unsigned char g_shenmue1Characters[];
 extern const size_t g_shenmue1CharactersSize;
 extern const unsigned char g_shenmue1Maps[];
 extern const size_t g_shenmue1MapsSize;
+extern const unsigned char g_shenmue1GameFunctions[];
+extern const size_t g_shenmue1GameFunctionsSize;
 
 #define GAMEDB_MAX_COLUMNS  16
 #define GAMEDB_BUFFERS      8   // Strings returned by GameDB_CharacterLabel at the same time
@@ -26,9 +28,10 @@ typedef struct {
 } Table;
 
 static bool g_loaded;
-static size_t g_characterCount, g_mapCount;
+static size_t g_characterCount, g_mapCount, g_gameFunctionCount;
 static GameDB_Character* g_characters;
 static GameDB_Map* g_maps;
+static GameDB_GameFunction* g_gameFunctions;
 
 // Splits the text in rows of columns cells, the missing ones empty. Returns false on memory error
 static bool ReadTable(const unsigned char* data, size_t size, int columns, Table* table) {
@@ -101,12 +104,42 @@ static void LoadMaps(void) {
     }
 }
 
+// id (hexadecimal), handler, arguments, name, description
+static void LoadGameFunctions(void) {
+    Table table;
+    if (!ReadTable(g_shenmue1GameFunctions, g_shenmue1GameFunctionsSize, 5, &table) ||
+        (g_gameFunctions = calloc(table.count + 1, sizeof(GameDB_GameFunction))) == NULL) {
+        fprintf(stderr, "[GameDB]: Out of memory\n");
+        return;
+    }
+    for (size_t i = 0; i < table.count; i++) {
+        const char** cells = &table.cells[i * table.columns];
+        g_gameFunctions[g_gameFunctionCount++] = (GameDB_GameFunction) { (int)strtol(cells[0], NULL, 16), cells[1],
+            cells[2], cells[3], cells[4] };
+    }
+}
+
 static void Load(void) {
     if (g_loaded)
         return;
     g_loaded = true;
     LoadCharacters();
     LoadMaps();
+    LoadGameFunctions();
+}
+
+const GameDB_GameFunction* GameDB_FindGameFunction(int id) {
+    Load();
+    for (size_t i = 0; i < g_gameFunctionCount; i++) {
+        if (g_gameFunctions[i].id == id)
+            return &g_gameFunctions[i];
+    }
+    return NULL;
+}
+
+const char* GameDB_GameFunctionName(int id) {
+    const GameDB_GameFunction* function = GameDB_FindGameFunction(id);
+    return function != NULL && function->name[0] != '\0' ? function->name : NULL;
 }
 
 const GameDB_Character* GameDB_FindCharacter(const char* id) {

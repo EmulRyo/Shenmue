@@ -40,10 +40,10 @@ static const char* const s_d000Strings[] = { "seqdata1.bin", "D0W0", "a1_yamaw.s
 #define START_CODE_SIZE 0x44    // The code at codeStart: resume (0x30) and yield (0x64), the same in every program
 #define MAX_SUBCODES    8192
 
-// Number of arguments of the calls of an ID whose last pushed argument is a given constant
+// Number of arguments of the calls of an ID whose first argument (the last push) is a given constant
 typedef struct {
     int32_t     id;
-    uint32_t    last;
+    uint32_t    first;
     int32_t     bytes;
     bool        conflict;
 } Subcode;
@@ -147,14 +147,14 @@ void Test_Sh4Program(const TestContext* context) {
                     idBytes[call->id] = call->argumentBytes;
                 else if (idBytes[call->id] != call->argumentBytes)
                     idConflicts[call->id]++;
-                const SH4_Value* last = call->argumentCount > 0 ? &call->arguments[call->argumentCount - 1] : NULL;
-                if (last != NULL && last->kind == SH4_VALUE_CONSTANT) {
+                const SH4_Value* first = call->argumentCount > 0 ? &call->arguments[0] : NULL;
+                if (first != NULL && first->kind == SH4_VALUE_CONSTANT) {
                     uint32_t s = 0;
-                    while (s < subcodeCount && (subcodes[s].id != call->id || subcodes[s].last != last->value))
+                    while (s < subcodeCount && (subcodes[s].id != call->id || subcodes[s].first != first->value))
                         s++;
                     if (s == subcodeCount && subcodeCount < MAX_SUBCODES) {
                         subcodes[s].id = call->id;
-                        subcodes[s].last = last->value;
+                        subcodes[s].first = first->value;
                         subcodes[s].bytes = call->argumentBytes;
                         subcodeCount++;
                     } else if (s < subcodeCount && subcodes[s].bytes != call->argumentBytes) {
@@ -213,7 +213,7 @@ void Test_Sh4Program(const TestContext* context) {
     CHECK_EQ(sameStart, 119, "programs with the same code at codeStart");
     CHECK_EQ(doorFiles, 96, "SH-4 programs with a door table");
     CHECK_EQ(doorReferenced, 96, "door tables referenced by the code");
-    // The IDs called with different numbers of arguments: for most of them, the number depends on the last argument
+    // The IDs called with different numbers of arguments: for most of them, the number depends on the first argument
     uint32_t ids = 0, conflicts = 0, bySubcode = 0;
     for (int id = 0; id < MAX_ID; id++) {
         ids += idCalls[id] > 0;
@@ -227,7 +227,7 @@ void Test_Sh4Program(const TestContext* context) {
     }
     CHECK_EQ(ids, 329, "game IDs");
     CHECK_EQ(conflicts, 59, "game IDs called with different numbers of arguments");
-    CHECK_EQ(bySubcode, 51, "of them, with a number of arguments fixed by the last argument");
+    CHECK_EQ(bySubcode, 51, "of them, with a number of arguments fixed by the first argument");
     free(subcodes);
     Test_Info("%u programs: %llu functions (%llu never called locally), %llu blocks", programs,
         (unsigned long long)functions, (unsigned long long)uncalled, (unsigned long long)blocks);

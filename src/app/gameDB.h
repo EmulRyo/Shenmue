@@ -3,8 +3,9 @@
 
 #include "ui/properties.h"
 
-// The databases of the characters and of the maps of Shenmue I (resources/Shenmue1Characters.tsv and
-// resources/Shenmue1Maps.tsv, embedded in the executable), loaded on the first use. The returned strings live until the
+// The databases of the characters, of the maps and of the functions of the game called by the scene programs of Shenmue I
+// (resources/Shenmue1Characters.tsv, resources/Shenmue1Maps.tsv and resources/Shenmue1GameFunctions.tsv, embedded in the
+// executable), loaded on the first use. The returned strings live until the
 // end of the application. The IDs are compared ignoring the case
 
 typedef struct {
@@ -36,6 +37,20 @@ const char* GameDB_CharacterLabel(const char* id);
 const char* GameDB_CharacterPlace(const char* id);
 // The name of the character and where it is found, if they are known
 void GameDB_CharacterProperties(Properties* properties, const char* id);
+
+// A function of the game called by the scene programs by its ID (resources/Shenmue1GameFunctions.tsv)
+typedef struct {
+    int         id;
+    const char* handler;    // Address of its code in 1ST_READ.BIN (PAL), empty for the IDs without one
+    const char* arguments;  // Numbers of arguments of the calls of the programs, e.g. "3" or "1-4, 6"
+    const char* name;       // Empty if unknown
+    const char* description;
+} GameDB_GameFunction;
+
+// NULL if the ID isn't in the database
+const GameDB_GameFunction* GameDB_FindGameFunction(int id);
+// Name of the game function, NULL if it has none
+const char* GameDB_GameFunctionName(int id);
 
 // The map of an ID and an IPAC block (NULL or empty for the map itself). NULL if it isn't in the database
 const GameDB_Map* GameDB_FindMap(const char* id, const char* ipac);

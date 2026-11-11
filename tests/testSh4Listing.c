@@ -10,7 +10,7 @@
 // line of a function, and the comments of the calls show their ID and arguments
 
 // A call of scene/01/d000, from the wiki
-#define D000_CALL "game 0x13E(\"D0W0\", \"seqdata1.bin\", 4, 0)"
+#define D000_CALL "game 0x13E(0, 4, \"seqdata1.bin\", \"D0W0\")"
 
 void Test_Sh4Listing(const TestContext* context) {
     CorpusList list = Corpus_MapinfoFiles(context->content);

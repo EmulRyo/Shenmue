@@ -122,14 +122,22 @@ const SH4_Call* SH4_CallAt(const SH4_Program* program, uint32_t address) {
     return low < program->callCount && program->calls[low].address == address ? &program->calls[low] : NULL;
 }
 
+static SH4_GameNamer s_gameNamer;
+
+void SH4_SetGameNamer(SH4_GameNamer namer) {
+    s_gameNamer = namer;
+}
+
 void SH4_DescribeCall(const SH4_Program* program, const SH4_Call* call, char* text, size_t size) {
     size_t length;
+    const char* name;
     switch (call->kind) {
     case SH4_CALL_LOCAL:
         length = (size_t)snprintf(text, size, "call 0x%X", call->target);
         break;
     case SH4_CALL_GAME:
-        length = (size_t)snprintf(text, size, "game 0x%X", (unsigned)call->id);
+        name = s_gameNamer != NULL ? s_gameNamer(call->id) : NULL;
+        length = (size_t)snprintf(text, size, name != NULL ? "game 0x%X %s" : "game 0x%X", (unsigned)call->id, name);
         break;
     case SH4_CALL_YIELD:
         snprintf(text, size, "yield");

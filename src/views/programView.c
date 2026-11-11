@@ -9,6 +9,7 @@
 #include <raylib.h>
 #include "raygui.h"
 #include "core/bytes.h"
+#include "app/gameDB.h"
 #include "core/file.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
@@ -191,8 +192,9 @@ static bool CreateLists(void) {
     if (g_view.gameLabels == NULL || g_view.stringLabels == NULL)
         return false;
     for (uint32_t g = 0; g < g_view.gameCount; g++) {
-        snprintf(g_view.gameLabels[g], PROGRAMVIEW_LABEL_SIZE, "0x%03X  (%u call%s)", (unsigned)g_view.games[g].id,
-            g_view.games[g].calls, g_view.games[g].calls == 1 ? "" : "s");
+        const char* name = GameDB_GameFunctionName(g_view.games[g].id);
+        snprintf(g_view.gameLabels[g], PROGRAMVIEW_LABEL_SIZE, "0x%03X  %s%s(%u call%s)", (unsigned)g_view.games[g].id,
+            name != NULL ? name : "", name != NULL ? "  " : "", g_view.games[g].calls, g_view.games[g].calls == 1 ? "" : "s");
     }
     // The same text can be at several offsets of the data
     for (uint32_t s = 0; s < g_view.stringCount; s++) {
@@ -224,6 +226,8 @@ static bool Load(const char* filepath) {
     g_view.current = -1;
     g_view.selected = -1;
     const SCN_Header* header = &g_view.scn.header;
+    // The calls to the game are listed with the names of the database
+    SH4_SetGameNamer(GameDB_GameFunctionName);
     if (SCN_IsSH4(&g_view.scn)) {
         if (!SH4_AnalyzeProgram(&g_view.program, g_view.scn.data, header->codeStart, header->dataStart, header->end,
             header->entry))
@@ -526,12 +530,23 @@ static void DrawProperties(Rectangle bounds) {
         break;
     case GROUP_GAME: {
         const GameFunction* game = &g_view.games[index];
-        Properties_Begin(properties, bounds, TextFormat("Game function 0x%X", (unsigned)game->id));
+        const GameDB_GameFunction* info = GameDB_FindGameFunction(game->id);
+        const char* name = GameDB_GameFunctionName(game->id);
+        Properties_Begin(properties, bounds, name != NULL ? TextFormat("Game function %s", name) :
+            TextFormat("Game function 0x%X", (unsigned)game->id));
         Properties_Text(properties, "ID", TextFormat("0x%X", (unsigned)game->id));
+        if (name != NULL)
+            Properties_Text(properties, "Name", name);
+        if (info != NULL && info->description[0] != '\0')
+            Properties_Text(properties, "Description", info->description);
         Properties_Int(properties, "Calls", game->calls);
         if (game->minArguments >= 0)
             Properties_Text(properties, "Arguments", game->minArguments == game->maxArguments ?
                 TextFormat("%d", game->minArguments) : TextFormat("%d to %d", game->minArguments, game->maxArguments));
+        if (info != NULL && info->arguments[0] != '\0')
+            Properties_Text(properties, "Arguments in all the maps", info->arguments);
+        if (info != NULL && info->handler[0] != '\0')
+            Properties_Text(properties, "Code (1ST_READ.BIN)", info->handler);
         ReferenceProperties(properties);
         break;
     }
