@@ -57,7 +57,97 @@ All the offsets are relative to the start of the file.
 
 ## Bytecode
 
-From `codeStart` to `dataStart`. The instructions of the bytecode are unknown.
+From `codeStart` to `dataStart`: the instructions of a stack machine, 1 to 5 bytes long, followed in 112 files by `0xFF` bytes up to `dataStart`. They are those read by the interpreter of `1ST_READ.BIN` (PAL), at `0x0C08CD04`. The 136 files have 4,349,410 instructions, and no other byte.
+
+The machine has a stack of 32-bit values (`sp`), a frame pointer (`fp`) and a result register, set by the calls and by the operator `0x80`, which the conditional branch tests. A call pushes the return address and `fp`, and sets `fp` to `sp`: the function finds its arguments at `fp+8`, `fp+12`..., the first argument first, and makes room for its local variables, at negative offsets, with `sp -= n`. As in the [SH-4 programs](MAPINFO#context-and-calls), the caller pushes the arguments from the last one to the first one, and drops them after the call (`sp += 4 × count`).
+
+### Encoding
+
+The two highest bits of the first byte give the group of the instruction:
+
+| First byte  | Group | Instruction |
+|-------------|-------|-------------|
+| `0x00–0x3F` | Control | Bits 4-5: size of the operand that follows, 0, 1, 2 or 4 bytes (signed, little-endian); bits 0-3: the operation |
+| `0x40–0x7F` | Push    | The same: bits 4-5, size of the operand; bits 0-3, what is pushed |
+| `0x80–0xA6` | Operator | No operand |
+| `0xA7–0xFF` | — | Not an instruction (skipped by the interpreter) |
+
+For example `1B 02` is the control operation `0xB` with an operand of 1 byte (`0x02`), and `73 43 00 00 00` the push `3` with an operand of 4 bytes (`0x43`).
+
+### Control (`0x00–0x3F`)
+
+| Op  | Count   | Instruction |
+|----:|--------:|-------------|
+| 0   | 24,400  | Return. At the first function of a thread, ends the thread |
+| 1   | 44,135  | Call the function at the offset `n` of the program |
+| 2   | 0       | Call the function at the address popped |
+| 3   | 356,612 | `sp += n`: drops `n / 4` values (`n > 0`), or makes room for local variables (`n < 0`) |
+| 4   | 0       | Jump to the offset `n` of the program |
+| 5   | 123,394 | Jump `n` bytes from the end of the instruction |
+| 6   | 151,360 | The same if the result is 0 |
+| 7   | 32,209  | Number of arguments of the next operation `0xC`, always just before it |
+| 8   | 576     | Calls the function of `ctx[0x2C]` with the ID 1 and the address of the offset `n` of the program (in its data), and yields |
+| 9   | 0       | Function `n` of a table of the interpreter, with the stack |
+| 10  | 0       | Function `n + 1` of that table, with the first 4 values of the stack |
+| 11  | 260,948 | Function of the game with the ID `n`: the same IDs and arguments as `ctx[0x28]` of the [SH-4 programs](MAPINFO#functions-of-the-game) |
+| 12  | 32,209  | Function of `ctx[0x2C]` with the ID `n`, and yields |
+| 13  | 3,462   | Function of `ctx[0x30]` with the ID `n` |
+| 14, 15 | 0    | Nothing |
+
+The operations 11 to 13 put the value returned in the result register.
+
+### Push (`0x40–0x7F`)
+
+| Op  | Count     | Pushes |
+|----:|----------:|--------|
+| 0   | 1,082,267 | The constant `n` (e.g. `70 41 4B 49 52`: the ID `AKIR`) |
+| 1–3 | 73,278    | The address of the offset `n` of the program: a function (8,182) or a variable or string of the data (65,096). The files only use 3 |
+| 4–7 | 0         | The byte, halfword or word at `n` of a variable area of the game, or its address (4, 5, 6, 7) |
+| 8–11 | 6,182, 692, 43,287, 84,700 | The byte, halfword or word at the offset `n` of the data (from `dataStart`), or its address |
+| 12–15 | 11,678, 4,635, 364,701, 290,912 | The byte, halfword or word at `fp+n` (a local variable or an argument), or its address |
+
+The bytes and halfwords are signed.
+
+### Operators (`0x80–0xA6`)
+
+They pop their operands from the stack (the second one first) and push their result. The comparisons push -1 when they are true and 0 when false.
+
+| Byte | Operator | Count | Byte | Operator | Count |
+|------|----------|------:|------|----------|------:|
+| `80` | Pop the result register | 395,709 | `94` | `*` | 46,947 |
+| `81` | Push the result register | 86,547 | `95` | `/` | 608 |
+| `82`–`84` | Load the byte, halfword or word at the address popped | 6,153, 523, 70,797 | `96` | `%` | 316 |
+| `85`–`87` | Store a byte, halfword or word: the value popped at the address popped, then push the value | 26,093, 4,010, 230,629 | `97` | `<<` (arithmetic) | 29,618 |
+| `88` | `==` | 122,899 | `98` | `>>` (arithmetic) | 1,427 |
+| `89` | `!=` | 7,884 | `99`–`9C` | Nothing | 0 |
+| `8A` | `<` | 3,398 | `9D` | Integer to float | 7,716 |
+| `8B` | `<=` | 1,791 | `9E` | Float to integer | 2,652 |
+| `8C` | `>` | 2,752 | `9F`–`A2` | Float `<`, `<=`, `>`, `>=` | 3,863, 2,247, 2,345, 3,662 |
+| `8D` | `>=` | 3,779 | `A3` | Float `+` | 10,247 |
+| `8E` | `~` (not) | 405 | `A4` | Float `-` | 13,326 |
+| `8F`–`91` | `&`, `|`, `^` | 27,490, 36,352, 427 | `A5` | Float `*` | 11,751 |
+| `92`, `93` | `+`, `-` | 181,321, 6,032 | `A6` | Float `/` | 6,057 |
+
+### Example
+
+The program of `act01_mk99.scn` (from `0x30`, its entry point) starts a thread, as the [function of the game](MAPINFO#functions-of-the-game) `0x002` with the arguments `(0x43, 1, 'AKIR')`: the function at `0x43`, its number of arguments, and that argument.
+
+```
+0030  13 00           sp += 0
+0032  70 41 4B 49 52  push 'AKIR'
+0037  50 01           push 1
+0039  73 43 00 00 00  push &0x43
+003E  1B 02           game 0x002
+0040  13 0C           sp += 12
+0042  00              ret
+0043  13 00           sp += 0
+0045  50 01           push 1
+0047  5E 08           push.l [fp+8]      ; 'AKIR'
+0049  1B 1F           game 0x01F
+...
+```
+
+The values of the code relocations (`0x2402`) are always the start of a function, and every jump and branch goes to an instruction.
 
 ## Data
 

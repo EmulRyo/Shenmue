@@ -13,6 +13,7 @@
 #include "core/file.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
+#include "formats/script/scnBytecode.h"
 #include "formats/script/sh4Listing.h"
 #include "formats/script/sh4Program.h"
 #include "ui/properties.h"
@@ -56,8 +57,10 @@ typedef struct {
     uint8_t*        fileData;   // .scn file
     MAPINFO_File    mapinfo;    // mapinfo.bin
     SCN_Program     scn;
-    bool            sh4;        // Analyzed: program is valid
+    bool            sh4;        // Analyzed SH-4 code: program is valid
     SH4_Program     program;
+    bool            bytecode;   // Analyzed bytecode: bc is valid
+    BC_Program      bc;
     char            (*functionLabels)[PROGRAMVIEW_LABEL_SIZE];
     uint32_t        gameCount;
     GameFunction*   games;
@@ -99,6 +102,8 @@ void ProgramView_Close(void) {
     MAPINFO_Free(&g_view.mapinfo);
     if (g_view.sh4)
         SH4_FreeProgram(&g_view.program);
+    if (g_view.bytecode)
+        BC_FreeProgram(&g_view.bc);
     free(g_view.functionLabels);
     free(g_view.games);
     free(g_view.gameLabels);
@@ -131,6 +136,63 @@ bool ProgramView_UsesMap(void) {
     return g_view.open && g_view.fromMap && map != NULL && SamePath(map, g_view.path);
 }
 
+// The analyzed program, SH-4 code or bytecode: its functions, calls, strings and listing
+
+static bool HasListing(void) {
+    return g_view.sh4 || g_view.bytecode;
+}
+
+static uint32_t FunctionCount(void) {
+    return g_view.sh4 ? g_view.program.functionCount : g_view.bytecode ? g_view.bc.functionCount : 0;
+}
+
+static uint32_t FunctionStart(uint32_t function) {
+    return g_view.sh4 ? g_view.program.functions[function].start : g_view.bc.functions[function];
+}
+
+static uint32_t FunctionEnd(uint32_t function) {
+    return g_view.sh4 ? g_view.program.functions[function].end : BC_FunctionEnd(&g_view.bc, function);
+}
+
+static int FunctionAt(uint32_t address) {
+    return g_view.sh4 ? SH4_FunctionAt(&g_view.program, address) :
+        g_view.bytecode ? BC_FunctionAt(&g_view.bc, address) : -1;
+}
+
+static uint32_t CallCount(void) {
+    return g_view.sh4 ? g_view.program.callCount : g_view.bytecode ? g_view.bc.callCount : 0;
+}
+
+static const SH4_Call* Calls(void) {
+    return g_view.sh4 ? g_view.program.calls : g_view.bc.calls;
+}
+
+static const char* StringAt(uint32_t offset) {
+    return g_view.sh4 ? SH4_DataString(&g_view.program, offset) : BC_DataString(&g_view.bc, offset);
+}
+
+static uint32_t MaxFunctionLines(uint32_t function) {
+    return g_view.sh4 ? SH4_MaxFunctionLines(&g_view.program, function) : BC_MaxFunctionLines(&g_view.bc, function);
+}
+
+static uint32_t FunctionLines(uint32_t function, SH4_Line* lines) {
+    return g_view.sh4 ? SH4_FunctionLines(&g_view.program, function, lines) : BC_FunctionLines(&g_view.bc, function, lines);
+}
+
+// Offset in the data of the string that an instruction of the bytecode pushes, false if none
+static bool BytecodeString(const BC_Instruction* ins, uint32_t* offset) {
+    const SCN_Header* header = &g_view.scn.header;
+    if (ins->kind != BC_PUSH)
+        return false;
+    if (ins->area == BC_AREA_DATA && ins->width == 0)
+        *offset = (uint32_t)ins->operand;
+    else if (ins->area == BC_AREA_PROGRAM && ins->target >= header->dataStart && ins->target < header->end)
+        *offset = ins->target - header->dataStart;
+    else
+        return false;
+    return BC_DataString(&g_view.bc, *offset) != NULL;
+}
+
 static int CompareGames(const void* a, const void* b) {
     return ((const GameFunction*)a)->id - ((const GameFunction*)b)->id;
 }
@@ -141,21 +203,32 @@ static int CompareStrings(const void* a, const void* b) {
 }
 
 // The game functions called, and the strings of the data loaded by the code, with their labels
+// Adds a load of a string of the data
+static void AddString(uint32_t offset, uint32_t loads) {
+    uint32_t s = 0;
+    while (s < g_view.stringCount && g_view.strings[s].offset != offset)
+        s++;
+    if (s == g_view.stringCount)
+        g_view.strings[g_view.stringCount++].offset = offset;
+    g_view.strings[s].loads += loads;
+}
+
 static bool CreateLists(void) {
     const SH4_Program* program = &g_view.program;
-    g_view.functionLabels = calloc(program->functionCount + 1, PROGRAMVIEW_LABEL_SIZE);
-    g_view.games = calloc(program->callCount + 1, sizeof(GameFunction));
-    g_view.strings = calloc(program->literalCount + 1, sizeof(DataString));
+    uint32_t stringCapacity = g_view.sh4 ? program->literalCount : g_view.bc.instructionCount;
+    g_view.functionLabels = calloc(FunctionCount() + 1, PROGRAMVIEW_LABEL_SIZE);
+    g_view.games = calloc(CallCount() + 1, sizeof(GameFunction));
+    g_view.strings = calloc(stringCapacity + 1, sizeof(DataString));
     if (g_view.functionLabels == NULL || g_view.games == NULL || g_view.strings == NULL)
         return false;
-    for (uint32_t f = 0; f < program->functionCount; f++) {
-        const SH4_Function* function = &program->functions[f];
-        snprintf(g_view.functionLabels[f], PROGRAMVIEW_LABEL_SIZE, "0x%05X%s", function->start,
-            function->start == g_view.scn.header.entry ? "  entry" :
-            function->start == g_view.scn.header.codeStart ? "  resume and yield" : "");
+    for (uint32_t f = 0; f < FunctionCount(); f++) {
+        uint32_t start = FunctionStart(f);
+        snprintf(g_view.functionLabels[f], PROGRAMVIEW_LABEL_SIZE, "0x%05X%s", start,
+            start == g_view.scn.header.entry ? "  entry" :
+            start == g_view.scn.header.codeStart && g_view.sh4 ? "  resume and yield" : "");
     }
-    for (uint32_t c = 0; c < program->callCount; c++) {
-        const SH4_Call* call = &program->calls[c];
+    for (uint32_t c = 0; c < CallCount(); c++) {
+        const SH4_Call* call = &Calls()[c];
         if (call->kind != SH4_CALL_GAME || call->id < 0)
             continue;
         uint32_t g = 0;
@@ -175,16 +248,21 @@ static bool CreateLists(void) {
             game->maxArguments = arguments;
     }
     qsort(g_view.games, g_view.gameCount, sizeof(GameFunction), CompareGames);
-    for (uint32_t l = 0; l < program->literalCount; l++) {
+    for (uint32_t l = 0; g_view.sh4 && l < program->literalCount; l++) {
         const SH4_Literal* literal = &program->literals[l];
-        if (literal->kind != SH4_LITERAL_DATA_OFFSET || SH4_DataString(program, literal->value) == NULL)
+        if (literal->kind == SH4_LITERAL_DATA_OFFSET && SH4_DataString(program, literal->value) != NULL)
+            AddString(literal->value, literal->reads);
+    }
+    for (uint32_t pc = g_view.scn.header.codeStart; g_view.bytecode && pc < g_view.bc.codeEnd;) {
+        BC_Instruction ins;
+        uint32_t offset;
+        if (!BC_Decode(g_view.scn.data, g_view.bc.codeEnd, pc, &ins)) {
+            pc++;
             continue;
-        uint32_t s = 0;
-        while (s < g_view.stringCount && g_view.strings[s].offset != literal->value)
-            s++;
-        if (s == g_view.stringCount)
-            g_view.strings[g_view.stringCount++].offset = literal->value;
-        g_view.strings[s].loads += literal->reads;
+        }
+        if (BytecodeString(&ins, &offset))
+            AddString(offset, 1);
+        pc += ins.size;
     }
     qsort(g_view.strings, g_view.stringCount, sizeof(DataString), CompareStrings);
     g_view.gameLabels = calloc(g_view.gameCount + 1, PROGRAMVIEW_LABEL_SIZE);
@@ -198,9 +276,8 @@ static bool CreateLists(void) {
     }
     // The same text can be at several offsets of the data
     for (uint32_t s = 0; s < g_view.stringCount; s++) {
-        SH4_Value value = { SH4_VALUE_DATA, g_view.strings[s].offset, 0 };
         char text[PROGRAMVIEW_LABEL_SIZE];
-        SH4_DescribeValue(program, &value, text, sizeof(text));
+        SH4_QuoteString(StringAt(g_view.strings[s].offset), text, sizeof(text));
         snprintf(g_view.stringLabels[s], PROGRAMVIEW_LABEL_SIZE, "%s  @0x%X", text, g_view.strings[s].offset);
     }
     return true;
@@ -233,11 +310,15 @@ static bool Load(const char* filepath) {
             header->entry))
             return false;
         g_view.sh4 = true;
-        if (!CreateLists())
+    } else {
+        if (!BC_AnalyzeProgram(&g_view.bc, &g_view.scn))
             return false;
-        printf("[ProgramView]: %u functions, %u calls, %u game functions, %u strings\n", g_view.program.functionCount,
-            g_view.program.callCount, g_view.gameCount, g_view.stringCount);
+        g_view.bytecode = true;
     }
+    if (!CreateLists())
+        return false;
+    printf("[ProgramView]: %s, %u functions, %u calls, %u game functions, %u strings\n", g_view.sh4 ? "SH-4" : "bytecode",
+        FunctionCount(), CallCount(), g_view.gameCount, g_view.stringCount);
     if (!CreateRelocationLabels())
         return false;
     g_view.open = true;
@@ -276,7 +357,7 @@ bool ProgramView_OpenMap(const char* filepath) {
 static bool ShowFunction(int32_t function) {
     if (function == g_view.function)
         return true;
-    uint32_t max = SH4_MaxFunctionLines(&g_view.program, (uint32_t)function);
+    uint32_t max = MaxFunctionLines((uint32_t)function);
     if (max > g_view.lineCapacity) {
         SH4_Line* lines = realloc(g_view.lines, max * sizeof(SH4_Line));
         if (lines == NULL)
@@ -284,7 +365,7 @@ static bool ShowFunction(int32_t function) {
         g_view.lines = lines;
         g_view.lineCapacity = max;
     }
-    g_view.lineCount = SH4_FunctionLines(&g_view.program, (uint32_t)function, g_view.lines);
+    g_view.lineCount = FunctionLines((uint32_t)function, g_view.lines);
     g_view.function = function;
     g_view.scroll = (Vector2) { 0.0f, 0.0f };
     return true;
@@ -296,7 +377,7 @@ static uint32_t CurrentAddress(void) {
         return 0;
     if (g_view.current >= 0 && (uint32_t)g_view.current < g_view.lineCount)
         return g_view.lines[g_view.current].address;
-    return g_view.program.functions[g_view.function].start;
+    return FunctionStart((uint32_t)g_view.function);
 }
 
 static void PushHistory(uint32_t* stack, uint32_t* count, uint32_t address) {
@@ -309,7 +390,7 @@ static void PushHistory(uint32_t* stack, uint32_t* count, uint32_t address) {
 
 // Shows the function of an address with its line highlighted. remember: the place shown before goes to the history
 static void GoTo(uint32_t address, bool remember) {
-    int function = SH4_FunctionAt(&g_view.program, address);
+    int function = FunctionAt(address);
     if (function < 0)
         return;
     if (remember && g_view.function >= 0) {
@@ -318,7 +399,7 @@ static void GoTo(uint32_t address, bool remember) {
     }
     if (!ShowFunction(function))
         return;
-    g_view.current = address == g_view.program.functions[function].start ? 0 :
+    g_view.current = address == FunctionStart((uint32_t)function) ? 0 :
         SH4_LineAt(g_view.lines, g_view.lineCount, address);
     g_view.reveal = true;
     // The tree follows the function shown, unless a game function or a string is selected
@@ -355,9 +436,23 @@ static void FindReferences(void) {
     if (g_view.selectedGroup == GROUP_GAME) {
         int32_t id = g_view.games[g_view.selected].id;
         g_view.references = malloc((g_view.games[g_view.selected].calls + 1) * sizeof(uint32_t));
-        for (uint32_t c = 0; c < program->callCount && g_view.references != NULL; c++) {
-            if (program->calls[c].kind == SH4_CALL_GAME && program->calls[c].id == id)
-                g_view.references[g_view.referenceCount++] = program->calls[c].address;
+        for (uint32_t c = 0; c < CallCount() && g_view.references != NULL; c++) {
+            if (Calls()[c].kind == SH4_CALL_GAME && Calls()[c].id == id)
+                g_view.references[g_view.referenceCount++] = Calls()[c].address;
+        }
+    } else if (g_view.selectedGroup == GROUP_STRINGS && g_view.bytecode) {
+        uint32_t offset = g_view.strings[g_view.selected].offset, found;
+        g_view.references = malloc((g_view.strings[g_view.selected].loads + 1) * sizeof(uint32_t));
+        for (uint32_t pc = g_view.scn.header.codeStart; pc < g_view.bc.codeEnd && g_view.references != NULL;) {
+            BC_Instruction ins;
+            if (!BC_Decode(g_view.scn.data, g_view.bc.codeEnd, pc, &ins)) {
+                pc++;
+                continue;
+            }
+            if (BytecodeString(&ins, &found) && found == offset &&
+                g_view.referenceCount < g_view.strings[g_view.selected].loads)
+                g_view.references[g_view.referenceCount++] = pc;
+            pc += ins.size;
         }
     } else if (g_view.selectedGroup == GROUP_STRINGS) {
         uint32_t offset = g_view.strings[g_view.selected].offset;
@@ -386,10 +481,10 @@ static void Select(Group group, int32_t index) {
     g_view.selectedGroup = group;
     g_view.selected = index;
     g_view.referenceCount = 0;
-    if (index < 0 || !g_view.sh4)
+    if (index < 0 || !HasListing())
         return;
     if (group == GROUP_FUNCTIONS) {
-        GoTo(g_view.program.functions[index].start, true);
+        GoTo(FunctionStart((uint32_t)index), true);
     } else if (group == GROUP_GAME || group == GROUP_STRINGS) {
         FindReferences();
         if (g_view.referenceCount > 0)
@@ -405,8 +500,7 @@ void ProgramView_Toolbar(void) {
         }
         Toolbar_Separator();
     }
-    // The bytecode programs have no listing
-    if (!g_view.sh4)
+    if (!HasListing())
         return;
     if (g_view.backCount == 0)
         GuiDisable();
@@ -434,7 +528,7 @@ static void DrawTree(Rectangle bounds) {
     int32_t clicked = -1;
     Tree_Begin(&g_view.tree, bounds);
     for (int g = 0; g < GROUP_COUNT; g++) {
-        uint32_t count = g == GROUP_FUNCTIONS ? (g_view.sh4 ? g_view.program.functionCount : 0) :
+        uint32_t count = g == GROUP_FUNCTIONS ? FunctionCount() :
             g == GROUP_GAME ? g_view.gameCount : g == GROUP_STRINGS ? g_view.stringCount : g_view.scn.relocationCount;
         if (count == 0)
             continue;
@@ -466,48 +560,55 @@ static void HeaderProperties(Properties* properties) {
     Properties_Text(properties, "End of the data", TextFormat("0x%X", (unsigned)header->end));
     Properties_Text(properties, "Unknown (0x18)", TextFormat("0x%X", (unsigned)header->unknown18));
     Properties_Int(properties, "Relocations", g_view.scn.relocationCount);
-    if (!g_view.sh4) {
-        Properties_Note(properties, "The instructions of the bytecode aren't decoded");
-        return;
-    }
-    const SH4_Program* program = &g_view.program;
-    const SH4_CodeStats* stats = &program->code.stats;
     uint32_t kinds[SH4_CALL_UNKNOWN + 1] = { 0 };
-    for (uint32_t c = 0; c < program->callCount; c++)
-        kinds[program->calls[c].kind]++;
+    for (uint32_t c = 0; c < CallCount(); c++)
+        kinds[Calls()[c].kind]++;
     Properties_Section(properties, "Code");
-    Properties_Int(properties, "Functions", program->functionCount);
-    Properties_Int(properties, "Instructions", stats->instructions);
-    Properties_Int(properties, "Literal words", stats->literals);
-    Properties_Int(properties, "Words not reached", stats->unknown);
+    Properties_Int(properties, "Functions", FunctionCount());
+    if (g_view.sh4) {
+        const SH4_CodeStats* stats = &g_view.program.code.stats;
+        Properties_Int(properties, "Instructions", stats->instructions);
+        Properties_Int(properties, "Literal words", stats->literals);
+        Properties_Int(properties, "Words not reached", stats->unknown);
+    } else {
+        Properties_Int(properties, "Instructions", g_view.bc.instructionCount);
+        Properties_Text(properties, "End of the code", TextFormat("0x%X", g_view.bc.codeEnd));
+    }
     Properties_Section(properties, "Calls");
     Properties_Int(properties, "Local", kinds[SH4_CALL_LOCAL]);
     Properties_Text(properties, "Game", TextFormat("%u (%u functions)", kinds[SH4_CALL_GAME], g_view.gameCount));
     Properties_Int(properties, "ctx[0x2C], ctx[0x30]", kinds[SH4_CALL_SERVICE2C] + kinds[SH4_CALL_SERVICE30]);
-    Properties_Int(properties, "Yield", kinds[SH4_CALL_YIELD]);
-    Properties_Int(properties, "Other", kinds[SH4_CALL_CONTEXT] + kinds[SH4_CALL_UNKNOWN]);
+    if (g_view.sh4) {
+        Properties_Int(properties, "Yield", kinds[SH4_CALL_YIELD]);
+        Properties_Int(properties, "Other", kinds[SH4_CALL_CONTEXT] + kinds[SH4_CALL_UNKNOWN]);
+    }
 }
 
 static void FunctionProperties(Properties* properties, uint32_t index) {
-    const SH4_Program* program = &g_view.program;
-    const SH4_Function* function = &program->functions[index];
-    uint32_t kinds[SH4_CALL_UNKNOWN + 1] = { 0 }, instructions = 0;
-    for (uint32_t c = 0; c < program->callCount; c++) {
-        if (program->calls[c].function == index)
-            kinds[program->calls[c].kind]++;
+    uint32_t kinds[SH4_CALL_UNKNOWN + 1] = { 0 }, callers = 0, start = FunctionStart(index), end = FunctionEnd(index);
+    for (uint32_t c = 0; c < CallCount(); c++) {
+        const SH4_Call* call = &Calls()[c];
+        if (call->function == index)
+            kinds[call->kind]++;
+        callers += call->kind == SH4_CALL_LOCAL && call->target == start;
     }
-    for (uint32_t pc = function->start; pc < function->end; pc += 2)
-        instructions += (SH4_WordKind(&program->code, pc) & SH4_WORD_CODE) != 0;
-    Properties_Text(properties, "Start", TextFormat("0x%X", (unsigned)function->start));
-    Properties_Text(properties, "End", TextFormat("0x%X", (unsigned)function->end));
-    Properties_Int(properties, "Instructions", instructions);
-    Properties_Int(properties, "Blocks", function->blockCount);
-    Properties_Int(properties, "Local callers", function->callers);
+    Properties_Text(properties, "Start", TextFormat("0x%X", (unsigned)start));
+    Properties_Text(properties, "End", TextFormat("0x%X", (unsigned)end));
+    if (g_view.sh4) {
+        const SH4_Function* function = &g_view.program.functions[index];
+        uint32_t instructions = 0;
+        for (uint32_t pc = start; pc < end; pc += 2)
+            instructions += (SH4_WordKind(&g_view.program.code, pc) & SH4_WORD_CODE) != 0;
+        Properties_Int(properties, "Instructions", instructions);
+        Properties_Int(properties, "Blocks", function->blockCount);
+    }
+    Properties_Int(properties, "Local callers", callers);
     Properties_Section(properties, "Calls");
     Properties_Int(properties, "Local", kinds[SH4_CALL_LOCAL]);
     Properties_Int(properties, "Game", kinds[SH4_CALL_GAME]);
     Properties_Int(properties, "ctx[0x2C], ctx[0x30]", kinds[SH4_CALL_SERVICE2C] + kinds[SH4_CALL_SERVICE30]);
-    Properties_Int(properties, "Yield", kinds[SH4_CALL_YIELD]);
+    if (g_view.sh4)
+        Properties_Int(properties, "Yield", kinds[SH4_CALL_YIELD]);
 }
 
 static void ReferenceProperties(Properties* properties) {
@@ -525,7 +626,7 @@ static void DrawProperties(Rectangle bounds) {
     int32_t index = g_view.selected;
     switch (index < 0 ? GROUP_COUNT : g_view.selectedGroup) {
     case GROUP_FUNCTIONS:
-        Properties_Begin(properties, bounds, TextFormat("Function 0x%X", g_view.program.functions[index].start));
+        Properties_Begin(properties, bounds, TextFormat("Function 0x%X", FunctionStart((uint32_t)index)));
         FunctionProperties(properties, (uint32_t)index);
         break;
     case GROUP_GAME: {
@@ -553,7 +654,7 @@ static void DrawProperties(Rectangle bounds) {
     case GROUP_STRINGS: {
         const DataString* string = &g_view.strings[index];
         Properties_Begin(properties, bounds, "String");
-        Properties_Text(properties, "Text", SH4_DataString(&g_view.program, string->offset));
+        Properties_Text(properties, "Text", StringAt(string->offset));
         Properties_Text(properties, "Offset in the data", TextFormat("0x%X", (unsigned)string->offset));
         Properties_Text(properties, "Offset in the program",
             TextFormat("0x%X", (unsigned)(g_view.scn.header.dataStart + string->offset)));
@@ -595,8 +696,9 @@ static void DrawListing(Rectangle area) {
     float lineHeight = fontSize + 6.0f;
     float scrollBarWidth = (float)GuiGetStyle(LISTVIEW, SCROLLBAR_WIDTH);
     float border = (float)GuiGetStyle(DEFAULT, BORDER_WIDTH);
-    // Columns, in characters: address, opcode, label, instruction, comment
-    const float columns[5] = { 0.0f, 10.0f, 15.0f, 17.0f, 47.0f };
+    // Columns, in characters: address, opcode (the bytes of the instructions of the bytecode), label, instruction, comment
+    const float sh4Columns[5] = { 0.0f, 10.0f, 15.0f, 17.0f, 47.0f }, bytecodeColumns[5] = { 0.0f, 10.0f, 25.0f, 27.0f, 52.0f };
+    const float* columns = g_view.sh4 ? sh4Columns : bytecodeColumns;
     Rectangle content = { 0.0f, 0.0f, fmaxf(area.width - 2.0f * border - scrollBarWidth, charWidth * 160.0f),
         g_view.lineCount * lineHeight + 2.0f * PROGRAMVIEW_MARGIN };
     if (g_view.reveal && g_view.current >= 0 && g_view.panelView.height > 0.0f) {
@@ -611,8 +713,7 @@ static void DrawListing(Rectangle area) {
     Rectangle view = g_view.panelView;
     DrawRectangleRec(view, (Color) { 30, 30, 32, 255 });
     if (g_view.function < 0) {
-        DrawTextEx(font, g_view.sh4 ? "Select a function, a game function or a string" :
-            "The instructions of the bytecode aren't decoded", (Vector2) { view.x + 2.0f * PROGRAMVIEW_MARGIN,
+        DrawTextEx(font, "Select a function, a game function or a string", (Vector2) { view.x + 2.0f * PROGRAMVIEW_MARGIN,
             view.y + 2.0f * PROGRAMVIEW_MARGIN }, fontSize, 1.0f, GRAY);
         return;
     }
@@ -644,9 +745,17 @@ static void DrawListing(Rectangle area) {
             g_unknownColor : line->jump != 0 ? g_linkColor : g_textColor;
         DrawTextEx(font, TextFormat("%08X", line->address), (Vector2) { originX + columns[0] * charWidth, textY }, fontSize,
             1.0f, g_addressColor);
-        if (line->kind == SH4_LINE_INSTRUCTION)
+        if (line->kind == SH4_LINE_INSTRUCTION && g_view.sh4)
             DrawTextEx(font, TextFormat("%04X", Bytes_ReadU16(g_view.program.code.data + line->address)),
                 (Vector2) { originX + columns[1] * charWidth, textY }, fontSize, 1.0f, g_codeColor);
+        if (line->kind == SH4_LINE_INSTRUCTION && g_view.bytecode) {
+            char bytes[16] = "";
+            size_t length = 0;
+            for (uint32_t b = 0; b < line->size && b < 5 && length < sizeof(bytes); b++)
+                length += (size_t)snprintf(bytes + length, sizeof(bytes) - length, b > 0 ? " %02X" : "%02X",
+                    g_view.scn.data[line->address + b]);
+            DrawTextEx(font, bytes, (Vector2) { originX + columns[1] * charWidth, textY }, fontSize, 1.0f, g_codeColor);
+        }
         if (line->label)
             DrawTextEx(font, ">", (Vector2) { originX + columns[2] * charWidth, textY }, fontSize, 1.0f, YELLOW);
         DrawTextEx(font, line->slot ? TextFormat(" %s", line->text) : line->text,
@@ -660,7 +769,7 @@ static void DrawListing(Rectangle area) {
         uint32_t jump = g_view.lines[clicked].jump;
         g_view.current = clicked;
         // A target in another function, or far in this one, is a new place
-        if (jump != 0 && SH4_FunctionAt(&g_view.program, jump) >= 0) {
+        if (jump != 0 && FunctionAt(jump) >= 0) {
             g_view.current = clicked;
             GoTo(jump, true);
         }
@@ -686,19 +795,19 @@ void ProgramView_Draw(Rectangle area) {
 
 void ProgramView_Status(ViewStatus* status) {
     snprintf(status->file, sizeof(status->file), "%s", g_view.path);
-    if (!g_view.sh4)
-        snprintf(status->info, sizeof(status->info), "Bytecode program, %u relocations", g_view.scn.relocationCount);
-    else if (g_view.function >= 0)
-        snprintf(status->info, sizeof(status->info), "Function 0x%X (%u of %u)",
-            g_view.program.functions[g_view.function].start, (uint32_t)g_view.function + 1, g_view.program.functionCount);
+    if (g_view.function >= 0)
+        snprintf(status->info, sizeof(status->info), "Function 0x%X (%u of %u)", FunctionStart((uint32_t)g_view.function),
+            (uint32_t)g_view.function + 1, FunctionCount());
     else
-        snprintf(status->info, sizeof(status->info), "SH-4 program, %u functions", g_view.program.functionCount);
+        snprintf(status->info, sizeof(status->info), "%s program, %u functions, %u relocations",
+            g_view.sh4 ? "SH-4" : "Bytecode", FunctionCount(), g_view.scn.relocationCount);
     snprintf(status->hint, sizeof(status->hint), g_view.sh4 ?
-        "Click a branch, a call or a literal: go to it, Left/Right: back and forward" : "Click a relocation: show its value");
+        "Click a branch, a call or a literal: go to it, Left/Right: back and forward" :
+        "Click a branch, a call or an address of a function: go to it, Left/Right: back and forward");
 }
 
 bool ProgramView_CanExport(void) {
-    return g_view.open && g_view.sh4;
+    return g_view.open && HasListing();
 }
 
 void ProgramView_ExportDialog(void) {
@@ -721,9 +830,12 @@ void ProgramView_ExportDialog(void) {
         FILE* file = fopen(outPath, "w");
         if (file != NULL) {
             const SCN_Header* header = &g_view.scn.header;
-            fprintf(file, "; %s\n; SH-4 program: entry 0x%X, code 0x%X, data 0x%X, end 0x%X\n", g_view.path, header->entry,
-                header->codeStart, header->dataStart, header->end);
-            SH4_WriteListing(&g_view.program, file);
+            fprintf(file, "; %s\n; %s program: entry 0x%X, code 0x%X, data 0x%X, end 0x%X\n", g_view.path,
+                g_view.sh4 ? "SH-4" : "Bytecode", header->entry, header->codeStart, header->dataStart, header->end);
+            if (g_view.sh4)
+                SH4_WriteListing(&g_view.program, file);
+            else
+                BC_WriteListing(&g_view.bc, file);
             fclose(file);
             printf("Exported the program to %s\n", outPath);
         }

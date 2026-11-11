@@ -43,6 +43,12 @@ const SH4_Call* SH4_CallAt(const SH4_Program* program, uint32_t address);
 // Name of a function of the game by its ID, NULL if unknown: given by the application, which has the database of them
 typedef const char* (*SH4_GameNamer)(int id);
 void SH4_SetGameNamer(SH4_GameNamer namer);
+// Name given by the namer, NULL if none
+const char* SH4_GameName(int id);
+// A number as the comments show it: a 4-character ID ('AKIR'), a small integer, a float or hexadecimal
+void SH4_DescribeNumber(uint32_t value, char* text, size_t size);
+// A string between quotes, with its control and non-ASCII characters escaped, cut if long
+void SH4_QuoteString(const char* string, char* text, size_t size);
 // Text of a call, e.g. "game 0x13E(0, 4)" ("game 0x13E SequenceData(0, 4)" with a namer), "call 0x74(?, 1)", "yield"
 void SH4_DescribeCall(const SH4_Program* program, const SH4_Call* call, char* text, size_t size);
 // Text of a value: a number, a string of the data, a field of the context...

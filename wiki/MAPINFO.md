@@ -69,7 +69,7 @@ The empty chunks (`ATTR`, `REGD`, `LSCN`, `CMPS`, `MVTR`, `HGML`) have no data: 
 
 ## SCN3 — Scene program
 
-The program of the map. In 119 files it is **native SH-4 machine code** (the CPU of the Dreamcast): version `0x20000`. In the other 17 (`scene/01/0000`, `betd`, `jd99`, `mf99`...) it is a bytecode: version `0x100`. All the offsets are relative to the start of the chunk. The `scenario/` folder has the program of every map as a bytecode, in a separate [SCN](SCN) file.
+The program of the map. In 119 files it is **native SH-4 machine code** (the CPU of the Dreamcast): version `0x20000`. In the other 17 (`scene/01/0000`, `betd`, `jd99`, `mf99`...) it is a [bytecode](SCN#bytecode): version `0x100`. All the offsets are relative to the start of the chunk. The `scenario/` folder has the program of every map as a bytecode, in a separate [SCN](SCN) file.
 
 | Offset | Size | Type   | Name        | Description |
 |-------:|-----:|--------|-------------|-------------|

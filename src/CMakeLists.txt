@@ -67,6 +67,8 @@ set(SRC
     src/formats/script/chrt.h
     src/formats/script/scn.c
     src/formats/script/scn.h
+    src/formats/script/scnBytecode.c
+    src/formats/script/scnBytecode.h
     src/formats/script/sh4.c
     src/formats/script/sh4.h
     src/formats/script/sh4Code.c

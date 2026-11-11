@@ -6,9 +6,9 @@
 #include "views/views.h"
 
 // View of a scene program: the SCN3 chunk of a mapinfo.bin (opened from the view of the map, shown over it until it is
-// closed) or a .scn file of scenario/. The SH-4 programs are listed by function, with the calls to the game and the
-// strings of the data they use; a click on a branch or a call goes to its target. Of the bytecode programs, whose
-// instructions aren't decoded, it shows the header and the relocations
+// closed) or a .scn file of scenario/. The programs, of SH-4 code or bytecode, are listed by function, with the calls to
+// the game and the strings of the data they use; a click on a branch or a call goes to its target. The header and the
+// relocations are shown too
 
 // Opens a .scn file. Returns false if it isn't a valid scene program
 bool ProgramView_Open(const char* filepath);

@@ -23,7 +23,7 @@ const char* SH4_DataString(const SH4_Program* program, uint32_t offset) {
 }
 
 // The string between quotes, with the control and non-ASCII characters escaped, cut after MAX_STRING characters
-static void QuoteString(const char* string, char* text, size_t size) {
+void SH4_QuoteString(const char* string, char* text, size_t size) {
     size_t length = 0;
     if (size < 8)
         return;
@@ -64,7 +64,7 @@ static bool LooksLikeFloat(uint32_t value) {
     return exponent >= 107 && exponent <= 150 && (value & 0xFF) == 0;
 }
 
-static void DescribeNumber(uint32_t value, char* text, size_t size) {
+void SH4_DescribeNumber(uint32_t value, char* text, size_t size) {
     int32_t number = (int32_t)value;
     if (IsFourCC(value)) {
         snprintf(text, size, "'%c%c%c%c'", (char)value, (char)(value >> 8), (char)(value >> 16), (char)(value >> 24));
@@ -82,7 +82,7 @@ static void DescribeNumber(uint32_t value, char* text, size_t size) {
 static void DescribeData(const SH4_Program* program, uint32_t offset, char* text, size_t size) {
     const char* string = SH4_DataString(program, offset);
     if (string != NULL)
-        QuoteString(string, text, size);
+        SH4_QuoteString(string, text, size);
     else
         snprintf(text, size, "data+0x%X", offset);
 }
@@ -90,7 +90,7 @@ static void DescribeData(const SH4_Program* program, uint32_t offset, char* text
 void SH4_DescribeValue(const SH4_Program* program, const SH4_Value* value, char* text, size_t size) {
     switch (value->kind) {
     case SH4_VALUE_CONSTANT:
-        DescribeNumber(value->value, text, size);
+        SH4_DescribeNumber(value->value, text, size);
         break;
     case SH4_VALUE_DATA:
         DescribeData(program, value->value, text, size);
@@ -126,6 +126,10 @@ static SH4_GameNamer s_gameNamer;
 
 void SH4_SetGameNamer(SH4_GameNamer namer) {
     s_gameNamer = namer;
+}
+
+const char* SH4_GameName(int id) {
+    return s_gameNamer != NULL ? s_gameNamer(id) : NULL;
 }
 
 void SH4_DescribeCall(const SH4_Program* program, const SH4_Call* call, char* text, size_t size) {
@@ -175,7 +179,7 @@ static void DescribeLiteral(const SH4_Program* program, const SH4_Literal* liter
         snprintf(text, size, "ID 0x%X", literal->value);
         break;
     default:
-        DescribeNumber(literal->size == 2 ? (uint32_t)(int32_t)(int16_t)literal->value : literal->value, text, size);
+        SH4_DescribeNumber(literal->size == 2 ? (uint32_t)(int32_t)(int16_t)literal->value : literal->value, text, size);
         break;
     }
 }
