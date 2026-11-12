@@ -15,7 +15,8 @@
 
 #define SD_NAME_SIZE        32
 #define SD_GAME_FUNCTIONS   512     // Size of the table of the character functions (IDs 0 to 0x1CC)
-#define SD_CUTSCENE_SLOTS   70      // Of the table of cutscenes of the game (0x0C224178 in 1ST_READ.BIN PAL)
+#define SD_CUTSCENE_SLOTS   70
+#define SD_MAX_DEPTH        6       // Calls followed from a call to the game to the values of its parameters      // Of the table of cutscenes of the game (0x0C224178 in 1ST_READ.BIN PAL)
 
 // The functions of the game read (see resources/Shenmue1GameFunctions.tsv)
 #define SD_GAME_CAMERA      0x011   // (camera, character, character): shows a camera of the ECAM chunk
@@ -45,7 +46,11 @@ typedef struct {
     uint8_t     kind;               // SD_Kind
     int16_t     game;               // ID of the function of the game called
     uint32_t    function;           // Index of the calling function (of the SH-4 program if there is one)
-    uint32_t    address;            // Of the call
+    uint32_t    address;            // Of the call, or of the call of the program that gives the values (see via)
+    uint32_t    via;                // 0, or the call to the game when it takes the values from the parameters of its
+                                    // function: they are given by the call at address, through up to SD_MAX_DEPTH
+                                    // functions of the program (e.g. scene/01/dcbn passes "/scene/01/DCBN/" and "DCB0"
+                                    // to one of its functions, which passes them to another one that loads the package)
     int32_t     number;             // -1 if none
     char        name[SD_NAME_SIZE];
     char        folder[SD_NAME_SIZE];
@@ -57,7 +62,9 @@ typedef struct {
 } SD_Data;
 
 // Reads the references of the calls of an SH-4 program or of a bytecode one. With both and their pair, the calls are
-// those of the SH-4 program, with the arguments it doesn't give taken from the paired calls of the bytecode.
+// those of the SH-4 program, with the arguments it doesn't give taken from the paired calls of the bytecode. The
+// arguments that are parameters of the calling function are taken from the calls of the program to it (in the bytecode),
+// for the packages, the cutscenes, the cameras, the sound banks and the characters woken or put to sleep.
 // characterFunctions: per game ID, the functions whose arguments can be character IDs (NULL: all of them). Returns false
 // on memory error
 bool SD_ReadProgram(SD_Data* data, const SH4_Program* sh4, const BC_Program* bytecode, const SCN_Pair* pair,

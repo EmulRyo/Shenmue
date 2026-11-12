@@ -104,6 +104,9 @@ void SH4_DescribeValue(const SH4_Program* program, const SH4_Value* value, char*
     case SH4_VALUE_VARIABLE:
         snprintf(text, size, "&var_%X", value->value);
         break;
+    case SH4_VALUE_PARAMETER:
+        snprintf(text, size, "arg%u", value->value);
+        break;
     case SH4_VALUE_STACK:
         snprintf(text, size, value->value ? "r13%+d" : "r13", (int32_t)value->value);
         break;

@@ -34,6 +34,7 @@ typedef enum {
     SH4_VALUE_STACK,    // The stack pointer r13 + value
     SH4_VALUE_VARIABLE, // Address of a variable of the program: ctx[0x0C] + value (r9), an area of the game of the size
                         // given by the field 0x18 of the header
+    SH4_VALUE_PARAMETER,// The parameter number value of the calling function (bytecode only: push.l [fp + 8 + 4 * value])
 } SH4_ValueKind;
 
 typedef struct {

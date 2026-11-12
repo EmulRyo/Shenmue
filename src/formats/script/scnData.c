@@ -128,7 +128,8 @@ static bool AddId(SD_Data* data, uint32_t* capacity, const Source* source, SD_Ki
 }
 
 // The references of a call to the game
-static bool ReadCall(SD_Data* data, uint32_t* capacity, const Source* source, const bool* characterFunctions) {
+// With generic false, only the references of the functions read by their ID (not the characters and files of any call)
+static bool ReadCall(SD_Data* data, uint32_t* capacity, const Source* source, const bool* characterFunctions, bool generic) {
     int32_t id = source->call->id;
     uint32_t count = ArgumentCount(source);
     Argument a[SH4_MAX_ARGUMENTS];
@@ -170,7 +171,7 @@ static bool ReadCall(SD_Data* data, uint32_t* capacity, const Source* source, co
             used[i] = true;
         }
     }
-    for (uint32_t i = 0; i < count; i++) {
+    for (uint32_t i = 0; i < count && generic; i++) {
         if (a[i].constant && SD_IsCharacterId(a[i].value) && id >= 0 && id < SD_GAME_FUNCTIONS &&
             (characterFunctions == NULL || characterFunctions[id]))
             ok &= AddId(data, capacity, source, SD_CHARACTER, a[i].value);
@@ -178,6 +179,140 @@ static bool ReadCall(SD_Data* data, uint32_t* capacity, const Source* source, co
             ok &= Add(data, capacity, source, SD_FILE, -1, a[i].string, NULL);
     }
     return ok;
+}
+
+// The calls to the game whose arguments are parameters of their function: the values are taken from the calls of the
+// program to that function, and from the calls to those functions while they are parameters too
+
+#define SD_MAX_RESOLVED 512     // Instances of a call to the game
+#define SD_MAX_VISITS   20000   // Calls followed from a call to the game
+
+typedef struct {
+    SD_Data*            data;
+    uint32_t*           capacity;
+    const SH4_Program*  sh4;
+    const BC_Program*   bytecode;
+    const int32_t*      sh4Calls;   // Per call of the bytecode: the paired SH-4 call, -1 if none. NULL without SH-4
+    const uint32_t*     firstCaller; // Per function of the bytecode: its first local caller in callers (CSR)
+    const uint32_t*     callers;    // Calls of the bytecode, by called function
+    const SH4_Call*     game;
+    uint32_t            via;
+    uint32_t            resolved;
+    uint32_t            visits;
+    bool                ok;
+} Indirect;
+
+static bool IsIndirectGame(int32_t id) {
+    return id == SD_GAME_PACKAGE || id == SD_GAME_SEQUENCE || id == SD_GAME_CUTSCENE || id == SD_GAME_ACTIVE ||
+        id == SD_GAME_CAMERA || id == SD_GAME_SOUND_BANK || id == SD_GAME_SOUND_BANKS;
+}
+
+static bool HasParameter(const SH4_Value* values, uint32_t count) {
+    for (uint32_t i = 0; i < count; i++) {
+        if (values[i].kind == SH4_VALUE_PARAMETER)
+            return true;
+    }
+    return false;
+}
+
+// values: the arguments of the call to the game, those of kind SH4_VALUE_PARAMETER being parameters of function, which
+// site calls (the call to the game itself at first)
+static void Resolve(Indirect* context, const SH4_Value* values, uint32_t function, const SH4_Call* site, int depth) {
+    const SH4_Call* game = context->game;
+    if (context->visits++ >= SD_MAX_VISITS || !context->ok)
+        return;
+    if (!HasParameter(values, game->argumentCount)) {
+        if (site == game || context->resolved >= SD_MAX_RESOLVED)
+            return;
+        context->resolved++;
+        SH4_Call call = *game;
+        memcpy(call.arguments, values, sizeof(call.arguments));
+        // The call that gives the values, in the SH-4 program if there is one
+        call.address = site->address;
+        call.function = site->function;
+        if (context->sh4Calls != NULL) {
+            int32_t s = context->sh4Calls[site - context->bytecode->calls];
+            if (s < 0)
+                return;
+            call.address = context->sh4->calls[s].address;
+            call.function = context->sh4->calls[s].function;
+        }
+        Source source = { NULL, context->bytecode, NULL, &call, NULL };
+        uint32_t first = context->data->count;
+        context->ok &= ReadCall(context->data, context->capacity, &source, NULL, false);
+        for (uint32_t r = first; r < context->data->count; r++)
+            context->data->references[r].via = context->via;
+        return;
+    }
+    if (depth == SD_MAX_DEPTH)
+        return;
+    for (uint32_t k = context->firstCaller[function]; k < context->firstCaller[function + 1]; k++) {
+        const SH4_Call* caller = &context->bytecode->calls[context->callers[k]];
+        SH4_Value next[SH4_MAX_ARGUMENTS];
+        for (uint32_t i = 0; i < SH4_MAX_ARGUMENTS; i++) {
+            next[i] = values[i];
+            if (values[i].kind == SH4_VALUE_PARAMETER) {
+                uint32_t parameter = values[i].value;
+                next[i] = parameter < caller->argumentCount ? caller->arguments[parameter] : (SH4_Value) { 0 };
+            }
+        }
+        Resolve(context, next, caller->function, caller, depth + 1);
+    }
+}
+
+static bool ReadIndirect(SD_Data* data, uint32_t* capacity, const SH4_Program* sh4, const BC_Program* bytecode,
+    const SCN_Pair* pair) {
+    uint32_t functions = bytecode->functionCount, calls = bytecode->callCount;
+    uint32_t* firstCaller = calloc(functions + 2, sizeof(uint32_t));
+    uint32_t* callers = calloc(calls + 1, sizeof(uint32_t));
+    uint32_t* targets = calloc(calls + 1, sizeof(uint32_t));    // Called function + 1 of each local call, 0 if none
+    int32_t* sh4Calls = sh4 != NULL ? malloc((calls + 1) * sizeof(int32_t)) : NULL;
+    bool ok = firstCaller != NULL && callers != NULL && targets != NULL && (sh4 == NULL || sh4Calls != NULL);
+    for (uint32_t c = 0; c < calls && ok; c++) {
+        const SH4_Call* call = &bytecode->calls[c];
+        int f = call->kind == SH4_CALL_LOCAL ? BC_FunctionAt(bytecode, call->target) : -1;
+        if (f >= 0 && bytecode->functions[f] == call->target) {
+            targets[c] = (uint32_t)f + 1;
+            firstCaller[f + 1]++;
+        }
+    }
+    for (uint32_t f = 0; f < functions && ok; f++)
+        firstCaller[f + 1] += firstCaller[f];
+    uint32_t* filled = ok ? calloc(functions + 1, sizeof(uint32_t)) : NULL;    // Callers of each function placed
+    ok &= filled != NULL;
+    for (uint32_t c = 0; c < calls && ok; c++) {
+        if (targets[c] > 0) {
+            uint32_t f = targets[c] - 1;
+            callers[firstCaller[f] + filled[f]++] = c;
+        }
+    }
+    free(filled);
+    if (ok && sh4Calls != NULL) {
+        for (uint32_t c = 0; c < calls; c++)
+            sh4Calls[c] = -1;
+        for (uint32_t s = 0; s < pair->callCount; s++) {
+            if (pair->calls[s] >= 0)
+                sh4Calls[pair->calls[s]] = (int32_t)s;
+        }
+    }
+    Indirect context = { data, capacity, sh4, bytecode, sh4Calls, firstCaller, callers, NULL, 0, 0, 0, ok };
+    for (uint32_t c = 0; c < calls && context.ok; c++) {
+        const SH4_Call* call = &bytecode->calls[c];
+        if (call->kind != SH4_CALL_GAME || !IsIndirectGame(call->id) || !HasParameter(call->arguments, call->argumentCount))
+            continue;
+        context.game = call;
+        context.via = call->address;
+        if (sh4Calls != NULL)
+            context.via = sh4Calls[c] >= 0 ? sh4->calls[sh4Calls[c]].address : 0;
+        context.resolved = context.visits = 0;
+        if (sh4Calls == NULL || sh4Calls[c] >= 0)
+            Resolve(&context, call->arguments, call->function, call, 0);
+    }
+    free(firstCaller);
+    free(callers);
+    free(targets);
+    free(sh4Calls);
+    return context.ok;
 }
 
 bool SD_ReadProgram(SD_Data* data, const SH4_Program* sh4, const BC_Program* bytecode, const SCN_Pair* pair,
@@ -197,10 +332,14 @@ bool SD_ReadProgram(SD_Data* data, const SH4_Program* sh4, const BC_Program* byt
         } else if (sh4 == NULL) {
             source.bytecode = bytecode;
         }
-        if (!ReadCall(data, &capacity, &source, characterFunctions)) {
+        if (!ReadCall(data, &capacity, &source, characterFunctions, true)) {
             SD_FreeData(data);
             return false;
         }
+    }
+    if (bytecode != NULL && (sh4 == NULL || pair != NULL) && !ReadIndirect(data, &capacity, sh4, bytecode, pair)) {
+        SD_FreeData(data);
+        return false;
     }
     return true;
 }

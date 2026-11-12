@@ -108,7 +108,7 @@ The operations 11 to 13 put the value returned in the result register.
 | 1–3 | 73,278    | The address of the offset `n` of the program: a function (8,182) or a variable or string of the data (65,096). The files only use 3 |
 | 4–7 | 0         | The byte, halfword or word at `n` of a variable area of the game, or its address (4, 5, 6, 7) |
 | 8–11 | 6,182, 692, 43,287, 84,700 | The byte, halfword or word at the offset `n` of the variables of the program, or its address. The variables are an area of the game whose size is the field `variables` of the header, not the data of the file: the strings and tables of the data are pushed with the operations 1–3 |
-| 12–15 | 11,678, 4,635, 364,701, 290,912 | The byte, halfword or word at `fp+n` (a local variable or an argument), or its address |
+| 12–15 | 11,678, 4,635, 364,701, 290,912 | The byte, halfword or word at `fp+n` (a local variable or an argument), or its address. The local variables are below `fp` (`n` negative) and the arguments above: the first one at `fp+8`, the next ones every 4 bytes |
 
 The bytes and halfwords are signed.
 

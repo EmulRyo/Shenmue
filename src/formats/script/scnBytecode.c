@@ -267,6 +267,10 @@ static bool FindCalls(BC_Program* program) {
             } else if (ins.area == BC_AREA_VARIABLE && ins.width == 0) {
                 value.kind = SH4_VALUE_VARIABLE;
                 value.value = (uint32_t)ins.operand;
+            } else if (ins.area == BC_AREA_LOCAL && ins.width == 4 && ins.operand >= 8 && ins.operand % 4 == 0) {
+                // The parameters are above the frame: the first one at fp + 8
+                value.kind = SH4_VALUE_PARAMETER;
+                value.value = (uint32_t)(ins.operand - 8) / 4;
             }
             Push(&stack, value);
             break;
@@ -425,6 +429,8 @@ static void DescribeValue(const BC_Program* program, const SH4_Value* value, cha
             snprintf(text, size, "data+0x%X", value->value);
     } else if (value->kind == SH4_VALUE_VARIABLE) {
         snprintf(text, size, "&var_%X", value->value);
+    } else if (value->kind == SH4_VALUE_PARAMETER) {
+        snprintf(text, size, "arg%u", value->value);
     } else {
         snprintf(text, size, "?");
     }

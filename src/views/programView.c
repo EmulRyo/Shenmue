@@ -874,6 +874,9 @@ static void DrawProperties(Rectangle bounds) {
                 "Slot", reference->number);
         Properties_Text(properties, "Game function", name != NULL ? TextFormat("%s (0x%X)", name, reference->game) :
             TextFormat("0x%X", reference->game));
+        if (reference->via != 0)
+            Properties_Text(properties, "Called at", TextFormat("0x%X, with the values of the call at 0x%X", reference->via,
+                reference->address));
         ReferenceProperties(properties);
         break;
     }

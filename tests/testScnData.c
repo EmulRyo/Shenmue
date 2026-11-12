@@ -36,6 +36,7 @@ static bool ReadCharacterFunctions(bool* functions) {
 
 typedef struct {
     uint64_t    kinds[SD_KIND_COUNT];
+    uint64_t    indirect[SD_KIND_COUNT];    // Whose values are given to a function of the program (via)
     uint64_t    packagesFound;
     uint64_t    sequencesFound;
     uint64_t    cutscenesOfMap;     // Slot of a TRCK chunk of the map
@@ -134,6 +135,7 @@ static void CheckData(const TestContext* context, const CorpusFile* map, const M
     for (uint32_t i = 0; i < data->count; i++) {
         const SD_Reference* reference = &data->references[i];
         stats->kinds[reference->kind]++;
+        stats->indirect[reference->kind] += reference->via != 0;
         char path[CORPUS_PATH_SIZE];
         switch (reference->kind) {
         case SD_PACKAGE:
@@ -252,19 +254,26 @@ void Test_ScnData(const TestContext* context) {
     }
     Corpus_Free(&maps);
     CHECK_EQ(programs, 136, "programs read");
-    CHECK_EQ(stats.kinds[SD_PACKAGE], 201, "packages loaded");
-    CHECK_EQ(stats.packagesFound, 179, "packages loaded found in their folder");
+    CHECK_EQ(stats.kinds[SD_PACKAGE], 374, "packages loaded");
+    CHECK_EQ(stats.packagesFound, 350, "packages loaded found in their folder");
     CHECK_EQ(stats.kinds[SD_SEQUENCE], 204, "AUTH files loaded in the table of cutscenes");
     CHECK_EQ(stats.sequencesFound, 184, "AUTH files whose package or file is found");
-    CHECK_EQ(stats.kinds[SD_CUTSCENE], 333, "cutscenes played");
-    CHECK_EQ(stats.cutscenesOfMap + stats.cutscenesLoaded, 270, "cutscenes played of the map or loaded by the program");
-    CHECK_EQ(stats.kinds[SD_WAKE], 1025, "characters woken");
-    CHECK_EQ(stats.kinds[SD_SLEEP], 1445, "characters put to sleep");
+    CHECK_EQ(stats.kinds[SD_CUTSCENE], 764, "cutscenes played");
+    CHECK_EQ(stats.cutscenesOfMap + stats.cutscenesLoaded, 672, "cutscenes played of the map or loaded by the program");
+    CHECK_EQ(stats.kinds[SD_WAKE], 1445, "characters woken");
+    CHECK_EQ(stats.kinds[SD_SLEEP], 1636, "characters put to sleep");
     CHECK_EQ(stats.idsMissing, 0, "character IDs not found in the files of the map");
-    CHECK_EQ(stats.kinds[SD_CAMERA], 3011, "cameras shown");
+    // Those whose values the program passes to its own functions, which pass them to the game
+    CHECK_EQ(stats.indirect[SD_PACKAGE], 173, "packages loaded through functions of the program");
+    Test_Info("through functions of the program: %llu packages, %llu cutscenes played, %llu characters woken, %llu put "
+        "to sleep, %llu cameras, %llu sound banks", (unsigned long long)stats.indirect[SD_PACKAGE],
+        (unsigned long long)stats.indirect[SD_CUTSCENE], (unsigned long long)stats.indirect[SD_WAKE],
+        (unsigned long long)stats.indirect[SD_SLEEP], (unsigned long long)stats.indirect[SD_CAMERA],
+        (unsigned long long)stats.indirect[SD_SOUND_BANK]);
+    CHECK_EQ(stats.kinds[SD_CAMERA], 4986, "cameras shown");
     // The 4 others are the camera 0 of scene/03/mfsy, which has none
-    CHECK_EQ(stats.camerasFound, 3007, "cameras shown that are in the ECAM chunk of the map");
-    CHECK_EQ(stats.relativeWithCharacter, 963, "relative cameras shown with a character");
+    CHECK_EQ(stats.camerasFound, 4982, "cameras shown that are in the ECAM chunk of the map");
+    CHECK_EQ(stats.relativeWithCharacter, 1763, "relative cameras shown with a character");
     Test_Info("%llu cameras shown (%llu in the ECAM chunk), %llu relative (%llu with a character), %llu not relative with "
         "a character", (unsigned long long)stats.kinds[SD_CAMERA], (unsigned long long)stats.camerasFound,
         (unsigned long long)stats.relativeCameras, (unsigned long long)stats.relativeWithCharacter,

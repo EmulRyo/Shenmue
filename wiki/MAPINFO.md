@@ -168,7 +168,7 @@ The functions with a known meaning (*probably*: inferred from the values passed 
 
 The function of `ctx[0x2C]` (`0x0C0BB318`) copies the arguments to the thread and calls `0x0C155DB4` with the ID; that of `ctx[0x30]` (`0x0C0BB32E`) calls `0x0C16110C`.
 
-The counts below are those of the 136 programs: the SH-4 code of the 119 maps, with the arguments that it computes in registers taken from the paired calls of the [bytecode](SCN#relation-with-the-scn3-chunk-of-the-map) of their SCN file, and the bytecode of the other 17. Only the calls whose arguments are constants or strings are counted.
+The counts below are those of the 136 programs: the SH-4 code of the 119 maps, with the arguments that it computes in registers taken from the paired calls of the [bytecode](SCN#relation-with-the-scn3-chunk-of-the-map) of their SCN file, and the bytecode of the other 17. Only the calls whose arguments are constants or strings are counted; the values that the programs pass to the game through their own functions are counted apart (see [Values passed through functions](#values-passed-through-functions)).
 
 #### Character IDs
 
@@ -184,9 +184,15 @@ The programs play a constant slot 333 times: 176 times a `TRCK` chunk of the map
 
 They load 204 cutscenes with constant arguments, in 26 maps. The file is an [AUTH](AUTH) file of a package of the folder of the map: `"seqdata1.bin"` of `"D0W0"` is the file `SEQDATA1` of type `AUTH` of `d0w0.pks` (184 of them are found). When argument 3 is a folder (`"SCENE/01/DNOZ"`), the file is in that folder with its name (`scene/01/dnoz/seqdata2.bin`, which starts with its `TRCK` chunk header). E.g. `scene/01/d000` loads `seqdata1.bin` to `seqdataC.bin` of `D0W0` in the slots 4 to 15 (`SEQDATA1`, in the slot 4, has the characters `AKIR`, `YAMA` and `COP_`: 3320 frames, 92 commands), and *probably* plays them with slots computed at run time (its constant slots are 0 and 1). The 20 that aren't found are packages of other discs (`KKYA` to `KKYF` of `jomo` aren't in every scene folder) and files missing from `scene/02/ms08`.
 
+#### Values passed through functions
+
+Many calls to the game take their arguments from the parameters of the function of the program that makes them: in the [bytecode](SCN#push-0x400x7f), the parameters are pushed with the push operations 12 to 15 (relative to `fp`), the first one at `fp + 8` and the next ones every 4 bytes. The values are then given by the calls of the program to that function, or to the functions that call it with their own parameters. E.g. `scene/01/dcbn` loads its packages with a function `f(folder, name)` that calls another one with the same parameters, which starts the loading with `0x13C` (`0, 0, folder, name`); it calls `f` with `"/scene/01/DCBN/"` and `"DCB0"` to `"DCB4"`, the [packages that share their character IDs](#characters-of-the-other-packages).
+
+Following the calls up to 6 functions back, the 136 programs give in this way 173 more packages (171 found in their folder), 431 more cutscenes played, 420 more characters woken and 191 put to sleep, 1,975 more cameras shown (all of them in the `ECAM` chunk of the map; 800 more relative cameras with a character) and 42 more sound banks. With them: 374 packages loaded (350 found), 764 cutscenes played (672 of them a `TRCK` chunk of the map or a slot loaded by the same program), 1,445 characters woken and 1,636 put to sleep, 4,986 cameras shown (4,982 in the `ECAM` chunk).
+
 #### Packages loaded
 
-The programs start loading a package with constant arguments 201 times (`0x13C` with `0, 0, folder, name`). The folder is a scene folder with the case of the program (`"scene/01/JOMO"`, `"/scene/01/D000/"`), and 179 of the packages are PKF or PKS files of it. The others are packages of other discs (e.g. `NINJIN` and `HOUMON` of `jomo`), `DUMY` of `/scene/01/D000/pack/` and `ALLMAP` of `scene/03/m3fb`. Many programs load their packages with names computed at run time or through functions of their own (e.g. `scene/01/dcbn` passes `"/scene/01/DCBN/"` and `"DCB0"` to one of its functions), so these aren't all the packages they use.
+The programs start loading a package with constant arguments 201 times (`0x13C` with `0, 0, folder, name`). The folder is a scene folder with the case of the program (`"scene/01/JOMO"`, `"/scene/01/D000/"`), and 179 of the packages are PKF or PKS files of it. The others are packages of other discs (e.g. `NINJIN` and `HOUMON` of `jomo`), `DUMY` of `/scene/01/D000/pack/` and `ALLMAP` of `scene/03/m3fb`. Many programs load their packages through functions of their own (see below) or with names computed at run time.
 
 ### Strings of the code
 
