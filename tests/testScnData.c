@@ -167,6 +167,15 @@ static void CheckData(const TestContext* context, const CorpusFile* map, const M
             }
             break;
         }
+        case SD_FLAG_READ:
+        case SD_FLAG_SET:
+        case SD_BYTE_READ:
+        case SD_BYTE_SET:
+            CHECK(reference->number >= 0 && reference->number < (reference->kind <= SD_FLAG_SET ? SD_FLAGS : SD_FLAG_BYTES),
+                "%s: flag %d", map->name, reference->number);
+            CHECK(reference->value == SD_UNKNOWN || reference->value == 0 || reference->value == 1 ||
+                reference->kind == SD_BYTE_SET, "%s: flag %d set to %d", map->name, reference->number, reference->value);
+            break;
         case SD_CUTSCENE:
             stats->cutscenesOfMap += (uint32_t)reference->number < file->cutsceneCount;
             stats->cutscenesLoaded += (uint32_t)reference->number >= file->cutsceneCount && loaded[reference->number];
@@ -270,6 +279,11 @@ void Test_ScnData(const TestContext* context) {
         (unsigned long long)stats.indirect[SD_CUTSCENE], (unsigned long long)stats.indirect[SD_WAKE],
         (unsigned long long)stats.indirect[SD_SLEEP], (unsigned long long)stats.indirect[SD_CAMERA],
         (unsigned long long)stats.indirect[SD_SOUND_BANK]);
+    // The flags of the game: 1024 flags and 32 bytes, read and set with constant numbers
+    CHECK_EQ(stats.kinds[SD_FLAG_READ], 4529, "flags read");
+    CHECK_EQ(stats.kinds[SD_FLAG_SET], 1951, "flags set");
+    CHECK_EQ(stats.kinds[SD_BYTE_READ], 123, "bytes read");
+    CHECK_EQ(stats.kinds[SD_BYTE_SET], 150, "bytes set");
     CHECK_EQ(stats.kinds[SD_CAMERA], 4986, "cameras shown");
     // The 4 others are the camera 0 of scene/03/mfsy, which has none
     CHECK_EQ(stats.camerasFound, 4982, "cameras shown that are in the ECAM chunk of the map");

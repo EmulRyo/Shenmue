@@ -46,6 +46,7 @@ typedef enum {
     ITEM_CHARACTER,
     ITEM_CUTSCENE,
     ITEM_SEQUENCE,      // A cutscene that the program loads in the table of cutscenes
+    ITEM_FLAG,          // A flag or a byte value of the game that the program reads or sets
     ITEM_KIND_COUNT,
 } ItemKind;
 
@@ -64,12 +65,13 @@ typedef enum {
     LAYER_SHAPES,
     LAYER_CHARACTERS,
     LAYER_CUTSCENES,        // Not drawn: a cutscene is played by the view of the cutscenes
+    LAYER_FLAGS,            // Not drawn: the flags of the game used by the program
     LAYER_GROUPS,           // Subgroups of the shapes, one per COLS group, MAPINFO_GROUP_COUNT
     LAYER_COUNT = LAYER_GROUPS + MAPINFO_GROUP_COUNT,
 } Layer;
 
 static const char* g_layerNames[LAYER_COUNT] = {
-    "Information", "Map", "Doors", "Cameras", "Lights", "Shapes", "Characters", "Cutscenes",
+    "Information", "Map", "Doors", "Cameras", "Lights", "Shapes", "Characters", "Cutscenes", "Flags of the game",
     // The COLS groups, by the meaning of their IDs: COLIsion, HeiGHT, EVeNT, UNDUlation, SOuND, PROPerty
     "Collisions", "Floor heights", "Events", "Slopes", "Sounds", "Properties",
 };
@@ -134,6 +136,8 @@ typedef struct {
     uint32_t            sequenceCount;
     uint32_t*           sequences;      // The cutscenes that the program loads in the table of cutscenes: their first
                                         // reference (SD_SEQUENCE) in program, one per slot, file and package
+    uint32_t            flagCount;
+    int32_t*            flags;          // The flags (0 to 1023) and the bytes (SD_FLAGS + 0 to 31) used by the program, sorted
     uint32_t            scriptCount;
     CHRT_Script*        scripts;        // The CHRD chunk, then the CHRT files of the map
     uint32_t            packageCount;
@@ -829,6 +833,93 @@ static const char* SequenceText(uint32_t index) {
     return TextFormat("%3d  %s of %s", sequence->number, sequence->name, sequence->folder);
 }
 
+// The flags and the bytes of the game used by the program: SD_FLAG_READ and SD_FLAG_SET give a flag, SD_BYTE_READ and
+// SD_BYTE_SET a byte (stored as SD_FLAGS + its number)
+static bool IsFlagKind(uint8_t kind) {
+    return kind == SD_FLAG_READ || kind == SD_FLAG_SET || kind == SD_BYTE_READ || kind == SD_BYTE_SET;
+}
+
+static int32_t FlagKey(const SD_Reference* reference) {
+    return (reference->kind == SD_BYTE_READ || reference->kind == SD_BYTE_SET ? SD_FLAGS : 0) + reference->number;
+}
+
+static int CompareFlags(const void* a, const void* b) {
+    return *(const int32_t*)a - *(const int32_t*)b;
+}
+
+// Returns false on memory error
+static bool FindFlags(void) {
+    g_view.flags = calloc(g_view.program.count + 1, sizeof(int32_t));
+    if (g_view.flags == NULL)
+        return false;
+    for (uint32_t i = 0; i < g_view.program.count; i++) {
+        const SD_Reference* reference = &g_view.program.references[i];
+        if (!IsFlagKind(reference->kind))
+            continue;
+        int32_t key = FlagKey(reference);
+        bool found = false;
+        for (uint32_t f = 0; f < g_view.flagCount && !found; f++)
+            found = g_view.flags[f] == key;
+        if (!found)
+            g_view.flags[g_view.flagCount++] = key;
+    }
+    qsort(g_view.flags, g_view.flagCount, sizeof(int32_t), CompareFlags);
+    return true;
+}
+
+static const char* FlagName(uint32_t index) {
+    int32_t key = g_view.flags[index];
+    return key >= SD_FLAGS ? TextFormat("Byte %d", key - SD_FLAGS) : TextFormat("Flag %d", key);
+}
+
+// The calls of the program that read or set the flag of an item, by kind
+static uint32_t FlagCalls(uint32_t index, bool set) {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < g_view.program.count; i++) {
+        const SD_Reference* reference = &g_view.program.references[i];
+        count += IsFlagKind(reference->kind) && FlagKey(reference) == g_view.flags[index] &&
+            (reference->kind == SD_FLAG_SET || reference->kind == SD_BYTE_SET) == set;
+    }
+    return count;
+}
+
+static const char* FlagText(uint32_t index) {
+    uint32_t reads = FlagCalls(index, false), sets = FlagCalls(index, true);
+    return TextFormat("%s  (%s%s%s)", FlagName(index), reads > 0 ? TextFormat("read %u", reads) : "",
+        reads > 0 && sets > 0 ? ", " : "", sets > 0 ? TextFormat("set %u", sets) : "");
+}
+
+// The calls that read it and those that set it, with the values set
+static void FlagProperties(Properties* properties, uint32_t index) {
+    int32_t key = g_view.flags[index];
+    bool byte = key >= SD_FLAGS;
+    Properties_Text(properties, "Kind", byte ? "byte value of the game (0x0C225B68 in 1ST_READ.BIN)" :
+        "flag of the game (bits at 0x0C225AE8 in 1ST_READ.BIN)");
+    Properties_Int(properties, "Number", byte ? key - SD_FLAGS : key);
+    Properties_Text(properties, "Read by the program", ProgramCalls(byte ? SD_BYTE_READ : SD_FLAG_READ, byte ? key - SD_FLAGS : key, NULL));
+    Properties_Text(properties, "Set by the program", ProgramCalls(byte ? SD_BYTE_SET : SD_FLAG_SET, byte ? key - SD_FLAGS : key, NULL));
+    // The different values set, each one once (SD_UNKNOWN for those that aren't constant)
+    int32_t values[8];
+    uint32_t valueCount = 0;
+    for (uint32_t i = 0; i < g_view.program.count; i++) {
+        const SD_Reference* reference = &g_view.program.references[i];
+        if ((reference->kind != SD_FLAG_SET && reference->kind != SD_BYTE_SET) || FlagKey(reference) != key)
+            continue;
+        bool found = false;
+        for (uint32_t v = 0; v < valueCount && !found; v++)
+            found = values[v] == reference->value;
+        if (!found && valueCount < 8)
+            values[valueCount++] = reference->value;
+    }
+    char text[MAPINFOVIEW_LABEL_SIZE] = "";
+    int length = 0;
+    for (uint32_t v = 0; v < valueCount && length < (int)sizeof(text); v++)
+        length += snprintf(text + length, sizeof(text) - length, v > 0 ? ", %s" : "%s",
+            values[v] == SD_UNKNOWN ? "computed" : TextFormat("%d", values[v]));
+    if (valueCount > 0)
+        Properties_Text(properties, "Values set", text);
+}
+
 // Name of the subgroup of the characters of a package in the tree
 static const char* PackageText(const MapPackage* package) {
     const char* loaded = ProgramCount(SD_PACKAGE, -1, package->name) > 0 ? ", loaded by the program" : "";
@@ -880,6 +971,8 @@ static void AddInfoItems(void) {
             ProgramDistinct(SD_CUTSCENE)), false);
         AddItem(ITEM_INFO, 0, TextFormat("Program: wakes %u characters, puts %u to sleep", ProgramDistinct(SD_WAKE),
             ProgramDistinct(SD_SLEEP)), false);
+        AddItem(ITEM_INFO, 0, TextFormat("Program: reads %u flags of the game and sets %u", ProgramDistinct(SD_FLAG_READ),
+            ProgramDistinct(SD_FLAG_SET)), false);
     }
     for (uint32_t i = 0; i < file->bankCount; i++) {
         if (strcmp(file->banks[i].name, "FREE") != 0)
@@ -979,7 +1072,7 @@ static const char* CutsceneText(uint32_t index) {
 static bool CreateItems(void) {
     const MAPINFO_File* file = &g_view.file;
     uint32_t count = 16 + file->bankCount + g_view.mapModelCount + file->doorCount + file->cameraCount + file->lightCount +
-        file->shapeCount + g_view.characterCount + file->cutsceneCount + g_view.sequenceCount;
+        file->shapeCount + g_view.characterCount + file->cutsceneCount + g_view.sequenceCount + g_view.flagCount;
     g_view.items = malloc(count * sizeof(Item));
     g_view.labels = malloc(count * sizeof(*g_view.labels));
     g_view.failedItems = malloc(count * sizeof(bool));
@@ -1022,6 +1115,9 @@ static bool CreateItems(void) {
     g_view.firstItems[ITEM_SEQUENCE] = g_view.itemCount;
     for (uint32_t i = 0; i < g_view.sequenceCount; i++)
         AddItem(ITEM_SEQUENCE, i, SequenceText(i), false);
+    g_view.firstItems[ITEM_FLAG] = g_view.itemCount;
+    for (uint32_t i = 0; i < g_view.flagCount; i++)
+        AddItem(ITEM_FLAG, i, FlagText(i), false);
     return true;
 }
 
@@ -1051,6 +1147,7 @@ void MAPINFOView_Close(void) {
     free(g_view.cutscenes);
     SD_FreeData(&g_view.program);
     free(g_view.sequences);
+    free(g_view.flags);
     MAPINFO_Free(&g_view.file);
     memset(&g_view, 0, sizeof(g_view));
 }
@@ -1077,7 +1174,7 @@ bool MAPINFOView_Open(const char* filepath) {
     if (!MapProgram_Read(filepath, &g_view.file, &g_view.program))
         SD_FreeData(&g_view.program);
     // After the models, for the doors whose model couldn't be loaded
-    if (!FindSequences() || g_view.originalDoors == NULL || g_view.originalLights == NULL || !ReadCutscenes() || !CreateItems()) {
+    if (!FindSequences() || !FindFlags() || g_view.originalDoors == NULL || g_view.originalLights == NULL || !ReadCutscenes() || !CreateItems()) {
         fputs("[MAPINFOView_Open]: Memory error\n", stderr);
         MAPINFOView_Close();
         return false;
@@ -1515,6 +1612,8 @@ static void DrawTree(Rectangle bounds) {
     for (uint32_t i = 0; i < g_view.sequenceCount; i++)
         TreeItem(g_view.firstItems[ITEM_SEQUENCE] + i, false, false, &clicked);
     Tree_EndGroup(tree);
+    if (g_view.flagCount > 0)
+        TreeLayer(LAYER_FLAGS, ITEM_FLAG, g_view.flagCount, false, &clicked);
     Tree_End(tree);
 
     if (changed)
@@ -1750,6 +1849,10 @@ static void DrawProperties(Rectangle bounds) {
     case ITEM_SEQUENCE:
         Properties_Begin(properties, bounds, TextFormat("Cutscene %d, loaded by the program", Sequence(item->index)->number));
         SequenceProperties(properties, item->index);
+        break;
+    case ITEM_FLAG:
+        Properties_Begin(properties, bounds, FlagName(item->index));
+        FlagProperties(properties, item->index);
         break;
     default:
         Properties_Begin(properties, bounds, "Information");

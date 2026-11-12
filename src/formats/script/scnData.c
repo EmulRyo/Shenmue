@@ -4,7 +4,7 @@
 #include "formats/script/sh4Listing.h"
 
 static const char* const g_kindNames[SD_KIND_COUNT] = {
-    "package", "AFS package", "cutscene", "sequence", "wake", "sleep", "character", "sound bank", "camera", "file",
+    "package", "AFS package", "cutscene", "sequence", "wake", "sleep", "character", "sound bank", "camera", "flag read", "flag set", "byte read", "byte set", "file",
 };
 
 const char* SD_KindName(SD_Kind kind) {
@@ -107,6 +107,7 @@ static bool Add(SD_Data* data, uint32_t* capacity, const Source* source, SD_Kind
     reference->function = source->call->function;
     reference->address = source->call->address;
     reference->number = number;
+    reference->value = SD_UNKNOWN;
     if (name != NULL)
         snprintf(reference->name, sizeof(reference->name), "%s", name);
     if (folder != NULL)
@@ -157,6 +158,13 @@ static bool ReadCall(SD_Data* data, uint32_t* capacity, const Source* source, co
     } else if (id == SD_GAME_SOUND_BANK && IsConstant(a[0], 0) && a[1].constant && a[2].string != NULL) {
         ok &= Add(data, capacity, source, SD_SOUND_BANK, (int32_t)a[1].value, a[2].string, NULL);
         used[2] = true;
+    } else if (id == SD_GAME_FLAGS && a[0].constant && a[1].constant && (a[0].value == 11 || a[0].value == 12 ||
+        a[0].value == 15 || a[0].value == 16) && a[1].value < (a[0].value <= 12 ? SD_FLAGS : SD_FLAG_BYTES)) {
+        static const SD_Kind kinds[] = { SD_FLAG_READ, SD_FLAG_SET, 0, 0, SD_BYTE_READ, SD_BYTE_SET };
+        SD_Kind kind = kinds[a[0].value - 11];
+        ok &= Add(data, capacity, source, kind, (int32_t)a[1].value, NULL, NULL);
+        if (ok && (kind == SD_FLAG_SET || kind == SD_BYTE_SET) && a[2].constant)
+            data->references[data->count - 1].value = (int32_t)a[2].value;
     } else if (id == SD_GAME_CAMERA && a[0].constant && a[0].value <= 9999) {
         char first[5] = "", second[5] = "";
         if (a[1].constant && SD_IsCharacterId(a[1].value))
@@ -204,7 +212,7 @@ typedef struct {
 
 static bool IsIndirectGame(int32_t id) {
     return id == SD_GAME_PACKAGE || id == SD_GAME_SEQUENCE || id == SD_GAME_CUTSCENE || id == SD_GAME_ACTIVE ||
-        id == SD_GAME_CAMERA || id == SD_GAME_SOUND_BANK || id == SD_GAME_SOUND_BANKS;
+        id == SD_GAME_CAMERA || id == SD_GAME_SOUND_BANK || id == SD_GAME_SOUND_BANKS || id == SD_GAME_FLAGS;
 }
 
 static bool HasParameter(const SH4_Value* values, uint32_t count) {

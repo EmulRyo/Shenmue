@@ -326,7 +326,8 @@ static bool CreateRelocationLabels(void) {
 }
 
 static bool SameReference(const SD_Reference* a, const SD_Reference* b) {
-    return a->kind == b->kind && a->number == b->number && strcmp(a->name, b->name) == 0 && strcmp(a->folder, b->folder) == 0;
+    return a->kind == b->kind && a->number == b->number && a->value == b->value && strcmp(a->name, b->name) == 0 &&
+        strcmp(a->folder, b->folder) == 0;
 }
 
 static uint32_t ReferenceCount(const SD_Reference* reference) {
@@ -356,6 +357,16 @@ static const char* DataText(const SD_Reference* reference) {
         return TextFormat("Character %s", GameDB_CharacterLabel(reference->name));
     case SD_SOUND_BANK:
         return TextFormat("Sound bank %d: %s", reference->number, reference->name);
+    case SD_FLAG_READ:
+        return TextFormat("Reads flag %d", reference->number);
+    case SD_FLAG_SET:
+        return reference->value == SD_UNKNOWN ? TextFormat("Sets flag %d", reference->number) :
+            TextFormat("Sets flag %d to %d", reference->number, reference->value);
+    case SD_BYTE_READ:
+        return TextFormat("Reads byte %d", reference->number);
+    case SD_BYTE_SET:
+        return reference->value == SD_UNKNOWN ? TextFormat("Sets byte %d", reference->number) :
+            TextFormat("Sets byte %d to %d", reference->number, reference->value);
     case SD_CAMERA:
         return reference->name[0] == '\0' ? TextFormat("Camera %04d", reference->number) : reference->folder[0] == '\0' ||
             strcmp(reference->folder, reference->name) == 0 ? TextFormat("Camera %04d, with %s", reference->number, reference->name) :
@@ -871,7 +882,10 @@ static void DrawProperties(Rectangle bounds) {
                 "Package", reference->folder);
         if (reference->number >= 0)
             Properties_Int(properties, reference->kind == SD_AFS_PACKAGE ? "Entry" : reference->kind == SD_CAMERA ? "Camera" :
-                "Slot", reference->number);
+                reference->kind == SD_FLAG_READ || reference->kind == SD_FLAG_SET ? "Flag" :
+                reference->kind == SD_BYTE_READ || reference->kind == SD_BYTE_SET ? "Byte" : "Slot", reference->number);
+        if (reference->value != SD_UNKNOWN)
+            Properties_Int(properties, "Value", reference->value);
         Properties_Text(properties, "Game function", name != NULL ? TextFormat("%s (0x%X)", name, reference->game) :
             TextFormat("0x%X", reference->game));
         if (reference->via != 0)

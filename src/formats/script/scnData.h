@@ -16,6 +16,9 @@
 #define SD_NAME_SIZE        32
 #define SD_GAME_FUNCTIONS   512     // Size of the table of the character functions (IDs 0 to 0x1CC)
 #define SD_CUTSCENE_SLOTS   70
+#define SD_FLAGS            1024    // Flags of the game (bits at 0x0C225AE8)
+#define SD_FLAG_BYTES       32      // Byte values of the game after them (0x0C225B68)
+#define SD_UNKNOWN          INT32_MIN
 #define SD_MAX_DEPTH        6       // Calls followed from a call to the game to the values of its parameters      // Of the table of cutscenes of the game (0x0C224178 in 1ST_READ.BIN PAL)
 
 // The functions of the game read (see resources/Shenmue1GameFunctions.tsv)
@@ -23,6 +26,7 @@
 #define SD_GAME_CUTSCENE    0x050   // (slot): plays a cutscene of the table
 #define SD_GAME_ACTIVE      0x0A8   // (character, 1 / 0): wakes or puts to sleep a character
 #define SD_GAME_SOUND_BANKS 0x0F3   // (8 names): the sound banks of the 8 slots
+#define SD_GAME_FLAGS       0x051   // (11, flag) / (12, flag, value): reads / sets a flag; (15, byte) / (16, byte, value)
 #define SD_GAME_PACKAGE     0x13C   // (0, 0, folder, name): loads a package; (0, 8, AFS, entry, entry): one of an AFS
 #define SD_GAME_SEQUENCE    0x13E   // (0, slot, file, package): loads an AUTH file in a slot of the table of cutscenes
 #define SD_GAME_SOUND_BANK  0x16D   // (0, slot, name, 0): loads a sound bank in a slot
@@ -38,6 +42,10 @@ typedef enum {
     SD_SOUND_BANK,      // number: the slot, name: the bank ("FREE" empties the slot)
     SD_CAMERA,          // number: the ID of a camera of the ECAM chunk (e.g. 2019 for "2019"), name and folder: the IDs
                         // of the characters it is relative to (empty if none)
+    SD_FLAG_READ,       // number: a flag of the game read (0 to 1023)
+    SD_FLAG_SET,        // number: a flag of the game set, value: the value (SD_UNKNOWN if not constant)
+    SD_BYTE_READ,       // number: a byte value of the game read (0 to 31)
+    SD_BYTE_SET,        // number: a byte value of the game set, value: the value (SD_UNKNOWN if not constant)
     SD_FILE,            // name: another string with an extension (e.g. "M_MDOR.BIN", "SCROLL00.SPR")
     SD_KIND_COUNT
 } SD_Kind;
@@ -52,6 +60,7 @@ typedef struct {
                                     // functions of the program (e.g. scene/01/dcbn passes "/scene/01/DCBN/" and "DCB0"
                                     // to one of its functions, which passes them to another one that loads the package)
     int32_t     number;             // -1 if none
+    int32_t     value;              // Of SD_FLAG_SET and SD_BYTE_SET, SD_UNKNOWN otherwise
     char        name[SD_NAME_SIZE];
     char        folder[SD_NAME_SIZE];
 } SD_Reference;
