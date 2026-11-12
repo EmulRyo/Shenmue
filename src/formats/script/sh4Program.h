@@ -32,6 +32,8 @@ typedef enum {
     SH4_VALUE_FIELD,    // Field of the context: ctx[value]
     SH4_VALUE_CONTEXT,  // The context itself (r8)
     SH4_VALUE_STACK,    // The stack pointer r13 + value
+    SH4_VALUE_VARIABLE, // Address of a variable of the program: ctx[0x0C] + value (r9), an area of the game of the size
+                        // given by the field 0x18 of the header
 } SH4_ValueKind;
 
 typedef struct {
@@ -98,7 +100,8 @@ typedef struct {
     SH4_Call*       calls;
     uint32_t        literalCount;
     SH4_Literal*    literals;   // Sorted by address
-    uint32_t        contextWrites;  // Instructions that write r8 outside the code at codeStart (0 in the game files)
+    uint32_t        contextWrites;  // Instructions that write r8, r9 or r10 outside the code at codeStart (0 in the game
+                                    // files: they hold the context, ctx[0x0C] and ctx[0x10] in all the functions)
 } SH4_Program;
 
 // Analyzes the SH-4 program of a SCN3 chunk: data from the "SCN3" ID, with its header fields. Returns false on error

@@ -42,7 +42,8 @@ typedef enum {
     BC_AREA_CONSTANT,   // n
     BC_AREA_PROGRAM,    // Address of the offset n of the program: a function, or a variable or string of its data
     BC_AREA_GLOBAL,     // Variable at n of an area of the game (not used by the game files)
-    BC_AREA_DATA,       // Variable at n of the data of the program (dataStart + n)
+    BC_AREA_VARIABLE,   // Variable at n of the variables of the program: an area of the game of the size given by the
+                        // field 0x18 of the header (not the data of the program)
     BC_AREA_LOCAL,      // Variable at fp + n
 } BC_Area;
 
@@ -60,7 +61,7 @@ typedef struct {
 // Decodes the instruction at pc, in data of size bytes (offsets from the start of the program). Returns false if it isn't
 // an instruction or doesn't fit
 bool BC_Decode(const uint8_t* data, uint32_t size, uint32_t pc, BC_Instruction* ins);
-// e.g. "push 1", "push.l [fp+8]", "push &data+0x78", "game 0x1F", "sp += 12", "jz 0x120", "f+"
+// e.g. "push 1", "push.l [fp+8]", "push &var+0x78", "game 0x1F", "sp += 12", "jz 0x120", "f+"
 int BC_Format(const BC_Instruction* ins, char* text, size_t size);
 // Name of an operator (0x80 to 0xA6), NULL if none
 const char* BC_OperatorName(uint8_t byte);

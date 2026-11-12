@@ -53,7 +53,7 @@ All the offsets are relative to the start of the file.
 | 0x0C   | 4    | uint32  | `entry`     | Entry point, inside the bytecode. Odd in 75 files; `0x30` (the start of the bytecode) in 3 |
 | 0x10   | 4    | uint32  | `dataStart` | Start of the data, end of the bytecode |
 | 0x14   | 4    | uint32  | `end`       | End of the data, start of the [relocations](#relocations). `size − 8` in the 39 files without relocations |
-| 0x18   | 4    | uint32  | `unknown`   | Unknown: 0 to `0xF50`. 0 in 11 files |
+| 0x18   | 4    | uint32  | `variables` | Size of the variables of the program: an area of the game, not part of the file (0 to `0xF50`, 0 in 11 files). The highest variable used by the bytecode ends at most there: within 16 bytes in 116 files |
 | 0x1C   | 4    | uint32  | —           | Always 0 |
 | 0x20   | 4    | uint32  | `codeStart` | Start of the bytecode. Always `0x30` |
 | 0x24   | 4    | uint32  | `end2`      | Always equal to `end` |
@@ -107,7 +107,7 @@ The operations 11 to 13 put the value returned in the result register.
 | 0   | 1,082,267 | The constant `n` (e.g. `70 41 4B 49 52`: the ID `AKIR`) |
 | 1–3 | 73,278    | The address of the offset `n` of the program: a function (8,182) or a variable or string of the data (65,096). The files only use 3 |
 | 4–7 | 0         | The byte, halfword or word at `n` of a variable area of the game, or its address (4, 5, 6, 7) |
-| 8–11 | 6,182, 692, 43,287, 84,700 | The byte, halfword or word at the offset `n` of the data (from `dataStart`), or its address |
+| 8–11 | 6,182, 692, 43,287, 84,700 | The byte, halfword or word at the offset `n` of the variables of the program, or its address. The variables are an area of the game whose size is the field `variables` of the header, not the data of the file: the strings and tables of the data are pushed with the operations 1–3 |
 | 12–15 | 11,678, 4,635, 364,701, 290,912 | The byte, halfword or word at `fp+n` (a local variable or an argument), or its address |
 
 The bytes and halfwords are signed.
@@ -131,6 +131,24 @@ They pop their operands from the stack (the second one first) and push their res
 | `8E` | `~` (not) | 405 | `A4` | Float `-` | 13,326 |
 | `8F`–`91` | `&`, `|`, `^` | 27,490, 36,352, 427 | `A5` | Float `*` | 11,751 |
 | `92`, `93` | `+`, `-` | 181,321, 6,032 | `A6` | Float `/` | 6,057 |
+
+### Compiled code
+
+The bytecode is compiled from C-like code, with the same patterns in all the files:
+
+| Construct | Instructions |
+|-----------|--------------|
+| Function | `sp -= n` (room for its local variables, `13 00` if none) ... `ret`. A function starts after the `ret` of the previous one |
+| Statement | The expression, then `80` (pop the result), e.g. an assignment: `push &variable`, the value, `store.l`, `80` |
+| Call | The arguments from the last one to the first one, the call, `sp += 4 × count`, then `81` (push the result) if its value is used |
+| Return of a value | The value, `80`, then `ret` or a branch to the final `ret` of the function |
+| `if` | The condition, `80`, `bz` past the block. With an `else`, the first block ends with a branch past the second one |
+| `while` | At the start of the loop, the condition, `80` and `bz` past the loop; the body ends with a branch back to the start. `while (1)` tests `push 1` |
+| `do ... while` | The body, then the condition, `80` and `bz` back to the start of the body: the loop goes on while the condition is 0 |
+| Array | The address of the array plus the index shifted by the size of the elements (`<< 2` for words), then a load or a store |
+| Bit field | `(store) & mask`, then `80` |
+
+In the 24,400 functions of the 136 files, every branch is part of one of these blocks (or a `break` or `continue` of a loop) except 12, in 9 functions. The values left on the stack are always those that the next instructions use: no value is left on it at the target of a branch.
 
 ### Example
 

@@ -22,7 +22,7 @@ typedef struct {
     uint32_t    entry;      // Entry point, inside the code
     uint32_t    dataStart;  // End of the code, start of the data
     uint32_t    end;        // End of the data, start of the relocations
-    uint32_t    unknown18;  // Unknown
+    uint32_t    variableSize;   // Size of the variables of the program, an area of the game (r9 of the SH-4 code)
     uint32_t    unknown1C;  // Always 0
     uint32_t    codeStart;  // Always 0x30
     uint32_t    end2;       // Bytecode: same as end. SH-4 code: 0

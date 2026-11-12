@@ -20,7 +20,8 @@ bool ProgramView_IsOpen(void);
 bool ProgramView_UsesMap(void);
 void ProgramView_Draw(Rectangle area);
 void ProgramView_Status(ViewStatus* status);
-// Backspace: back to the map, Left/Right: back and forward in the visited places, Tab/Shift+Tab: next/previous reference
+// Backspace: back to the map, Left/Right: back and forward in the visited places, Tab/Shift+Tab: next/previous reference,
+// C: pseudo-C of the function (scnDecompile.h), from the bytecode of the program or of the SCN file paired with it
 void ProgramView_Toolbar(void);
 // The listing can be exported: an SH-4 program is open
 bool ProgramView_CanExport(void);

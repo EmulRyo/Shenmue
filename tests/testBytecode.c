@@ -36,8 +36,8 @@ static const Encoding s_encodings[] = {
     // Pushes of variables
     { { 0x5C, 0xF8 }, 2, 0, "push.b [fp-8]" },
     { { 0x5F, 0xFC }, 2, 0, "push &fp-4" },
-    { { 0x7B, 0x78, 0x00, 0x00, 0x00 }, 5, 0, "push &data+0x78" },
-    { { 0x69, 0x10, 0x00 }, 3, 0, "push.w [data+0x10]" },
+    { { 0x7B, 0x78, 0x00, 0x00, 0x00 }, 5, 0, "push &var+0x78" },
+    { { 0x69, 0x10, 0x00 }, 3, 0, "push.w [var+0x10]" },
     { { 0x56, 0x04 }, 2, 0, "push.l [global+0x4]" },
     // Other control instructions
     { { 0x17, 0x03 }, 2, 0, "args 3" },
@@ -99,7 +99,7 @@ void Test_BytecodeFiles(const TestContext* context) {
     const size_t expectedCount = sizeof(expected) / sizeof(expected[0]);
     CorpusList list = Corpus_ScnFiles(context->content);
     uint64_t instructions = 0, invalid = 0, functions = 0, badTargets = 0, gameCalls = 0, badIds = 0;
-    uint64_t knownArguments = 0, arguments = 0, codeAddresses = 0, dataAddresses = 0;
+    uint64_t knownArguments = 0, arguments = 0, codeAddresses = 0, dataAddresses = 0, notAfterReturn = 0;
     uint32_t programs = 0, padded = 0, badEntry = 0, badRelocations = 0;
     for (uint32_t i = 0; i < list.count; i++) {
         const char* name = list.files[i].name;
@@ -127,12 +127,20 @@ void Test_BytecodeFiles(const TestContext* context) {
             int function = BC_FunctionAt(&program, value);
             badRelocations += function < 0 || program.functions[function] != value;
         }
+        uint8_t previous = BC_INVALID;  // Kind of the previous instruction
+        uint32_t function = 1;
         for (uint32_t pc = scn.header.codeStart; pc < program.codeEnd;) {
             BC_Instruction ins;
             if (!BC_Decode(scn.data, program.codeEnd, pc, &ins)) {
                 pc++;
                 continue;
             }
+            // Each function starts after the return of the previous one
+            if (function < program.functionCount && program.functions[function] == pc) {
+                notAfterReturn += previous != BC_RET;
+                function++;
+            }
+            previous = ins.kind;
             // The addresses of the program pushed as values are functions, or variables and strings of the data
             bool address = ins.kind == BC_PUSH && ins.area == BC_AREA_PROGRAM;
             bool jumps = ins.kind == BC_CALL || ins.kind == BC_JUMP || ins.kind == BC_BRANCH ||
@@ -190,6 +198,8 @@ void Test_BytecodeFiles(const TestContext* context) {
     CHECK_EQ(badEntry, 0, "entry points that aren't the start of a function");
     CHECK_EQ(badRelocations, 0, "code relocations that aren't the start of a function");
     CHECK_EQ(badTargets, 0, "calls, jumps and branches that don't go to an instruction");
+    CHECK_EQ(notAfterReturn, 0, "functions that don't start after a return");
+    CHECK_EQ(functions, 24400, "functions");
     CHECK_EQ(badIds, 0, "calls to an ID without a function of the game");
     for (size_t e = 0; e < expectedCount; e++)
         CHECK(expected[e].found, "%s: no call %s", expected[e].file, expected[e].comment);

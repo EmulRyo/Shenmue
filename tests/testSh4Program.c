@@ -201,7 +201,7 @@ void Test_Sh4Program(const TestContext* context) {
     CHECK_EQ(blockWords, instructions, "words of the blocks");
     CHECK_EQ(badTargets, 0, "branches that don't go to the start of a block");
     CHECK_EQ(badLocal, 0, "local calls that don't go to the start of a function");
-    CHECK_EQ(contextWrites, 0, "writes to r8 (the context) outside the code at codeStart");
+    CHECK_EQ(contextWrites, 0, "writes to r8, r9 and r10 (the context and two of its fields) outside the code at codeStart");
     CHECK_EQ(unknownIds, 0, "calls to the game or to a service without a constant ID");
     CHECK_EQ(calls[SH4_CALL_GAME], 255148, "calls to the game (ctx[0x28])");
     CHECK_EQ(calls[SH4_CALL_SERVICE2C], 31569, "calls to ctx[0x2C]");

@@ -78,7 +78,7 @@ The program of the map. In 119 files it is **native SH-4 machine code** (the CPU
 | 0x0C   | 4    | uint32 | `entry`     | Entry point. In version `0x20000` the code there always starts with `E6 2D` (`mov.l r14,@-r13`). In version `0x100` it can be an odd offset (`0x30`, `0xCC5`, `0x3C62`...) |
 | 0x10   | 4    | uint32 | `dataStart` | Start of the data that follows the code |
 | 0x14   | 4    | uint32 | `end`       | End of the data. In version `0x20000`, the size of the chunk; in version `0x100`, the size of the chunk minus 8 (16 of 17 files) |
-| 0x18   | 4    | uint32 | `unknown`   | Unknown: 0 to `0xF50`. 0 in 11 files |
+| 0x18   | 4    | uint32 | `variables` | Size of the variables of the program, an area of the game (see [Context and calls](#context-and-calls)): 0 to `0xF50`, 0 in 11 files |
 | 0x1C   | 4    | uint32 | —           | Always 0 |
 | 0x20   | 4    | uint32 | `codeStart` | Start of the code. Always `0x30` |
 | 0x24   | 4    | uint32 | `unknown`   | Version `0x100`: same as `end`. Version `0x20000`: 0 |
@@ -108,12 +108,13 @@ The program runs as a coroutine of the game. The code from `0x30` to `0x73` is t
 - **Resume (`0x30`):** called with `r5` pointing to a context and `r6` to a state of 3 words (address to run, `r13` and `r14`). It keeps the context in `r8`, stores `r4` at `ctx+0x34`, `r6` at `ctx+0x38` and the address of the yield routine (`0x64`, loaded with `mova`) at `ctx+0x3C`, loads `r9` and `r10` from `ctx+0x0C` and `ctx+0x10`, and calls the address of the state with its `r13` and `r14`. When that call returns, it returns 0.
 - **Yield (`0x64`):** saves `pr` (the return address), `r13`, `r14` and `r0` in the state (`ctx+0x38`, words 0, 1, 2 and 3), and returns from the resume code with the state. The next resume continues after the call to the yield.
 
-No function writes `r8`: in the whole program it holds the context. `r9` and `r10` are *probably* the bases of variables (e.g. `add r9,r4` before a `mov.b r5,@r4`).
+No function writes `r8`, `r9` or `r10`: in the whole program they hold the context, `ctx[0x0C]` and `ctx[0x10]`. `r9` is the base of the variables of the program, an area of the game whose size is the field `variables` (0x18) of the header: the offsets added to `r9` (e.g. `mov #120,r4` and `add r9,r4` before a `mov.b r5,@r4`) are below that size in the 119 files, within 16 bytes of it in 106. They are the same variables as those of the [bytecode](SCN#bytecode) of the map (e.g. `r9 + 0x78` and the variable `0x78` of `act01_d000.scn`). The use of `r10` is unknown.
 
 | Context | Use |
 |---------|-----|
 | `0x04`  | Base of the data. A string or a table of the data is `ctx[0x04]` + an offset loaded from a literal (52,363 literals in the 119 files), e.g. the paths and file names passed to the game |
-| `0x0C`, `0x10` | Loaded in `r9` and `r10` |
+| `0x0C`  | Base of the variables of the program, loaded in `r9` |
+| `0x10`  | Loaded in `r10`: unknown |
 | `0x14`, `0x18`, `0x1C` | Functions, 1,446 calls |
 | `0x28`  | Function of the game: 255,148 calls (see [Functions of the game](#functions-of-the-game)) |
 | `0x2C`  | Function with an ID: 31,569 calls, 12 IDs from 0 to `0x13` (ID 0 in 30,583) |

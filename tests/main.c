@@ -22,6 +22,7 @@ void Test_GameFunctions(const TestContext* context);
 void Test_BytecodeEncodings(const TestContext* context);
 void Test_BytecodeFiles(const TestContext* context);
 void Test_ScnPair(const TestContext* context);
+void Test_Decompile(const TestContext* context);
 
 static const Test s_tests[] = {
     { "mapinfo_chunks", Test_MapinfoChunks, true },
@@ -36,6 +37,7 @@ static const Test s_tests[] = {
     { "bc_encodings",   Test_BytecodeEncodings, false },
     { "bc_files",       Test_BytecodeFiles, true },
     { "scn_pair",       Test_ScnPair,       true },
+    { "decompile",      Test_Decompile,     true },
 };
 
 static int s_checks;

@@ -4,10 +4,13 @@
 #include "formats/script/sh4Program.h"
 
 #define CONTEXT_REGISTER    8   // r8: the context, for all the functions
+#define VARIABLES_REGISTER  9   // r9: ctx[0x0C], the variables of the program; r10: ctx[0x10]
 #define STACK_REGISTER      13  // r13: the stack of the program
 #define ID_REGISTER         5   // r5: ID of the calls to the game
 #define DATA_FIELD          0x04    // ctx[0x04]: base of the data
+#define VARIABLES_FIELD     0x0C    // ctx[0x0C]: base of the variables of the program, kept in r9
 #define MAX_PUSHES          32
+#define CONTEXT_REGISTERS   ((1u << CONTEXT_REGISTER) | (1u << VARIABLES_REGISTER) | (1u << (VARIABLES_REGISTER + 1)))
 
 // Grows an array of count elements to hold one more. Returns false on memory error
 static bool Grow(void** items, uint32_t count, uint32_t* capacity, size_t size) {
@@ -229,6 +232,11 @@ typedef struct {
 static void ResetState(State* state) {
     memset(state, 0, sizeof(*state));
     state->regs[CONTEXT_REGISTER].kind = SH4_VALUE_CONTEXT;
+    // r9 and r10, loaded from the context by the code at codeStart and never written by the functions
+    state->regs[VARIABLES_REGISTER].kind = SH4_VALUE_FIELD;
+    state->regs[VARIABLES_REGISTER].value = VARIABLES_FIELD;
+    state->regs[VARIABLES_REGISTER + 1].kind = SH4_VALUE_FIELD;
+    state->regs[VARIABLES_REGISTER + 1].value = VARIABLES_FIELD + 4;
     state->regs[STACK_REGISTER].kind = SH4_VALUE_STACK;
 }
 
@@ -245,6 +253,12 @@ static SH4_Value Add(SH4_Program* program, SH4_Value a, SH4_Value b) {
     case SH4_VALUE_CONSTANT:
         return Constant(a.value + b.value, 0);
     case SH4_VALUE_FIELD:
+        if (a.value == VARIABLES_FIELD) {
+            a.kind = SH4_VALUE_VARIABLE;
+            a.value = b.value;
+            a.literal = b.literal;
+            return a;
+        }
         if (a.value != DATA_FIELD)
             return Unknown();
         MarkLiteral(program, &b, SH4_LITERAL_DATA_OFFSET);
@@ -252,6 +266,7 @@ static SH4_Value Add(SH4_Program* program, SH4_Value a, SH4_Value b) {
         a.value = b.value;
         a.literal = b.literal;
         return a;
+    case SH4_VALUE_VARIABLE:
     case SH4_VALUE_DATA:
     case SH4_VALUE_STACK:
         a.value += b.value;
@@ -341,7 +356,7 @@ static bool AnalyzeBlock(SH4_Program* program, const SH4_Block* block, uint32_t*
         SH4_Instruction ins, slot;
         if (!Decode(program, pc, &ins))
             continue;
-        if (!startCode && (WrittenRegisters(&ins) & (1u << CONTEXT_REGISTER)))
+        if (!startCode && (WrittenRegisters(&ins) & CONTEXT_REGISTERS))
             program->contextWrites++;
         if (!(ins.flags & SH4_BRANCH)) {
             Execute(program, &state, &ins);
@@ -351,7 +366,7 @@ static bool AnalyzeBlock(SH4_Program* program, const SH4_Block* block, uint32_t*
         bool hasSlot = (ins.flags & SH4_DELAYED) && pc + 2 < block->end && Decode(program, pc + 2, &slot);
         SH4_Value target = state.regs[ins.n];   // Register of jsr, braf, bsrf, read before the slot
         if (hasSlot) {
-            if (!startCode && (WrittenRegisters(&slot) & (1u << CONTEXT_REGISTER)))
+            if (!startCode && (WrittenRegisters(&slot) & CONTEXT_REGISTERS))
                 program->contextWrites++;
             Execute(program, &state, &slot);
         }

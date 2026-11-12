@@ -69,6 +69,8 @@ set(SRC
     src/formats/script/scn.h
     src/formats/script/scnBytecode.c
     src/formats/script/scnBytecode.h
+    src/formats/script/scnDecompile.c
+    src/formats/script/scnDecompile.h
     src/formats/script/scnPair.c
     src/formats/script/scnPair.h
     src/formats/script/sh4.c

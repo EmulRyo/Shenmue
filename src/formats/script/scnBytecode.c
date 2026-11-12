@@ -72,7 +72,7 @@ bool BC_Decode(const uint8_t* data, uint32_t size, uint32_t pc, BC_Instruction* 
             ins->target = (uint32_t)ins->operand;
         } else {
             static const uint8_t widths[4] = { 1, 2, 4, 0 };
-            ins->area = op < 8 ? BC_AREA_GLOBAL : op < 12 ? BC_AREA_DATA : BC_AREA_LOCAL;
+            ins->area = op < 8 ? BC_AREA_GLOBAL : op < 12 ? BC_AREA_VARIABLE : BC_AREA_LOCAL;
             ins->width = widths[op & 3];
         }
         return true;
@@ -89,7 +89,7 @@ bool BC_Decode(const uint8_t* data, uint32_t size, uint32_t pc, BC_Instruction* 
 }
 
 static int FormatVariable(const BC_Instruction* ins, char* text, size_t size) {
-    static const char* const areas[] = { "", "", "global", "data", "fp" };
+    static const char* const areas[] = { "", "", "global", "var", "fp" };
     static const char suffixes[5] = { 0, 'b', 'w', 0, 'l' };
     char where[32];
     if (ins->area == BC_AREA_LOCAL)
@@ -264,8 +264,8 @@ static bool FindCalls(BC_Program* program) {
             } else if (ins.area == BC_AREA_CONSTANT || ins.area == BC_AREA_PROGRAM) {
                 value.kind = SH4_VALUE_CONSTANT;
                 value.value = (uint32_t)ins.operand;
-            } else if (ins.area == BC_AREA_DATA && ins.width == 0) {
-                value.kind = SH4_VALUE_DATA;
+            } else if (ins.area == BC_AREA_VARIABLE && ins.width == 0) {
+                value.kind = SH4_VALUE_VARIABLE;
                 value.value = (uint32_t)ins.operand;
             }
             Push(&stack, value);
@@ -423,6 +423,8 @@ static void DescribeValue(const BC_Program* program, const SH4_Value* value, cha
             SH4_QuoteString(string, text, size);
         else
             snprintf(text, size, "data+0x%X", value->value);
+    } else if (value->kind == SH4_VALUE_VARIABLE) {
+        snprintf(text, size, "&var_%X", value->value);
     } else {
         snprintf(text, size, "?");
     }
@@ -464,9 +466,8 @@ static void InstructionLine(const BC_Program* program, const BC_Instruction* ins
         BC_DescribeCall(program, call, line->comment, sizeof(line->comment));
     if (ins->kind == BC_PUSH && ins->area == BC_AREA_CONSTANT && (ins->operand <= -10000 || ins->operand >= 10000))
         SH4_DescribeNumber((uint32_t)ins->operand, line->comment, sizeof(line->comment));
-    else if (ins->kind == BC_PUSH && ((ins->area == BC_AREA_DATA && ins->width == 0) ||
-        (ins->area == BC_AREA_PROGRAM && ins->target >= program->scn->header.dataStart))) {
-        uint32_t offset = ins->area == BC_AREA_DATA ? (uint32_t)ins->operand : ins->target - program->scn->header.dataStart;
+    else if (ins->kind == BC_PUSH && ins->area == BC_AREA_PROGRAM && ins->target >= program->scn->header.dataStart) {
+        uint32_t offset = ins->target - program->scn->header.dataStart;
         const char* string = BC_DataString(program, offset);
         if (string != NULL)
             SH4_QuoteString(string, line->comment, sizeof(line->comment));

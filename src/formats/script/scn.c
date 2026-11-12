@@ -12,7 +12,7 @@ bool SCN_Read(const uint8_t* data, size_t size, SCN_Program* program) {
     header->entry = Bytes_ReadU32(data + 0x0C);
     header->dataStart = Bytes_ReadU32(data + 0x10);
     header->end = Bytes_ReadU32(data + 0x14);
-    header->unknown18 = Bytes_ReadU32(data + 0x18);
+    header->variableSize = Bytes_ReadU32(data + 0x18);
     header->unknown1C = Bytes_ReadU32(data + 0x1C);
     header->codeStart = Bytes_ReadU32(data + 0x20);
     header->end2 = Bytes_ReadU32(data + 0x24);

@@ -15,6 +15,7 @@
 #include "formats/script/scn.h"
 #include "formats/script/scnBytecode.h"
 #include "formats/script/scnPair.h"
+#include "formats/script/scnDecompile.h"
 #include "formats/script/sh4Listing.h"
 #include "formats/script/sh4Program.h"
 #include "ui/properties.h"
@@ -69,6 +70,9 @@ typedef struct {
     SCN_Program     pairScn;
     BC_Program      pairBc;
     SCN_Pair        pair;
+    // Pseudo-C of the function shown, from the bytecode (of the program, or of its pair)
+    DC_Function     pseudo;
+    int32_t         pseudoFunction; // Function decompiled, -1 if none
     char            (*functionLabels)[PROGRAMVIEW_LABEL_SIZE];
     uint32_t        gameCount;
     GameFunction*   games;
@@ -104,6 +108,7 @@ typedef struct {
 
 static ProgramView_State g_view;
 static bool g_expanded[GROUP_COUNT] = { true, false, false, true };
+static bool g_pseudoC;  // Show the pseudo-C instead of the listing, kept when another file is opened
 
 void ProgramView_Close(void) {
     free(g_view.fileData);
@@ -125,7 +130,9 @@ void ProgramView_Close(void) {
     free(g_view.relocationLabels);
     free(g_view.references);
     free(g_view.lines);
+    DC_FreeFunction(&g_view.pseudo);
     memset(&g_view, 0, sizeof(g_view));
+    g_view.pseudoFunction = -1;
     g_view.function = -1;
     g_view.current = -1;
     g_view.selected = -1;
@@ -197,9 +204,7 @@ static bool BytecodeString(const BC_Instruction* ins, uint32_t* offset) {
     const SCN_Header* header = &g_view.scn.header;
     if (ins->kind != BC_PUSH)
         return false;
-    if (ins->area == BC_AREA_DATA && ins->width == 0)
-        *offset = (uint32_t)ins->operand;
-    else if (ins->area == BC_AREA_PROGRAM && ins->target >= header->dataStart && ins->target < header->end)
+    if (ins->area == BC_AREA_PROGRAM && ins->target >= header->dataStart && ins->target < header->end)
         *offset = ins->target - header->dataStart;
     else
         return false;
@@ -434,6 +439,32 @@ bool ProgramView_OpenMap(const char* filepath) {
 }
 
 // Fills the lines of a function
+// The bytecode that has the pseudo-C of a function: the program itself, or the SCN file paired with an SH-4 program.
+// NULL if none
+static const BC_Program* PseudoSource(int32_t function, uint32_t* index) {
+    if (g_view.bytecode) {
+        *index = (uint32_t)function;
+        return &g_view.bc;
+    }
+    if (g_view.paired && function >= 0 && g_view.pair.functions[function] >= 0) {
+        *index = (uint32_t)g_view.pair.functions[function];
+        return &g_view.pairBc;
+    }
+    return NULL;
+}
+
+// Decompiles the function shown when the pseudo-C is shown
+static void UpdatePseudo(void) {
+    if (!g_pseudoC || g_view.function < 0 || g_view.pseudoFunction == g_view.function)
+        return;
+    DC_FreeFunction(&g_view.pseudo);
+    g_view.pseudoFunction = g_view.function;
+    uint32_t index;
+    const BC_Program* source = PseudoSource(g_view.function, &index);
+    if (source != NULL && !DC_DecompileFunction(source, index, &g_view.pseudo))
+        printf("[ProgramView]: Failed to decompile the function 0x%X\n", source->functions[index]);
+}
+
 static bool ShowFunction(int32_t function) {
     if (function == g_view.function)
         return true;
@@ -454,6 +485,7 @@ static bool ShowFunction(int32_t function) {
     }
     g_view.function = function;
     g_view.scroll = (Vector2) { 0.0f, 0.0f };
+    UpdatePseudo();
     return true;
 }
 
@@ -607,6 +639,15 @@ void ProgramView_Toolbar(void) {
     if (Toolbar_Button(ICON_ARROW_DOWN_FILL, NULL, "Next reference of the selected item", TOOLBAR_REPEAT | KEY_TAB))
         ShowReference(1);
     GuiEnable();
+    Toolbar_Separator();
+    if (!g_view.bytecode && !g_view.paired)
+        GuiDisable();
+    if (Toolbar_Toggle(ICON_FILETYPE_TEXT, "Pseudo-C", "Show the pseudo-C of the function (from the bytecode)", KEY_C,
+        &g_pseudoC)) {
+        g_view.scroll = (Vector2) { 0.0f, 0.0f };
+        UpdatePseudo();
+    }
+    GuiEnable();
 }
 
 static void DrawTree(Rectangle bounds) {
@@ -644,7 +685,7 @@ static void HeaderProperties(Properties* properties) {
     Properties_Text(properties, "Code", TextFormat("0x%X", (unsigned)header->codeStart));
     Properties_Text(properties, "Data", TextFormat("0x%X", (unsigned)header->dataStart));
     Properties_Text(properties, "End of the data", TextFormat("0x%X", (unsigned)header->end));
-    Properties_Text(properties, "Unknown (0x18)", TextFormat("0x%X", (unsigned)header->unknown18));
+    Properties_Text(properties, "Variables", TextFormat("0x%X bytes", (unsigned)header->variableSize));
     Properties_Int(properties, "Relocations", g_view.scn.relocationCount);
     uint32_t kinds[SH4_CALL_UNKNOWN + 1] = { 0 };
     for (uint32_t c = 0; c < CallCount(); c++)
@@ -780,12 +821,46 @@ static const Color g_commentColor = { 130, 200, 130, 255 };
 static const Color g_headerColor = { 240, 200, 110, 255 };
 static const Color g_linkColor = { 120, 180, 250, 255 };
 
+// The pseudo-C of the function shown, with the address of the bytecode of each line
+static void DrawPseudo(Rectangle area, Font font, float fontSize, float charWidth, float lineHeight) {
+    float scrollBarWidth = (float)GuiGetStyle(LISTVIEW, SCROLLBAR_WIDTH);
+    float border = (float)GuiGetStyle(DEFAULT, BORDER_WIDTH);
+    const DC_Function* pseudo = &g_view.pseudo;
+    Rectangle content = { 0.0f, 0.0f, fmaxf(area.width - 2.0f * border - scrollBarWidth, charWidth * 200.0f),
+        pseudo->lineCount * lineHeight + 2.0f * PROGRAMVIEW_MARGIN };
+    GuiScrollPanel(area, NULL, content, &g_view.scroll, &g_view.panelView);
+    Rectangle view = g_view.panelView;
+    DrawRectangleRec(view, (Color) { 30, 30, 32, 255 });
+    if (pseudo->lineCount == 0) {
+        DrawTextEx(font, g_view.function < 0 ? "Select a function, a game function or a string" :
+            "No pseudo-C: the program of the map has no SCN file with the same functions",
+            (Vector2) { view.x + 2.0f * PROGRAMVIEW_MARGIN, view.y + 2.0f * PROGRAMVIEW_MARGIN }, fontSize, 1.0f, GRAY);
+        return;
+    }
+    BeginScissorMode((int)view.x, (int)view.y, (int)view.width, (int)view.height);
+    float originX = view.x + PROGRAMVIEW_MARGIN + g_view.scroll.x, originY = view.y + PROGRAMVIEW_MARGIN + g_view.scroll.y;
+    int first = (int)floorf((view.y - originY) / lineHeight), last = (int)ceilf((view.y + view.height - originY) / lineHeight);
+    for (int i = first < 0 ? 0 : first; i <= last && i < (int)pseudo->lineCount; i++) {
+        const DC_Line* line = &pseudo->lines[i];
+        float y = originY + i * lineHeight + 3.0f;
+        bool label = line->text[0] == 'L' && line->text[1] == '_';
+        DrawTextEx(font, TextFormat("%08X", line->address), (Vector2) { originX, y }, fontSize, 1.0f, g_addressColor);
+        DrawTextEx(font, line->text, (Vector2) { originX + (10.0f + line->indent * 4.0f) * charWidth, y }, fontSize, 1.0f,
+            i == 0 ? g_headerColor : label ? YELLOW : g_textColor);
+    }
+    EndScissorMode();
+}
+
 // The lines of the function shown. A click on a line selects it; on a line that leads to another place, goes there
 static void DrawListing(Rectangle area) {
     Font font = GuiGetFont();
     float fontSize = (float)GuiGetStyle(DEFAULT, TEXT_SIZE);
     float charWidth = MeasureTextEx(font, "0", fontSize, 1.0f).x + 1.0f;
     float lineHeight = fontSize + 6.0f;
+    if (g_pseudoC && (g_view.bytecode || g_view.paired)) {
+        DrawPseudo(area, font, fontSize, charWidth, lineHeight);
+        return;
+    }
     float scrollBarWidth = (float)GuiGetStyle(LISTVIEW, SCROLLBAR_WIDTH);
     float border = (float)GuiGetStyle(DEFAULT, BORDER_WIDTH);
     // Columns, in characters: address, opcode (the bytes of the instructions of the bytecode), label, instruction, comment
@@ -924,7 +999,13 @@ void ProgramView_ExportDialog(void) {
             const SCN_Header* header = &g_view.scn.header;
             fprintf(file, "; %s\n; %s program: entry 0x%X, code 0x%X, data 0x%X, end 0x%X\n", g_view.path,
                 g_view.sh4 ? "SH-4" : "Bytecode", header->entry, header->codeStart, header->dataStart, header->end);
-            if (g_view.sh4)
+            // The pseudo-C if it is shown, from the bytecode of the program or of its pair
+            if (g_pseudoC && g_view.bytecode)
+                DC_WriteProgram(&g_view.bc, file);
+            else if (g_pseudoC && g_view.paired) {
+                fprintf(file, "; Pseudo-C of %s\n", g_view.pairName);
+                DC_WriteProgram(&g_view.pairBc, file);
+            } else if (g_view.sh4)
                 SH4_WriteListing(&g_view.program, file);
             else
                 BC_WriteListing(&g_view.bc, file);

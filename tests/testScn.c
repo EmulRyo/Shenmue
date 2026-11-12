@@ -89,9 +89,9 @@ void Test_Scn3Chunks(const TestContext* context) {
         CHECK_EQ(header->size, chunk->size, "size of the program");
         CheckCommonHeader(&program, name);
         fog += HasDefaultFog(&program);
-        zero18 += header->unknown18 == 0;
-        if (header->unknown18 > max18)
-            max18 = header->unknown18;
+        zero18 += header->variableSize == 0;
+        if (header->variableSize > max18)
+            max18 = header->variableSize;
         if (SCN_IsSH4(&program)) {
             sh4++;
             CHECK(header->end == header->size, "%s: end 0x%X, size 0x%X", name, header->end, header->size);
@@ -154,9 +154,9 @@ void Test_ScnFiles(const TestContext* context) {
         CHECK((header->end == size - 8) == (program.relocationCount == 0), "%s: end 0x%X with %u relocations", name,
             header->end, program.relocationCount);
         fog += HasDefaultFog(&program);
-        zero18 += header->unknown18 == 0;
-        if (header->unknown18 > max18)
-            max18 = header->unknown18;
+        zero18 += header->variableSize == 0;
+        if (header->variableSize > max18)
+            max18 = header->variableSize;
         free(data);
     }
     CHECK_EQ(discs[1], 44, "act01 files");
