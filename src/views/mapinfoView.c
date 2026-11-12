@@ -789,6 +789,41 @@ static const SD_Reference* Sequence(uint32_t index) {
 }
 
 // Its slot, its file and its package (or folder)
+// The number of a camera ID ("2019": 2019), -1 if it isn't 4 digits
+static int32_t CameraNumber(const char* id) {
+    for (int i = 0; i < 4; i++) {
+        if (id[i] < '0' || id[i] > '9')
+            return -1;
+    }
+    return id[4] == '\0' ? atoi(id) : -1;
+}
+
+// The characters with which the program shows a camera, separated by commas (each one once), empty if none
+static const char* CameraCharacters(int32_t number) {
+    static char text[MAPINFOVIEW_LABEL_SIZE];
+    int length = 0;
+    text[0] = '\0';
+    for (uint32_t i = 0; i < g_view.program.count && number >= 0; i++) {
+        const SD_Reference* reference = &g_view.program.references[i];
+        const char* ids[2] = { reference->name, reference->folder };
+        for (int c = 0; c < 2 && reference->kind == SD_CAMERA && reference->number == number; c++) {
+            if (ids[c][0] != '\0' && strstr(text, ids[c]) == NULL && length < (int)sizeof(text))
+                length += snprintf(text + length, sizeof(text) - length, "%s%s", length > 0 ? ", " : "", ids[c]);
+        }
+    }
+    return text;
+}
+
+// Its ID, and whether the program shows it and with which characters
+static const char* CameraText(uint32_t index) {
+    const char* id = g_view.file.cameras[index].id;
+    int32_t number = CameraNumber(id);
+    if (number < 0 || ProgramCount(SD_CAMERA, number, NULL) == 0)
+        return id;
+    const char* characters = CameraCharacters(number);
+    return characters[0] != '\0' ? TextFormat("%s  (shown, with %s)", id, characters) : TextFormat("%s  (shown)", id);
+}
+
 static const char* SequenceText(uint32_t index) {
     const SD_Reference* sequence = Sequence(index);
     return TextFormat("%3d  %s of %s", sequence->number, sequence->name, sequence->folder);
@@ -969,7 +1004,7 @@ static bool CreateItems(void) {
     }
     g_view.firstItems[ITEM_CAMERA] = g_view.itemCount;
     for (uint32_t i = 0; i < file->cameraCount; i++) {
-        AddItem(ITEM_CAMERA, i, file->cameras[i].id, false);
+        AddItem(ITEM_CAMERA, i, CameraText(i), false);
     }
     g_view.firstItems[ITEM_LIGHT] = g_view.itemCount;
     for (uint32_t i = 0; i < file->lightCount; i++) {
@@ -1513,6 +1548,12 @@ static void CameraProperties(Properties* properties, uint32_t index) {
     Properties_Hex(properties, "Flags", camera->flags);
     Properties_Bool(properties, "From the current camera", (camera->flags & MAPINFO_CAMERA_FROM_CURRENT) != 0);
     Properties_Bool(properties, "Relative", (camera->flags & MAPINFO_CAMERA_RELATIVE) != 0);
+    if (g_view.program.count > 0 && CameraNumber(camera->id) >= 0) {
+        Properties_Text(properties, "Shown by the program", ProgramCalls(SD_CAMERA, CameraNumber(camera->id), NULL));
+        const char* characters = CameraCharacters(CameraNumber(camera->id));
+        if (characters[0] != '\0')
+            Properties_Text(properties, "With the characters", characters);
+    }
     Properties_Int(properties, "Keys", CameraKeys(camera));
     Properties_Text(properties, "Duration", TextFormat("%.2f s", CameraDuration(camera)));
     Properties_Section(properties, "Now");

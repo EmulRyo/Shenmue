@@ -9,14 +9,16 @@
 
 // What a scene program does with the map, read from its calls to the functions of the game whose arguments are
 // constants or strings: the packages (PKF/PKS files) it loads, the cutscenes it plays and those it loads in the table of
-// cutscenes, the characters it wakes or puts to sleep and those it uses, the sound banks and other files it names. Each
-// call gives a reference, in the order of the calls; the same name can be referenced by many calls
+// cutscenes, the characters it wakes or puts to sleep and those it uses, the cameras of the map it shows, the sound banks
+// and other files it names. Each call gives a reference, in the order of the calls; the same name can be referenced by
+// many calls
 
 #define SD_NAME_SIZE        32
 #define SD_GAME_FUNCTIONS   512     // Size of the table of the character functions (IDs 0 to 0x1CC)
 #define SD_CUTSCENE_SLOTS   70      // Of the table of cutscenes of the game (0x0C224178 in 1ST_READ.BIN PAL)
 
 // The functions of the game read (see resources/Shenmue1GameFunctions.tsv)
+#define SD_GAME_CAMERA      0x011   // (camera, character, character): shows a camera of the ECAM chunk
 #define SD_GAME_CUTSCENE    0x050   // (slot): plays a cutscene of the table
 #define SD_GAME_ACTIVE      0x0A8   // (character, 1 / 0): wakes or puts to sleep a character
 #define SD_GAME_SOUND_BANKS 0x0F3   // (8 names): the sound banks of the 8 slots
@@ -33,6 +35,8 @@ typedef enum {
     SD_SLEEP,           // name: the character ID
     SD_CHARACTER,       // name: a character ID passed to a character function
     SD_SOUND_BANK,      // number: the slot, name: the bank ("FREE" empties the slot)
+    SD_CAMERA,          // number: the ID of a camera of the ECAM chunk (e.g. 2019 for "2019"), name and folder: the IDs
+                        // of the characters it is relative to (empty if none)
     SD_FILE,            // name: another string with an extension (e.g. "M_MDOR.BIN", "SCROLL00.SPR")
     SD_KIND_COUNT
 } SD_Kind;

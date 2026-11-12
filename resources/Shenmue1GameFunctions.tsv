@@ -16,7 +16,7 @@ id	handler	arguments	name	description	character
 00E	0x0C15724C	1			
 00F	0x0C15725A				
 010	0x0C15725E	1			
-011	0x0C157278	3			yes
+011	0x0C157278	3	MapCamera	Shows the camera of the ECAM chunk of the map whose ID is argument 0 (e.g. 2019 for the camera "2019"), through the camera controller of the game (mode 3). Arguments 1 and 2 are the IDs of two characters, or 0: the relative cameras (flag 0x200) are shown with a character (e.g. 'AKIR', 'TBOX')	yes
 012	0x0C1572EA	0			
 013	0x0C157300	2			
 014	0x0C157310	0			

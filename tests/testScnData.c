@@ -13,7 +13,7 @@
 // What the scene programs of the 136 maps (the SH-4 code with the arguments of its SCN file, or the bytecode) do with
 // their map: the packages they load are PKF/PKS files of the scene folders, the cutscenes they play are TRCK chunks of
 // the map or AUTH files they load in the table of cutscenes, and the characters they wake, put to sleep or use are
-// defined in the files of the map
+// defined in the files of the map, and the cameras they show are those of the ECAM chunk
 
 #define LINE_SIZE 1024
 
@@ -42,6 +42,10 @@ typedef struct {
     uint64_t    cutscenesLoaded;    // Slot loaded by game_13E in the same program
     uint64_t    idsFound;           // Wake, sleep and character IDs found in the files of the map
     uint64_t    idsMissing;
+    uint64_t    camerasFound;       // Cameras of the ECAM chunk of the map
+    uint64_t    relativeCameras;    // With the flag 0x200 (relative)
+    uint64_t    relativeWithCharacter;  // Relative, shown with a character
+    uint64_t    otherWithCharacter;     // Not relative, shown with a character
 } DataStats;
 
 // The folder of the scene of a folder argument ("scene/01/JOMO", "/scene/01/D000/"), lowercase. The map folder if it
@@ -144,6 +148,23 @@ static void CheckData(const TestContext* context, const CorpusFile* map, const M
             else
                 stats->sequencesFound += FileExists(TextFormat("%s/%s", path, TextToLower(reference->name)));
             break;
+        case SD_CAMERA: {
+            const MAPINFO_Camera* camera = NULL;
+            char id[8];
+            snprintf(id, sizeof(id), "%04d", reference->number);
+            for (uint32_t c = 0; c < file->cameraCount && camera == NULL; c++)
+                camera = strcmp(file->cameras[c].id, id) == 0 ? &file->cameras[c] : NULL;
+            if (camera != NULL) {
+                bool relative = (camera->flags & MAPINFO_CAMERA_RELATIVE) != 0, character = reference->name[0] != '\0';
+                stats->camerasFound++;
+                stats->relativeCameras += relative;
+                stats->relativeWithCharacter += relative && character;
+                stats->otherWithCharacter += !relative && character;
+            } else if (stats->kinds[SD_CAMERA] - stats->camerasFound < 5) {
+                Test_Info("%s: camera %s not in the ECAM chunk", map->name, id);
+            }
+            break;
+        }
         case SD_CUTSCENE:
             stats->cutscenesOfMap += (uint32_t)reference->number < file->cutsceneCount;
             stats->cutscenesLoaded += (uint32_t)reference->number >= file->cutsceneCount && loaded[reference->number];
@@ -240,6 +261,14 @@ void Test_ScnData(const TestContext* context) {
     CHECK_EQ(stats.kinds[SD_WAKE], 1025, "characters woken");
     CHECK_EQ(stats.kinds[SD_SLEEP], 1445, "characters put to sleep");
     CHECK_EQ(stats.idsMissing, 0, "character IDs not found in the files of the map");
+    CHECK_EQ(stats.kinds[SD_CAMERA], 3011, "cameras shown");
+    // The 4 others are the camera 0 of scene/03/mfsy, which has none
+    CHECK_EQ(stats.camerasFound, 3007, "cameras shown that are in the ECAM chunk of the map");
+    CHECK_EQ(stats.relativeWithCharacter, 963, "relative cameras shown with a character");
+    Test_Info("%llu cameras shown (%llu in the ECAM chunk), %llu relative (%llu with a character), %llu not relative with "
+        "a character", (unsigned long long)stats.kinds[SD_CAMERA], (unsigned long long)stats.camerasFound,
+        (unsigned long long)stats.relativeCameras, (unsigned long long)stats.relativeWithCharacter,
+        (unsigned long long)stats.otherWithCharacter);
     Test_Info("%u programs: %llu packages loaded (%llu found), %llu AUTH files loaded in the table of cutscenes (%llu "
         "found), %llu cutscenes played (%llu of the map, %llu loaded)", programs,
         (unsigned long long)stats.kinds[SD_PACKAGE], (unsigned long long)stats.packagesFound,

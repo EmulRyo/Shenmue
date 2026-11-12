@@ -356,6 +356,10 @@ static const char* DataText(const SD_Reference* reference) {
         return TextFormat("Character %s", GameDB_CharacterLabel(reference->name));
     case SD_SOUND_BANK:
         return TextFormat("Sound bank %d: %s", reference->number, reference->name);
+    case SD_CAMERA:
+        return reference->name[0] == '\0' ? TextFormat("Camera %04d", reference->number) : reference->folder[0] == '\0' ||
+            strcmp(reference->folder, reference->name) == 0 ? TextFormat("Camera %04d, with %s", reference->number, reference->name) :
+            TextFormat("Camera %04d, with %s and %s", reference->number, reference->name, reference->folder);
     default:
         return TextFormat("File %s", reference->name);
     }
@@ -857,14 +861,17 @@ static void DrawProperties(Rectangle bounds) {
         Properties_Begin(properties, bounds, "Program data");
         Properties_Text(properties, "Kind", SD_KindName((SD_Kind)reference->kind));
         if (reference->name[0] != '\0')
-            Properties_Text(properties, "Name", reference->name);
+            Properties_Text(properties, reference->kind == SD_CAMERA ? "Character" : "Name", reference->name);
         if (reference->kind == SD_WAKE || reference->kind == SD_SLEEP || reference->kind == SD_CHARACTER)
             GameDB_CharacterProperties(properties, reference->name);
-        if (reference->folder[0] != '\0')
+        if (reference->kind == SD_CAMERA && reference->folder[0] != '\0')
+            Properties_Text(properties, "Second character", reference->folder);
+        else if (reference->folder[0] != '\0')
             Properties_Text(properties, reference->kind == SD_PACKAGE || strchr(reference->folder, '/') != NULL ? "Folder" :
                 "Package", reference->folder);
         if (reference->number >= 0)
-            Properties_Int(properties, reference->kind == SD_AFS_PACKAGE ? "Entry" : "Slot", reference->number);
+            Properties_Int(properties, reference->kind == SD_AFS_PACKAGE ? "Entry" : reference->kind == SD_CAMERA ? "Camera" :
+                "Slot", reference->number);
         Properties_Text(properties, "Game function", name != NULL ? TextFormat("%s (0x%X)", name, reference->game) :
             TextFormat("0x%X", reference->game));
         ReferenceProperties(properties);

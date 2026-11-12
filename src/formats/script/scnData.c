@@ -4,7 +4,7 @@
 #include "formats/script/sh4Listing.h"
 
 static const char* const g_kindNames[SD_KIND_COUNT] = {
-    "package", "AFS package", "cutscene", "sequence", "wake", "sleep", "character", "sound bank", "file",
+    "package", "AFS package", "cutscene", "sequence", "wake", "sleep", "character", "sound bank", "camera", "file",
 };
 
 const char* SD_KindName(SD_Kind kind) {
@@ -114,8 +114,16 @@ static bool Add(SD_Data* data, uint32_t* capacity, const Source* source, SD_Kind
     return true;
 }
 
+// The 4 characters of an ID, in the order of its bytes in memory
+static void IdText(uint32_t id, char text[5]) {
+    for (int i = 0; i < 4; i++)
+        text[i] = (char)(id >> (i * 8));
+    text[4] = '\0';
+}
+
 static bool AddId(SD_Data* data, uint32_t* capacity, const Source* source, SD_Kind kind, uint32_t id) {
-    char name[5] = { (char)id, (char)(id >> 8), (char)(id >> 16), (char)(id >> 24), '\0' };
+    char name[5];
+    IdText(id, name);
     return Add(data, capacity, source, kind, -1, name, NULL);
 }
 
@@ -148,6 +156,13 @@ static bool ReadCall(SD_Data* data, uint32_t* capacity, const Source* source, co
     } else if (id == SD_GAME_SOUND_BANK && IsConstant(a[0], 0) && a[1].constant && a[2].string != NULL) {
         ok &= Add(data, capacity, source, SD_SOUND_BANK, (int32_t)a[1].value, a[2].string, NULL);
         used[2] = true;
+    } else if (id == SD_GAME_CAMERA && a[0].constant && a[0].value <= 9999) {
+        char first[5] = "", second[5] = "";
+        if (a[1].constant && SD_IsCharacterId(a[1].value))
+            IdText(a[1].value, first);
+        if (a[2].constant && SD_IsCharacterId(a[2].value))
+            IdText(a[2].value, second);
+        ok &= Add(data, capacity, source, SD_CAMERA, (int32_t)a[0].value, first, second);
     } else if (id == SD_GAME_SOUND_BANKS) {
         for (uint32_t i = 0; i < count && i < 8; i++) {
             if (a[i].string != NULL)
