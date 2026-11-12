@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <raylib.h>
+#include "formats/script/scnData.h"
 #include "views/views.h"
 
 // Player of AUTH cutscenes: the list of commands, the camera and the characters in 3D (seen from a free camera or from
@@ -22,6 +23,10 @@ bool AUTHView_Open(const char* filepath);
 // map, extracted or not. Opened from the view of the map, which stays open behind it: the view goes back to it when the
 // cutscene is closed (backspace). Returns false if the cutscene can't be loaded
 bool AUTHView_OpenMapCutscene(const char* filepath, uint32_t cutscene);
+// Loads a cutscene that the program of a mapinfo.bin loads in the table of cutscenes of the game (an AUTH file of a
+// package of its map, see mapProgram.h), as one of its cutscenes: its number is the slot of the table. Returns false if
+// the cutscene can't be loaded
+bool AUTHView_OpenMapSequence(const char* filepath, const SD_Reference* sequence);
 // The open cutscene is one of a mapinfo.bin
 bool AUTHView_IsMapCutscene(void);
 // The view of the map of the open cutscene is open behind it: the view of the map that played it, or the one opened for

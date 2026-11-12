@@ -21,6 +21,7 @@ typedef struct {
     bool    handler;
     char    arguments[64];
     char    name[64];
+    bool    character;  // Looks up a character by an ID of its arguments
 } Row;
 
 // "1-5, 17" contains count
@@ -66,9 +67,9 @@ static int ReadRows(const char* path, Row* rows) {
             header = false;
             continue;
         }
-        char* cells[5] = { 0 };
+        char* cells[6] = { 0 };
         char* cell = line;
-        for (int c = 0; c < 5 && cell != NULL; c++) {
+        for (int c = 0; c < 6 && cell != NULL; c++) {
             cells[c] = cell;
             char* tab = strchr(cell, '\t');
             if (tab != NULL)
@@ -87,6 +88,8 @@ static int ReadRows(const char* path, Row* rows) {
         snprintf(row->arguments, sizeof(row->arguments), "%s", cells[2] != NULL ? cells[2] : "");
         snprintf(row->name, sizeof(row->name), "%s", cells[3] != NULL ? cells[3] : "");
         CHECK(row->name[0] == '\0' || IsIdentifier(row->name), "ID 0x%X: invalid name \"%s\"", id, row->name);
+        row->character = cells[5] != NULL && strcmp(cells[5], "yes") == 0;
+        CHECK(cells[5] == NULL || cells[5][0] == '\0' || row->character, "ID 0x%X: character \"%s\"", id, cells[5]);
     }
     fclose(file);
     return count;
@@ -127,9 +130,10 @@ void Test_GameFunctions(const TestContext* context) {
         return;
     int count = ReadRows(SHENMUE_RESOURCES "/Shenmue1GameFunctions.tsv", rows);
     CHECK_EQ(count, GAME_FUNCTIONS, "rows of the database");
-    uint32_t handlers = 0, named = 0, duplicates = 0;
+    uint32_t handlers = 0, named = 0, duplicates = 0, characters = 0;
     for (int i = 0; i < GAME_FUNCTIONS; i++) {
         handlers += rows[i].handler;
+        characters += rows[i].character;
         named += rows[i].name[0] != '\0';
         for (int j = 0; j < i && rows[i].name[0] != '\0'; j++)
             duplicates += strcmp(rows[i].name, rows[j].name) == 0;
@@ -137,6 +141,8 @@ void Test_GameFunctions(const TestContext* context) {
     // The table has no function for 0x76, 0x77 and 0x125, which no program calls
     CHECK_EQ(handlers, GAME_FUNCTIONS - 3, "IDs with the code of their function");
     CHECK_EQ(duplicates, 0, "repeated names");
+    // Those whose code calls the function that looks up a character by its ID (0x0C15413E), or calls a function that does
+    CHECK_EQ(characters, 152, "functions of the characters");
 
     CorpusList list = Corpus_MapinfoFiles(context->content);
     CallCounts* counts = calloc(1, sizeof(CallCounts));
@@ -185,8 +191,8 @@ void Test_GameFunctions(const TestContext* context) {
     CHECK_EQ(counts->withoutHandler, 0, "calls to an ID without code");
     CHECK_EQ(counts->otherCount, 0, "calls with a number of arguments not in the database");
     CHECK_EQ(usedCount, 347, "IDs called by the programs");
-    Test_Info("%d IDs, %u with code, %u named; the programs call %u of them (%u named)", count, handlers, named,
-        usedCount, usedNamed);
+    Test_Info("%d IDs, %u with code, %u named, %u of the characters; the programs call %u of them (%u named)", count,
+        handlers, named, characters, usedCount, usedNamed);
     Test_Info("%llu calls to the game (%llu of the SH-4 programs), %llu to a named function (%.1f%%)",
         (unsigned long long)counts->calls, (unsigned long long)sh4Calls, (unsigned long long)counts->namedCalls,
         counts->calls ? 100.0 * counts->namedCalls / (double)counts->calls : 0.0);

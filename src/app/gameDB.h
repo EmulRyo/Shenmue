@@ -1,6 +1,7 @@
 #ifndef __GAMEDB_H__
 #define __GAMEDB_H__
 
+#include <stdbool.h>
 #include "ui/properties.h"
 
 // The databases of the characters, of the maps and of the functions of the game called by the scene programs of Shenmue I
@@ -45,12 +46,16 @@ typedef struct {
     const char* arguments;  // Numbers of arguments of the calls of the programs, e.g. "3" or "1-4, 6"
     const char* name;       // Empty if unknown
     const char* description;
+    bool        character;  // Its code looks up a character by an ID of its arguments (e.g. 'AKIR')
 } GameDB_GameFunction;
 
 // NULL if the ID isn't in the database
 const GameDB_GameFunction* GameDB_FindGameFunction(int id);
 // Name of the game function, NULL if it has none
 const char* GameDB_GameFunctionName(int id);
+// Per ID (0 to GAMEDB_GAME_FUNCTIONS - 1): the function looks up characters by an ID of its arguments
+#define GAMEDB_GAME_FUNCTIONS 512
+const bool* GameDB_CharacterFunctions(void);
 
 // The map of an ID and an IPAC block (NULL or empty for the map itself). NULL if it isn't in the database
 const GameDB_Map* GameDB_FindMap(const char* id, const char* ipac);

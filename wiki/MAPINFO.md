@@ -155,13 +155,37 @@ The functions with a known meaning (*probably*: inferred from the values passed 
 | `0x003` | KillThread     | 2,419  | 1 | Ends the thread of argument 0 (0: the current one). Returns 1 if it was running |
 | `0x009` | FloatMath      | 7,790  | 2, 3 | Operation on floats chosen by argument 0 (comparisons, conversions, differences of vectors) |
 | `0x02E` | Fade           | 2,915  | 1, 9 | *Probably* a fade of the screen: a duration and two colors (red, green, blue, alpha). With -1, returns its state |
+| `0x050` | Cutscene       | 1,465  | 1 to 3 | Plays the cutscene of a slot of the [table of cutscenes](#table-of-cutscenes) (argument 0, 0 to 69). Negative values of argument 0 are other operations: -1 returns the state of the cutscene being played (the programs wait while it isn't 0), -4 and -5 set and clear a flag of it, -6 stops it, -8 returns a flag of the slot of argument 1 and -12 sets it to argument 2 |
 | `0x06D` | PlayVoice      | 14,339 | 1 | *Probably* plays the voice clip named in argument 0 (e.g. `"SY11A006"`) |
 | `0x09A` | ArrayAccess    | 37,378 | 3, 4 | One of 18 operations (argument 1) on the element of argument 2 of the array of argument 0, of bytes, halfwords or words |
+| `0x0A8` | CharacterActive | 2,944 | 2 | Wakes (argument 1: 1) or puts to sleep (0) the character whose ID is argument 0 (e.g. `'AKIR'`, see [Character IDs](#character-ids)): it sets or clears the bit `0x04` of the word `0x5C` of the character, as the flag `SLEEP` of the [CHRT](CHRT) scripts clears it, and makes the same two other calls as that flag |
 | `0x0CA` | VoiceArchive   | 1,312  | 2 | *Probably* opens (argument 0: 1) or closes (0) the archive of voices of argument 1 (e.g. `"E1032"`) |
-| `0x13E` | SequenceData   | 584    | 2, 4 | *Probably* the data of a cutscene in a slot (argument 1, 0 to 69): with argument 0 equal to 0, loads the file of argument 2 (`"seqdata1.bin"`...) of the package of argument 3 (`"D0W0"`...) |
+| `0x0F3` | SoundBanks     | 77     | 8 | *Probably* the [sound banks](#sndd--sound-banks) of the 8 slots at once, a name per argument (e.g. `"system1.snd"`, `"amb022.snd"`), `"FREE"` to empty a slot and 0 to keep it |
+| `0x13C` | Package        | 1,875  | 2 to 5 | The packages ([PKF](PKF)/[PKS](PKS) pairs), in a table of 32 loaded ones, the operation in arguments 0 and 1. `(0, 0, folder, name)` starts loading the package (e.g. `"scene/01/JOMO"`, `"COMMON01"`: the `PKF` or `PKS` extension is added), and returns 0 if it is already loaded; `(0, 2)` returns 1 when the loading is finished; `(0, 5, name)` returns 1 if the package is loaded; `(0, 6, name)` frees it; `(0, 8, afs, entry, entry)` loads the PKF and PKS of two entries of an [AFS](AFS) (`OP99.afs` in `scene/01/op00`). `(2, 2, name)` and `(2, 3, name)` also take a package by name |
+| `0x13E` | SequenceData   | 584    | 2, 4 | Loads a cutscene in a slot of the [table of cutscenes](#table-of-cutscenes) (argument 1, 0 to 69): with argument 0 equal to 0, the [AUTH](AUTH) file named in argument 2 (`"seqdata1.bin"` is `SEQDATA1.AUTH`) of the package of argument 3 (`"D0W0"`: `d0w0.pks` of the folder of the map) |
 | `0x16D` | SoundBank      | 1,372  | 4 | Sound banks in slots: with argument 0 equal to 0, loads the bank of argument 2 (or `"FREE"`) in the slot of argument 1 |
 
 The function of `ctx[0x2C]` (`0x0C0BB318`) copies the arguments to the thread and calls `0x0C155DB4` with the ID; that of `ctx[0x30]` (`0x0C0BB32E`) calls `0x0C16110C`.
+
+The counts below are those of the 136 programs: the SH-4 code of the 119 maps, with the arguments that it computes in registers taken from the paired calls of the [bytecode](SCN#relation-with-the-scn3-chunk-of-the-map) of their SCN file, and the bytecode of the other 17. Only the calls whose arguments are constants or strings are counted.
+
+#### Character IDs
+
+The characters are named by their 4-character ID (`AKIR`, `YAMA`...), passed as a 32-bit constant: `'AKIR'` is `0x52494B41`, the bytes `A`, `K`, `I`, `R` in memory. 152 of the 461 functions of the game look up a character by such an ID: their code calls the function at `0x0C15413E`, which returns the character of an ID (or 0), directly or through another function. Those functions receive 49,180 IDs (letters, digits and `_`) as constants. Every one is in the files of its map, the `mapinfo.bin` or a PKF of its folder (the [CHRT](CHRT) scripts of the [CHRD](#chrd--characters) chunk and of the packages): 4,171 different IDs per map.
+
+Among them, `0x0A8` (CharacterActive) wakes 1,025 times and puts to sleep 1,445 times a character given by a constant, e.g. `scene/01/d000` wakes 22 different characters and puts 30 to sleep.
+
+#### Table of cutscenes
+
+The game has a table of 70 cutscenes of 0x14 bytes (at `0x0C224178`), used by `0x050` (Cutscene), which plays the cutscene of a slot, and `0x13E` (SequenceData), which loads one in a slot. The [TRCK](#scex--cutscenes) chunk `n` of the `SCEX` chunk of the map is the cutscene of the slot `n`: `scene/01/op00` plays the slots 0 to 46 of its 47 chunks, and the `jomo` programs load cutscenes in the slots 50 to 55 and 60 to 63, after their 49 chunks.
+
+The programs play a constant slot 333 times: 176 times a `TRCK` chunk of the map, 94 times a slot loaded by the same program with constant arguments. The other 63 are in maps without `TRCK` chunks whose program loads the slot with arguments computed at run time (e.g. `jd00`, `jhd0`, `ju00`).
+
+They load 204 cutscenes with constant arguments, in 26 maps. The file is an [AUTH](AUTH) file of a package of the folder of the map: `"seqdata1.bin"` of `"D0W0"` is the file `SEQDATA1` of type `AUTH` of `d0w0.pks` (184 of them are found). When argument 3 is a folder (`"SCENE/01/DNOZ"`), the file is in that folder with its name (`scene/01/dnoz/seqdata2.bin`, which starts with its `TRCK` chunk header). E.g. `scene/01/d000` loads `seqdata1.bin` to `seqdataC.bin` of `D0W0` in the slots 4 to 15 (`SEQDATA1`, in the slot 4, has the characters `AKIR`, `YAMA` and `COP_`: 3320 frames, 92 commands), and *probably* plays them with slots computed at run time (its constant slots are 0 and 1). The 20 that aren't found are packages of other discs (`KKYA` to `KKYF` of `jomo` aren't in every scene folder) and files missing from `scene/02/ms08`.
+
+#### Packages loaded
+
+The programs start loading a package with constant arguments 201 times (`0x13C` with `0, 0, folder, name`). The folder is a scene folder with the case of the program (`"scene/01/JOMO"`, `"/scene/01/D000/"`), and 179 of the packages are PKF or PKS files of it. The others are packages of other discs (e.g. `NINJIN` and `HOUMON` of `jomo`), `DUMY` of `/scene/01/D000/pack/` and `ALLMAP` of `scene/03/m3fb`. Many programs load their packages with names computed at run time or through functions of their own (e.g. `scene/01/dcbn` passes `"/scene/01/DCBN/"` and `"DCB0"` to one of its functions), so these aren't all the packages they use.
 
 ### Strings of the code
 
@@ -444,6 +468,8 @@ The game files have 259 `TRCK` chunks in 18 files, but 74 of them are empty: onl
 | `scene/03/arar` | 1 | 1 | 0 |
 
 The empty chunks are scattered among the others (e.g. `scene/01/jomo` starts with two empty chunks, then a cutscene, two empty chunks...).
+
+The chunk `n` is the cutscene of the slot `n` of the [table of cutscenes](#table-of-cutscenes) of the game, which the [scene program](#scn3--scene-program) plays by its number. The programs of the three `jomo` files play the same constant slots, some of them empty in some discs (e.g. 10 and 13, empty in `scene/01/jomo` and not in `scene/02/jomo`). The programs can also load other cutscenes, AUTH files of the packages of the map, in the slots of the table.
 
 ### The map of scene/01/op00
 

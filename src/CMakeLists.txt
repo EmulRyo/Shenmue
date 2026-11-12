@@ -71,6 +71,8 @@ set(SRC
     src/formats/script/scnBytecode.h
     src/formats/script/scnDecompile.c
     src/formats/script/scnDecompile.h
+    src/formats/script/scnData.c
+    src/formats/script/scnData.h
     src/formats/script/scnPair.c
     src/formats/script/scnPair.h
     src/formats/script/sh4.c
@@ -134,6 +136,8 @@ set(SRC
     src/views/imageView.h
     src/views/mapFiles.c
     src/views/mapFiles.h
+    src/views/mapProgram.c
+    src/views/mapProgram.h
     src/views/mapinfoView.c
     src/views/mapinfoView.h
     src/views/mt5View.c

@@ -22,6 +22,7 @@
 #include "ui/tree.h"
 #include "views/authSounds.h"
 #include "views/authView.h"
+#include "views/mapProgram.h"
 #include "views/mapFiles.h"
 #include "views/mapinfoView.h"
 
@@ -816,6 +817,15 @@ bool AUTHView_OpenMapCutscene(const char* filepath, uint32_t cutscene) {
         file.cutscenes[cutscene].size, TextFormat("%s #%u", filepath, cutscene), &sequence);
     MAPINFO_Free(&file);
     return loaded && Start(&sequence, filepath, (int)cutscene);
+}
+
+bool AUTHView_OpenMapSequence(const char* filepath, const SD_Reference* sequence) {
+    size_t size = 0;
+    uint8_t* data = MapProgram_LoadSequence(filepath, sequence, &size);
+    AUTH_Sequence loaded;
+    bool ok = data != NULL && AUTH_LoadFromMemory(data, size, TextFormat("%s #%d", filepath, sequence->number), &loaded);
+    free(data);
+    return ok && Start(&loaded, filepath, sequence->number);
 }
 
 bool AUTHView_IsMapCutscene(void) {

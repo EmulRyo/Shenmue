@@ -104,10 +104,10 @@ static void LoadMaps(void) {
     }
 }
 
-// id (hexadecimal), handler, arguments, name, description
+// id (hexadecimal), handler, arguments, name, description, character ("yes")
 static void LoadGameFunctions(void) {
     Table table;
-    if (!ReadTable(g_shenmue1GameFunctions, g_shenmue1GameFunctionsSize, 5, &table) ||
+    if (!ReadTable(g_shenmue1GameFunctions, g_shenmue1GameFunctionsSize, 6, &table) ||
         (g_gameFunctions = calloc(table.count + 1, sizeof(GameDB_GameFunction))) == NULL) {
         fprintf(stderr, "[GameDB]: Out of memory\n");
         return;
@@ -115,7 +115,7 @@ static void LoadGameFunctions(void) {
     for (size_t i = 0; i < table.count; i++) {
         const char** cells = &table.cells[i * table.columns];
         g_gameFunctions[g_gameFunctionCount++] = (GameDB_GameFunction) { (int)strtol(cells[0], NULL, 16), cells[1],
-            cells[2], cells[3], cells[4] };
+            cells[2], cells[3], cells[4], strcmp(cells[5], "yes") == 0 };
     }
 }
 
@@ -135,6 +135,20 @@ const GameDB_GameFunction* GameDB_FindGameFunction(int id) {
             return &g_gameFunctions[i];
     }
     return NULL;
+}
+
+const bool* GameDB_CharacterFunctions(void) {
+    static bool functions[GAMEDB_GAME_FUNCTIONS];
+    static bool filled;
+    if (!filled) {
+        Load();
+        for (size_t i = 0; i < g_gameFunctionCount; i++) {
+            if (g_gameFunctions[i].id >= 0 && g_gameFunctions[i].id < GAMEDB_GAME_FUNCTIONS)
+                functions[g_gameFunctions[i].id] = g_gameFunctions[i].character;
+        }
+        filled = true;
+    }
+    return functions;
 }
 
 const char* GameDB_GameFunctionName(int id) {

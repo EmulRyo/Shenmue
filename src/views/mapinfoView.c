@@ -20,6 +20,7 @@
 #include "ui/tree.h"
 #include "views/authView.h"
 #include "views/mapFiles.h"
+#include "views/mapProgram.h"
 #include "views/mapinfoView.h"
 #include "views/programView.h"
 
@@ -44,6 +45,7 @@ typedef enum {
     ITEM_SHAPE,
     ITEM_CHARACTER,
     ITEM_CUTSCENE,
+    ITEM_SEQUENCE,      // A cutscene that the program loads in the table of cutscenes
     ITEM_KIND_COUNT,
 } ItemKind;
 
@@ -128,6 +130,10 @@ typedef struct {
     char                filename[1024]; // Path of the open file
     MapCutscene*        cutscenes;      // file.cutsceneCount of them
     MAPINFO_File        file;
+    SD_Data             program;        // What the program of the map does with it (mapProgram.h), empty if none
+    uint32_t            sequenceCount;
+    uint32_t*           sequences;      // The cutscenes that the program loads in the table of cutscenes: their first
+                                        // reference (SD_SEQUENCE) in program, one per slot, file and package
     uint32_t            scriptCount;
     CHRT_Script*        scripts;        // The CHRD chunk, then the CHRT files of the map
     uint32_t            packageCount;
@@ -709,9 +715,90 @@ static void AddItem(ItemKind kind, uint32_t index, const char* text, bool failed
     g_view.visibleItems[item] = true;
 }
 
+// The references of the program of the map (g_view.program) of a kind, with a number (any if negative) and a name (any
+// if NULL), the names compared ignoring the case
+static bool ProgramMatches(const SD_Reference* reference, SD_Kind kind, int32_t number, const char* name) {
+    return reference->kind == kind && (number < 0 || reference->number == number) &&
+        (name == NULL || CHRT_EqualsIgnoreCase(reference->name, name));
+}
+
+static uint32_t ProgramCount(SD_Kind kind, int32_t number, const char* name) {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < g_view.program.count; i++)
+        count += ProgramMatches(&g_view.program.references[i], kind, number, name);
+    return count;
+}
+
+static bool SameReference(const SD_Reference* a, const SD_Reference* b) {
+    return a->kind == b->kind && a->number == b->number && CHRT_EqualsIgnoreCase(a->name, b->name) &&
+        CHRT_EqualsIgnoreCase(a->folder, b->folder);
+}
+
+// The references of a kind, each number, name and folder counted once
+static uint32_t ProgramDistinct(SD_Kind kind) {
+    uint32_t count = 0;
+    const SD_Reference* references = g_view.program.references;
+    for (uint32_t i = 0; i < g_view.program.count; i++) {
+        bool first = references[i].kind == kind;
+        for (uint32_t j = 0; j < i && first; j++)
+            first = !SameReference(&references[j], &references[i]);
+        count += first;
+    }
+    return count;
+}
+
+// "no", or the number of calls of the program and their addresses (up to MAPINFOVIEW_PROGRAM_CALLS of them)
+#define MAPINFOVIEW_PROGRAM_CALLS 6
+static const char* ProgramCalls(SD_Kind kind, int32_t number, const char* name) {
+    static char text[MAPINFOVIEW_LABEL_SIZE];
+    uint32_t count = ProgramCount(kind, number, name), shown = 0;
+    if (count == 0)
+        return "no";
+    int length = snprintf(text, sizeof(text), "%u call%s at", count, count == 1 ? "" : "s");
+    for (uint32_t i = 0; i < g_view.program.count && length < (int)sizeof(text); i++) {
+        const SD_Reference* reference = &g_view.program.references[i];
+        if (!ProgramMatches(reference, kind, number, name))
+            continue;
+        if (shown++ == MAPINFOVIEW_PROGRAM_CALLS) {
+            snprintf(text + length, sizeof(text) - length, " ...");
+            break;
+        }
+        length += snprintf(text + length, sizeof(text) - length, " 0x%X", reference->address);
+    }
+    return text;
+}
+
+// The distinct cutscenes that the program loads in the table of cutscenes. Returns false on memory error
+static bool FindSequences(void) {
+    g_view.sequences = calloc(g_view.program.count + 1, sizeof(uint32_t));
+    if (g_view.sequences == NULL)
+        return false;
+    const SD_Reference* references = g_view.program.references;
+    for (uint32_t i = 0; i < g_view.program.count; i++) {
+        bool found = references[i].kind != SD_SEQUENCE;
+        for (uint32_t j = 0; j < g_view.sequenceCount && !found; j++)
+            found = SameReference(&references[g_view.sequences[j]], &references[i]);
+        if (!found)
+            g_view.sequences[g_view.sequenceCount++] = i;
+    }
+    return true;
+}
+
+static const SD_Reference* Sequence(uint32_t index) {
+    return &g_view.program.references[g_view.sequences[index]];
+}
+
+// Its slot, its file and its package (or folder)
+static const char* SequenceText(uint32_t index) {
+    const SD_Reference* sequence = Sequence(index);
+    return TextFormat("%3d  %s of %s", sequence->number, sequence->name, sequence->folder);
+}
+
 // Name of the subgroup of the characters of a package in the tree
 static const char* PackageText(const MapPackage* package) {
-    return package->variantOf >= 0 ? TextFormat("%s, variant of %s", package->name, g_view.packages[package->variantOf].name) : package->name;
+    const char* loaded = ProgramCount(SD_PACKAGE, -1, package->name) > 0 ? ", loaded by the program" : "";
+    return package->variantOf >= 0 ? TextFormat("%s, variant of %s%s", package->name, g_view.packages[package->variantOf].name,
+        loaded) : TextFormat("%s%s", package->name, loaded);
 }
 
 // The center of the points of a shape (see DrawShape)
@@ -752,6 +839,13 @@ static void AddInfoItems(void) {
         cutscenes += g_view.cutscenes[i].valid;
     if (file->cutsceneCount > 0)
         AddItem(ITEM_INFO, 0, TextFormat("SCEX: %u cutscenes, %u empty", cutscenes, file->cutsceneCount - cutscenes), false);
+    if (g_view.program.count > 0) {
+        AddItem(ITEM_INFO, 0, TextFormat("Program: loads %u packages and %u cutscenes, plays %u cutscenes",
+            ProgramDistinct(SD_PACKAGE) + ProgramDistinct(SD_AFS_PACKAGE), ProgramDistinct(SD_SEQUENCE),
+            ProgramDistinct(SD_CUTSCENE)), false);
+        AddItem(ITEM_INFO, 0, TextFormat("Program: wakes %u characters, puts %u to sleep", ProgramDistinct(SD_WAKE),
+            ProgramDistinct(SD_SLEEP)), false);
+    }
     for (uint32_t i = 0; i < file->bankCount; i++) {
         if (strcmp(file->banks[i].name, "FREE") != 0)
             AddItem(ITEM_INFO, 0, TextFormat("Sound bank %u: %s", file->banks[i].slot, file->banks[i].name), false);
@@ -842,14 +936,15 @@ static const char* CutsceneText(uint32_t index) {
     const MapCutscene* cutscene = &g_view.cutscenes[index];
     if (!cutscene->valid)
         return TextFormat("%3u  empty", index);
-    return TextFormat("%3u  %s", index, CutsceneNames(cutscene, MAPINFOVIEW_CUTSCENE_IDS));
+    return TextFormat("%3u  %s%s", index, CutsceneNames(cutscene, MAPINFOVIEW_CUTSCENE_IDS),
+        ProgramCount(SD_CUTSCENE, (int32_t)index, NULL) > 0 ? "  (played)" : "");
 }
 
 // The items of each kind, in ItemKind order
 static bool CreateItems(void) {
     const MAPINFO_File* file = &g_view.file;
     uint32_t count = 16 + file->bankCount + g_view.mapModelCount + file->doorCount + file->cameraCount + file->lightCount +
-        file->shapeCount + g_view.characterCount + file->cutsceneCount;
+        file->shapeCount + g_view.characterCount + file->cutsceneCount + g_view.sequenceCount;
     g_view.items = malloc(count * sizeof(Item));
     g_view.labels = malloc(count * sizeof(*g_view.labels));
     g_view.failedItems = malloc(count * sizeof(bool));
@@ -889,6 +984,9 @@ static bool CreateItems(void) {
     g_view.firstItems[ITEM_CUTSCENE] = g_view.itemCount;
     for (uint32_t i = 0; i < file->cutsceneCount; i++)
         AddItem(ITEM_CUTSCENE, i, CutsceneText(i), false);
+    g_view.firstItems[ITEM_SEQUENCE] = g_view.itemCount;
+    for (uint32_t i = 0; i < g_view.sequenceCount; i++)
+        AddItem(ITEM_SEQUENCE, i, SequenceText(i), false);
     return true;
 }
 
@@ -916,6 +1014,8 @@ void MAPINFOView_Close(void) {
         CHRT_Free(&g_view.scripts[i]);
     free(g_view.scripts);
     free(g_view.cutscenes);
+    SD_FreeData(&g_view.program);
+    free(g_view.sequences);
     MAPINFO_Free(&g_view.file);
     memset(&g_view, 0, sizeof(g_view));
 }
@@ -938,8 +1038,11 @@ bool MAPINFOView_Open(const char* filepath) {
         memcpy(g_view.originalDoors, file.doors, file.doorCount * sizeof(MAPINFO_Door));
         memcpy(g_view.originalLights, file.lights, file.lightCount * sizeof(MAPINFO_Light));
     }
+    // What the program does with the map, if it has one
+    if (!MapProgram_Read(filepath, &g_view.file, &g_view.program))
+        SD_FreeData(&g_view.program);
     // After the models, for the doors whose model couldn't be loaded
-    if (g_view.originalDoors == NULL || g_view.originalLights == NULL || !ReadCutscenes() || !CreateItems()) {
+    if (!FindSequences() || g_view.originalDoors == NULL || g_view.originalLights == NULL || !ReadCutscenes() || !CreateItems()) {
         fputs("[MAPINFOView_Open]: Memory error\n", stderr);
         MAPINFOView_Close();
         return false;
@@ -1051,6 +1154,13 @@ static int SelectedCutscene(void) {
     return g_view.cutscenes[index].valid ? (int)index : -1;
 }
 
+// The selected cutscene loaded by the program, NULL if none
+static const SD_Reference* SelectedSequence(void) {
+    if (g_view.selected < 0 || g_view.items[g_view.selected].kind != ITEM_SEQUENCE)
+        return NULL;
+    return Sequence(g_view.items[g_view.selected].index);
+}
+
 void MAPINFOView_Toolbar(void) {
     if (Toolbar_Button(ICON_RESTART, "Reset", "Reset the free camera", KEY_R)) {
         ResetCamera();
@@ -1087,11 +1197,15 @@ void MAPINFOView_Toolbar(void) {
     // The view of the cutscenes is shown over this one, which stays open to go back to it
     Toolbar_Separator();
     int cutscene = SelectedCutscene();
-    if (cutscene < 0)
+    const SD_Reference* sequence = SelectedSequence();
+    if (cutscene < 0 && sequence == NULL)
         GuiDisable();
-    if (Toolbar_Button(ICON_PLAYER_PLAY, "Play", "Play the selected cutscene", KEY_ENTER) &&
-        !AUTHView_OpenMapCutscene(g_view.filename, (uint32_t)cutscene))
-        printf("[MAPINFOView]: Failed to load the cutscene %d\n", cutscene);
+    if (Toolbar_Button(ICON_PLAYER_PLAY, "Play", "Play the selected cutscene", KEY_ENTER)) {
+        if (sequence != NULL && !AUTHView_OpenMapSequence(g_view.filename, sequence))
+            printf("[MAPINFOView]: Failed to load the cutscene %s of %s\n", sequence->name, sequence->folder);
+        else if (sequence == NULL && !AUTHView_OpenMapCutscene(g_view.filename, (uint32_t)cutscene))
+            printf("[MAPINFOView]: Failed to load the cutscene %d\n", cutscene);
+    }
     GuiEnable();
     // The view of the program of the map too
     if (Toolbar_Button(ICON_CPU, "Program", "Show the program of the map (SCN3 chunk)", KEY_P) &&
@@ -1363,6 +1477,8 @@ static void DrawTree(Rectangle bounds) {
     Tree_BeginGroup(tree, g_layerNames[LAYER_CUTSCENES], &g_options.expanded[LAYER_CUTSCENES], NULL);
     for (uint32_t i = 0; i < file->cutsceneCount; i++)
         TreeItem(g_view.firstItems[ITEM_CUTSCENE] + i, false, !g_view.cutscenes[i].valid, &clicked);
+    for (uint32_t i = 0; i < g_view.sequenceCount; i++)
+        TreeItem(g_view.firstItems[ITEM_SEQUENCE] + i, false, false, &clicked);
     Tree_EndGroup(tree);
     Tree_End(tree);
 
@@ -1498,6 +1614,11 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
     Properties_Bool(properties, "Sleep", info->sleep);
     Properties_Bool(properties, "Human", info->human);
     Properties_Bool(properties, "Arm of Ryo", info->arm);
+    if (g_view.program.count > 0) {
+        Properties_Text(properties, "Woken by the program", ProgramCalls(SD_WAKE, -1, info->id));
+        Properties_Text(properties, "Put to sleep by it", ProgramCalls(SD_SLEEP, -1, info->id));
+        Properties_Text(properties, "Used by it", ProgramCalls(SD_CHARACTER, -1, info->id));
+    }
     // A shown package can have it hidden by a character with its ID of a previous package
     Properties_Text(properties, "Shown", character->shown ? "yes" : character->package >= 0 && !g_view.packages[character->package].shown ?
         "no, its package is hidden" : "no, another package has its ID");
@@ -1513,6 +1634,7 @@ static void CutsceneProperties(Properties* properties, uint32_t index) {
     const MapCutscene* cutscene = &g_view.cutscenes[index];
     const MAPINFO_Cutscene* chunk = &g_view.file.cutscenes[index];
     Properties_Text(properties, "Chunk", TextFormat("0x%X bytes at 0x%X", chunk->size, chunk->offset));
+    Properties_Text(properties, "Played by the program", ProgramCalls(SD_CUTSCENE, (int32_t)index, NULL));
     if (!cutscene->valid) {
         Properties_Note(properties, chunk->size <= 8 ? "Empty TRCK chunk" : "Invalid TRCK chunk");
         return;
@@ -1525,6 +1647,22 @@ static void CutsceneProperties(Properties* properties, uint32_t index) {
     Properties_Int(properties, "Motions", cutscene->motions);
     Properties_Int(properties, "Voices", cutscene->voices);
     Properties_Int(properties, "Sounds", cutscene->sounds);
+    Properties_Note(properties, "Play it with the Play button of the toolbar (Enter)");
+}
+
+// A cutscene loaded by the program in a slot of the table of cutscenes: its AUTH file is loaded when it is played
+static void SequenceProperties(Properties* properties, uint32_t index) {
+    const SD_Reference* sequence = Sequence(index);
+    Properties_Int(properties, "Slot", sequence->number);
+    Properties_Text(properties, "File", sequence->name);
+    Properties_Text(properties, strchr(sequence->folder, '/') != NULL ? "Folder" : "Package", sequence->folder);
+    uint32_t loads = 0;
+    for (uint32_t i = 0; i < g_view.program.count; i++)
+        loads += SameReference(&g_view.program.references[i], sequence);
+    Properties_Int(properties, "Loaded by calls", loads);
+    Properties_Text(properties, "Played by the program", ProgramCalls(SD_CUTSCENE, sequence->number, NULL));
+    if ((uint32_t)sequence->number < g_view.file.cutsceneCount)
+        Properties_Note(properties, "The slot of a TRCK chunk of the map: the program replaces its cutscene");
     Properties_Note(properties, "Play it with the Play button of the toolbar (Enter)");
 }
 
@@ -1567,6 +1705,10 @@ static void DrawProperties(Rectangle bounds) {
     case ITEM_CUTSCENE:
         Properties_Begin(properties, bounds, TextFormat("Cutscene %u", item->index));
         CutsceneProperties(properties, item->index);
+        break;
+    case ITEM_SEQUENCE:
+        Properties_Begin(properties, bounds, TextFormat("Cutscene %d, loaded by the program", Sequence(item->index)->number));
+        SequenceProperties(properties, item->index);
         break;
     default:
         Properties_Begin(properties, bounds, "Information");

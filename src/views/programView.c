@@ -15,12 +15,14 @@
 #include "formats/script/scn.h"
 #include "formats/script/scnBytecode.h"
 #include "formats/script/scnPair.h"
+#include "formats/script/scnData.h"
 #include "formats/script/scnDecompile.h"
 #include "formats/script/sh4Listing.h"
 #include "formats/script/sh4Program.h"
 #include "ui/properties.h"
 #include "ui/toolbar.h"
 #include "ui/tree.h"
+#include "views/mapProgram.h"
 #include "views/mapinfoView.h"
 #include "views/programView.h"
 
@@ -32,13 +34,14 @@
 // Groups of the tree
 typedef enum {
     GROUP_FUNCTIONS,
+    GROUP_DATA,         // What the program does with the map (scnData.h): packages, cutscenes, characters...
     GROUP_GAME,         // IDs of the functions of the game called by the program
     GROUP_STRINGS,      // Strings of the data loaded by the code
     GROUP_RELOCATIONS,  // Of the bytecode programs
     GROUP_COUNT,
 } Group;
 
-static const char* g_groupNames[GROUP_COUNT] = { "Functions", "Game functions", "Strings", "Relocations" };
+static const char* g_groupNames[GROUP_COUNT] = { "Functions", "Program data", "Game functions", "Strings", "Relocations" };
 
 typedef struct {
     int32_t     id;
@@ -81,6 +84,11 @@ typedef struct {
     DataString*     strings;
     char            (*stringLabels)[PROGRAMVIEW_LABEL_SIZE];
     char            (*relocationLabels)[PROGRAMVIEW_LABEL_SIZE];
+    // The references of the data of the program, and the distinct ones (their first reference), sorted by kind
+    SD_Data         data;
+    uint32_t        dataCount;
+    uint32_t*       dataItems;
+    char            (*dataLabels)[PROGRAMVIEW_LABEL_SIZE];
     Tree            tree;
     Properties      properties;
     // Selection of the tree
@@ -107,7 +115,7 @@ typedef struct {
 } ProgramView_State;
 
 static ProgramView_State g_view;
-static bool g_expanded[GROUP_COUNT] = { true, false, false, true };
+static bool g_expanded[GROUP_COUNT] = { true, true, false, false, true };
 static bool g_pseudoC;  // Show the pseudo-C instead of the listing, kept when another file is opened
 
 void ProgramView_Close(void) {
@@ -128,6 +136,9 @@ void ProgramView_Close(void) {
     free(g_view.strings);
     free(g_view.stringLabels);
     free(g_view.relocationLabels);
+    SD_FreeData(&g_view.data);
+    free(g_view.dataItems);
+    free(g_view.dataLabels);
     free(g_view.references);
     free(g_view.lines);
     DC_FreeFunction(&g_view.pseudo);
@@ -314,28 +325,76 @@ static bool CreateRelocationLabels(void) {
     return true;
 }
 
+static bool SameReference(const SD_Reference* a, const SD_Reference* b) {
+    return a->kind == b->kind && a->number == b->number && strcmp(a->name, b->name) == 0 && strcmp(a->folder, b->folder) == 0;
+}
+
+static uint32_t ReferenceCount(const SD_Reference* reference) {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < g_view.data.count; i++)
+        count += SameReference(&g_view.data.references[i], reference);
+    return count;
+}
+
+// The text of a distinct reference of the data
+static const char* DataText(const SD_Reference* reference) {
+    switch (reference->kind) {
+    case SD_PACKAGE:
+        return reference->folder[0] != '\0' ? TextFormat("Package %s of %s", reference->name, reference->folder) :
+            TextFormat("Package %s", reference->name);
+    case SD_AFS_PACKAGE:
+        return TextFormat("Package %s #%03d", reference->name, reference->number);
+    case SD_CUTSCENE:
+        return TextFormat("Plays cutscene %d", reference->number);
+    case SD_SEQUENCE:
+        return TextFormat("Loads cutscene %d: %s of %s", reference->number, reference->name, reference->folder);
+    case SD_WAKE:
+        return TextFormat("Wakes %s", GameDB_CharacterLabel(reference->name));
+    case SD_SLEEP:
+        return TextFormat("Puts to sleep %s", GameDB_CharacterLabel(reference->name));
+    case SD_CHARACTER:
+        return TextFormat("Character %s", GameDB_CharacterLabel(reference->name));
+    case SD_SOUND_BANK:
+        return TextFormat("Sound bank %d: %s", reference->number, reference->name);
+    default:
+        return TextFormat("File %s", reference->name);
+    }
+}
+
+// The distinct references of the data of the program, by kind, with their labels. Returns false on memory error
+static bool CreateDataLabels(void) {
+    const bool* characterFunctions = GameDB_CharacterFunctions();
+    bool read = g_view.sh4 ? SD_ReadProgram(&g_view.data, &g_view.program, g_view.paired ? &g_view.pairBc : NULL,
+        g_view.paired ? &g_view.pair : NULL, characterFunctions) :
+        SD_ReadProgram(&g_view.data, NULL, &g_view.bc, NULL, characterFunctions);
+    if (!read)
+        return false;
+    g_view.dataItems = calloc(g_view.data.count + 1, sizeof(uint32_t));
+    g_view.dataLabels = calloc(g_view.data.count + 1, PROGRAMVIEW_LABEL_SIZE);
+    if (g_view.dataItems == NULL || g_view.dataLabels == NULL)
+        return false;
+    for (int kind = 0; kind < SD_KIND_COUNT; kind++) {
+        for (uint32_t i = 0; i < g_view.data.count; i++) {
+            const SD_Reference* reference = &g_view.data.references[i];
+            bool first = reference->kind == kind;
+            for (uint32_t j = 0; j < i && first; j++)
+                first = !SameReference(&g_view.data.references[j], reference);
+            if (!first)
+                continue;
+            uint32_t count = ReferenceCount(reference);
+            snprintf(g_view.dataLabels[g_view.dataCount], PROGRAMVIEW_LABEL_SIZE, "%s%s", DataText(reference),
+                count > 1 ? TextFormat("  (%u calls)", count) : "");
+            g_view.dataItems[g_view.dataCount++] = i;
+        }
+    }
+    return true;
+}
+
 // The bytecode of the map of an SH-4 program, paired with it: scenario/actNN_<map>.scn for scene/NN/<map>/mapinfo.bin
 static void LoadPair(const char* filepath) {
-    // The last 4 parts of the path: scene, NN, <map>, mapinfo.bin
-    char root[1024], path[1200];
-    snprintf(root, sizeof(root), "%s", filepath);
-    const char* parts[4] = { NULL };
-    for (int p = 0; p < 4; p++) {
-        char* separator = strrchr(root, '/');
-        char* backslash = strrchr(root, '\\');
-        if (backslash != NULL && (separator == NULL || backslash > separator))
-            separator = backslash;
-        if (separator == NULL)
-            return;
-        *separator = '\0';
-        parts[p] = separator + 1;
-    }
-    if (strlen(parts[2]) != 2 || strlen(parts[1]) >= 16)
+    char path[1200];
+    if (!MapProgram_ScnPath(filepath, g_view.pairName, sizeof(g_view.pairName), path, sizeof(path)))
         return;
-    snprintf(g_view.pairName, sizeof(g_view.pairName), "act%s_%s.scn", parts[2], parts[1]);
-    for (char* c = g_view.pairName; *c != '\0'; c++)
-        *c = (char)tolower((unsigned char)*c);
-    snprintf(path, sizeof(path), "%s/scenario/%s", root, g_view.pairName);
     size_t size = 0;
     if (!FileExists(path) || (g_view.pairData = File_LoadToMemoryDecompressed(path, &size)) == NULL)
         return;
@@ -404,7 +463,7 @@ static bool Load(const char* filepath) {
         return false;
     printf("[ProgramView]: %s, %u functions, %u calls, %u game functions, %u strings\n", g_view.sh4 ? "SH-4" : "bytecode",
         FunctionCount(), CallCount(), g_view.gameCount, g_view.stringCount);
-    if (!CreateRelocationLabels())
+    if (!CreateRelocationLabels() || !CreateDataLabels())
         return false;
     g_view.open = true;
     return true;
@@ -551,7 +610,14 @@ static void FindReferences(void) {
     free(g_view.references);
     g_view.references = NULL;
     const SH4_Program* program = &g_view.program;
-    if (g_view.selectedGroup == GROUP_GAME) {
+    if (g_view.selectedGroup == GROUP_DATA) {
+        const SD_Reference* reference = &g_view.data.references[g_view.dataItems[g_view.selected]];
+        g_view.references = malloc((ReferenceCount(reference) + 1) * sizeof(uint32_t));
+        for (uint32_t i = 0; i < g_view.data.count && g_view.references != NULL; i++) {
+            if (SameReference(&g_view.data.references[i], reference))
+                g_view.references[g_view.referenceCount++] = g_view.data.references[i].address;
+        }
+    } else if (g_view.selectedGroup == GROUP_GAME) {
         int32_t id = g_view.games[g_view.selected].id;
         g_view.references = malloc((g_view.games[g_view.selected].calls + 1) * sizeof(uint32_t));
         for (uint32_t c = 0; c < CallCount() && g_view.references != NULL; c++) {
@@ -603,7 +669,7 @@ static void Select(Group group, int32_t index) {
         return;
     if (group == GROUP_FUNCTIONS) {
         GoTo(FunctionStart((uint32_t)index), true);
-    } else if (group == GROUP_GAME || group == GROUP_STRINGS) {
+    } else if (group == GROUP_GAME || group == GROUP_STRINGS || group == GROUP_DATA) {
         FindReferences();
         if (g_view.referenceCount > 0)
             GoTo(g_view.references[0], true);
@@ -655,13 +721,14 @@ static void DrawTree(Rectangle bounds) {
     int32_t clicked = -1;
     Tree_Begin(&g_view.tree, bounds);
     for (int g = 0; g < GROUP_COUNT; g++) {
-        uint32_t count = g == GROUP_FUNCTIONS ? FunctionCount() :
+        uint32_t count = g == GROUP_FUNCTIONS ? FunctionCount() : g == GROUP_DATA ? g_view.dataCount :
             g == GROUP_GAME ? g_view.gameCount : g == GROUP_STRINGS ? g_view.stringCount : g_view.scn.relocationCount;
         if (count == 0)
             continue;
         Tree_BeginGroup(&g_view.tree, g_groupNames[g], &g_expanded[g], NULL);
         for (uint32_t i = 0; i < count; i++) {
-            const char* label = g == GROUP_FUNCTIONS ? g_view.functionLabels[i] : g == GROUP_GAME ? g_view.gameLabels[i] :
+            const char* label = g == GROUP_FUNCTIONS ? g_view.functionLabels[i] : g == GROUP_DATA ? g_view.dataLabels[i] :
+                g == GROUP_GAME ? g_view.gameLabels[i] :
                 g == GROUP_STRINGS ? g_view.stringLabels[i] : g_view.relocationLabels[i];
             int flags = (int)g_view.selectedGroup == g && g_view.selected == (int32_t)i ? TREE_SELECTED : 0;
             if (Tree_Item(&g_view.tree, label, flags, NULL)) {
@@ -781,6 +848,25 @@ static void DrawProperties(Rectangle bounds) {
             Properties_Text(properties, "Arguments in all the maps", info->arguments);
         if (info != NULL && info->handler[0] != '\0')
             Properties_Text(properties, "Code (1ST_READ.BIN)", info->handler);
+        ReferenceProperties(properties);
+        break;
+    }
+    case GROUP_DATA: {
+        const SD_Reference* reference = &g_view.data.references[g_view.dataItems[index]];
+        const char* name = GameDB_GameFunctionName(reference->game);
+        Properties_Begin(properties, bounds, "Program data");
+        Properties_Text(properties, "Kind", SD_KindName((SD_Kind)reference->kind));
+        if (reference->name[0] != '\0')
+            Properties_Text(properties, "Name", reference->name);
+        if (reference->kind == SD_WAKE || reference->kind == SD_SLEEP || reference->kind == SD_CHARACTER)
+            GameDB_CharacterProperties(properties, reference->name);
+        if (reference->folder[0] != '\0')
+            Properties_Text(properties, reference->kind == SD_PACKAGE || strchr(reference->folder, '/') != NULL ? "Folder" :
+                "Package", reference->folder);
+        if (reference->number >= 0)
+            Properties_Int(properties, reference->kind == SD_AFS_PACKAGE ? "Entry" : "Slot", reference->number);
+        Properties_Text(properties, "Game function", name != NULL ? TextFormat("%s (0x%X)", name, reference->game) :
+            TextFormat("0x%X", reference->game));
         ReferenceProperties(properties);
         break;
     }

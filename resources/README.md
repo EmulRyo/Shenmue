@@ -50,3 +50,4 @@ Functions of the game that the scene programs of Shenmue I (the `SCN3` chunk of 
 | `arguments`   | Numbers of arguments of the calls of the programs (the SH-4 code of the `mapinfo.bin` files and the bytecode of the SCN files), from the game files (e.g. `3`, `1-5, 17`). `0` when the calls never drop arguments. Empty for the IDs that no program calls |
 | `name`        | Name given from its code and its calls. Empty when it isn't known yet |
 | `description` | What it does, with its arguments in the order of the parameters. "Probably" marks what is inferred from the values passed by the programs more than from its code |
+| `character`   | `yes` when its code looks up a character by an ID taken from its arguments (e.g. `AKIR`), directly or through the function it calls: the function at `0x0C15413E`, which returns the character of an ID |
