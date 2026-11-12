@@ -23,14 +23,14 @@ id	handler	arguments	name	description	character
 015	0x0C157318	1			
 016	0x0C157326				
 017	0x0C157336				
-018	0x0C157D24	3			yes
-019	0x0C157E6C	4			yes
+018	0x0C157D24	3	SetPosition	Sets the position of the character of ID argument 0 (the word 0x08 of the character, as Position of the CHRT scripts) from the vector of 3 floats at argument 2. Argument 1 has flags: 0x20000000, 0x10000000 and 0x08000000 select X, Y and Z (0x38000000: the three), 0x80000000 adds the vector to the position instead, and 0x40000000 uses another space (the word 0x04 and the functions around it)	yes
+019	0x0C157E6C	4	GetPosition	Copies the position of the character of ID argument 0 to the vector at argument 2: its own position (argument 1: -1) or that of its node of argument 1. Argument 3 has flags, 0x40000000 as for SetPosition (0x018)	yes
 01A	0x0C157FB4	5			yes
 01B	0x0C158024	1			yes
-01C	0x0C1583D0	3			yes
-01D	0x0C15806E	4			yes
-01E	0x0C158098	4			yes
-01F	0x0C158606	2			yes
+01C	0x0C1583D0	3	GetAngle	Copies the angles of the character of ID argument 0 (the words 0x14 to 0x1C, as Angle of the CHRT scripts) to the vector at argument 1, each one masked with 0xFFFF. Argument 2 has flags, 0x40000000 as for SetPosition (0x018)	yes
+01D	0x0C15806E	4	SetAngle	Sets the angles of the character of ID argument 0 from the vector at argument 2, with the flags of SetPosition (0x018) in argument 1 (0x38000000: X, Y and Z, 0x10000000: only Y, the direction it faces). Argument 3 is passed to the function that turns it. Returns a value	yes
+01E	0x0C158098	4	TurnTowards	Computes the direction from the position of the character of ID argument 0 to the point at argument 2 (with the arctangent function at 0x0C0915E0) and sets it as with SetAngle (0x01D), with its flags (argument 1) and argument 3	yes
+01F	0x0C158606	2	CharacterDisplay	The display flag of the character of ID argument 0, the one that the flag DISP of the CHRT scripts sets (flag 3 of the byte of flags at 0x0C0AB3B8): argument 1 equal to 1 sets it, 2 clears it, 0 returns it	yes
 020	0x0C158E00	3			
 021	0x0C158E10	2, 5			yes
 022	0x0C158EA4				yes
@@ -39,8 +39,8 @@ id	handler	arguments	name	description	character
 025	0x0C0AE08E	3			yes
 026	0x0C16519C	0			
 027	0x0C165538	2			yes
-028	0x0C166306	7			yes
-029	0x0C16643C	1			yes
+028	0x0C166306	7	PlayMotion	Plays a motion on the character of ID argument 0, through its motion module (ID MOTM): argument 1 is the motion ID (e.g. 724), stored in the module, which clears its bit 0x02 (see MotionEnded, 0x029). Arguments 2 to 4 are floats (usually -1), argument 5 the speed (usually 1.0, the field that MotionSpeed, 0x04E, sets), argument 6 unknown	yes
+029	0x0C16643C	1	MotionEnded	Returns the bit 0x02 of the motion module of the character of ID argument 0, cleared by PlayMotion (0x028): the programs wait for it after playing a motion (while it returns 0)	yes
 02A	0x0C1664C8	3			yes
 02B	0x0C1666F0	1			yes
 02C	0x0C1667AC	4			yes
@@ -76,8 +76,8 @@ id	handler	arguments	name	description	character
 04A	0x0C16B86C				
 04B	0x0C16B8A2	1			
 04C	0x0C172E1C	2, 3, 5, 7			
-04D	0x0C173EBA	2			yes
-04E	0x0C166254	2			yes
+04D	0x0C173EBA	2	CharacterKill	Calls on the character of ID argument 0 the function of the flag KILL of the CHRT scripts (0x0C0AACE4), with argument 1 (always 1)	yes
+04E	0x0C166254	2	MotionSpeed	*Probably* the speed of the motions of the character of ID argument 0: sets the float of argument 1 (1.0, 1.3...) in the field of its motion module that PlayMotion (0x028) sets from its argument 5, and in another one 0x38 bytes after it	yes
 04F	0x0C173D18	2, 3			
 050	0x0C15597C	1-3	Cutscene	Cutscenes of the table of 70 slots of the map (the TRCK chunk n of the SCEX chunk is the cutscene n; game_13E loads others): with argument 0 from 0 to 69, plays the cutscene of that slot. Negative values are other operations: -1 returns the state of the cutscene being played (the programs wait while it is not 0), -8 returns a flag of the slot of argument 1 and -12 sets it to argument 2, -4 and -5 set and clear a flag of the cutscene being played, -6 stops it	
 051	0x0C159AD4	1-3			
@@ -107,7 +107,7 @@ id	handler	arguments	name	description	character
 069	0x0C164DDA	2			
 06A	0x0C164DEA	3			
 06B	0x0C158504	5			
-06C	0x0C16BA88	3			
+06C	0x0C16BA88	3	SoundCommand	*Probably* a command to the sound driver: argument 0 is a command in the style of MIDI (its high nibble selects the function, at 0x0C1D6400 to 0x0C1D67A8), arguments 1 and 2 a channel and a value (the value masked with 0x7F)	
 06D	0x0C16BBF6	1	PlayVoice	Probably plays a voice clip, named in argument 0 (e.g. "SY11A006")	
 06E	0x0C1573B8	2, 4			
 06F	0x0C16B8B4	2			
@@ -177,7 +177,7 @@ id	handler	arguments	name	description	character
 0AF	0x0C155F30	1, 3, 7			
 0B0	0x0C173DBE				
 0B1	0x0C1561E4	2			
-0B2	0x0C16BC32	1			
+0B2	0x0C16BC32	1	VoicePlaying	Returns 1 while the voice of argument 0 is playing (a value returned by PlayVoice, 0x06D), or with 0, while any of the 2 voices is: the programs wait after PlayVoice until it returns 0	
 0B3	0x0C159104				yes
 0B4	0x0C16B98E	2-4			
 0B5	0x0C16355C	2			
