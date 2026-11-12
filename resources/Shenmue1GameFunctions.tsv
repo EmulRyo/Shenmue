@@ -5,7 +5,7 @@ id	handler	arguments	name	description	character
 003	0x0C0BB048	1	KillThread	Ends the thread in argument 0 (0: the current one). Returns 1 if it was running	
 004	0x0C173B46	1			yes
 005	0x0C14215C	1			yes
-006	0x0C16C050	3, 4, 6			
+006	0x0C16C050	3, 4, 6	DebugText	Draws a debug text when a debug flag of the game is set: argument 0 and 1 the position (column and row), argument 2 a printf format (e.g. "Volume = %3d") and its values after it	
 007	0x0C0BB082	2			
 008	0x0C173DC2	3			yes
 009	0x0C173B84	2, 3	FloatMath	Operation on floats chosen by argument 0 (comparisons, conversions, differences of vectors), on the next arguments	
@@ -80,7 +80,7 @@ id	handler	arguments	name	description	character
 04E	0x0C166254	2	MotionSpeed	*Probably* the speed of the motions of the character of ID argument 0: sets the float of argument 1 (1.0, 1.3...) in the field of its motion module that PlayMotion (0x028) sets from its argument 5, and in another one 0x38 bytes after it	yes
 04F	0x0C173D18	2, 3			
 050	0x0C15597C	1-3	Cutscene	Cutscenes of the table of 70 slots of the map (the TRCK chunk n of the SCEX chunk is the cutscene n; game_13E loads others): with argument 0 from 0 to 69, plays the cutscene of that slot. Negative values are other operations: -1 returns the state of the cutscene being played (the programs wait while it is not 0), -8 returns a flag of the slot of argument 1 and -12 sets it to argument 2, -4 and -5 set and clear a flag of the cutscene being played, -6 stops it	
-051	0x0C159AD4	1-3			
+051	0x0C159AD4	1-3	GameFlags	Flags and values of the game, the operation in argument 0: 11 returns the flag of argument 1 (0 to 1023, bits of the 128 bytes at 0x0C225AE8) and 12 sets it to argument 2; 13 and 14 the same with the 64 flags at 0x0C225AE0; 15 returns the byte of argument 1 (0 to 31, at 0x0C225B68) and 16 sets it. The other operations (0, 1, 2, 6 to 10, 0x11 to 0x1E) do other things. The programs use the flags 5 to 1023 and the bytes 3 to 31	
 052	0x0C169874	3			yes
 053	0x0C16988E	1			
 054	0x0C1698B4	1			
@@ -131,7 +131,7 @@ id	handler	arguments	name	description	character
 081	0x0C1656E4	4			yes
 082	0x0C16C214	1			
 083	0x0C16C21C	1			yes
-084	0x0C166872	3			
+084	0x0C166872	3	LoadMotionBank	Loads a motion file (MOTN, m_*.bin) named in argument 2 (e.g. "M_TPIN.BIN") from scene/NN/<folder>, NN being argument 0 and the folder the 4-character ID of argument 1 (e.g. 'FREE', 'D000'); "M_MOBJ.BIN" and "M_MDOR.BIN" are loaded from misc instead. Returns a value	
 085	0x0C1687B4				
 086	0x0C1687B8				
 087	0x0C16A9DA				yes
@@ -179,7 +179,7 @@ id	handler	arguments	name	description	character
 0B1	0x0C1561E4	2			
 0B2	0x0C16BC32	1	VoicePlaying	Returns 1 while the voice of argument 0 is playing (a value returned by PlayVoice, 0x06D), or with 0, while any of the 2 voices is: the programs wait after PlayVoice until it returns 0	
 0B3	0x0C159104				yes
-0B4	0x0C16B98E	2-4			
+0B4	0x0C16B98E	2-4	ScrollSprite	*Probably* the sprites of the scrolls (SPR files of the sprite folder, e.g. sprite/scroll00.spr), the operation in argument 0: 0 loads the file of argument 2 from the folder of argument 1 ("sprite"); 1 to 5 other operations	
 0B5	0x0C16355C	2			
 0B6	0x0C1564E2	1			
 0B7	0x0C1564E8				
@@ -220,7 +220,7 @@ id	handler	arguments	name	description	character
 0DA	0x0C15786A	2			
 0DB	0x0C181C14				
 0DC	0x0C181C18				
-0DD	0x0C16591C	3			
+0DD	0x0C16591C	3	LoadHmotFile	Loads a HMOT_*.BIN file (argument 2, e.g. "HMOT_CAN.BIN") of the loaded package of argument 1, or else from scene/NN/<folder> (NN: argument 0, folder: the 4-character ID of argument 1, e.g. 'VEND'), and adds it to a list. Returns it	
 0DE	0x0C16593E	1			
 0DF	0x0C165984	4			yes
 0E0	0x0C16AC68				
@@ -299,7 +299,7 @@ id	handler	arguments	name	description	character
 129	0x0C165CA0				yes
 12A	0x0C157F3C	3			yes
 12B	0x0C156588	2			
-12C	0x0C173B42	1, 2			
+12C	0x0C173B42	1, 2	DebugMessage	Does nothing in this version: the programs pass it error messages (e.g. "Don't make BOX Buffer!!\n")	
 12D	0x0C16AAB6				yes
 12E	0x0C165CFC	3			yes
 12F	0x0C131F9C				yes
@@ -402,7 +402,7 @@ id	handler	arguments	name	description	character
 190	0x0C09C2A0	2			yes
 191	0x0C173FA0	3			yes
 192	0x0C172DE6	0			
-193	0x0C163FFE	2			
+193	0x0C163FFE	2	LoadingScreen	*Probably* the loading screen (its code uses LOADNUM.GZ, LSCN and the sprite folder): argument 0 equal to 1 calls one function, 0 and 2 another one with 0 or 1 and, for 2, argument 1 (a map ID such as 'MFSY')	
 194	0x0C164032	2			
 195	0x0C174350	1			
 196	0x0C166BA0				yes
