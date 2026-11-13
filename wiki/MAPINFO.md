@@ -170,7 +170,7 @@ The functions with a known meaning (*probably*: inferred from the values passed 
 | `0x050` | Cutscene       | 1,465  | 1 to 3 | Plays the cutscene of a slot of the [table of cutscenes](#table-of-cutscenes) (argument 0, 0 to 69). Negative values of argument 0 are other operations: -1 returns the state of the cutscene being played (the programs wait while it isn't 0), -4 and -5 set and clear a flag of it, -6 stops it, -8 returns a flag of the slot of argument 1 and -12 sets it to argument 2 |
 | `0x051` | GameFlags      | 7,554  | 1 to 3 | [Flags of the game](#flags-of-the-game), the operation in argument 0: 11 returns the flag of argument 1 (0 to 1023) and 12 sets it to argument 2; 15 returns the byte of argument 1 (0 to 31) and 16 sets it; 13 and 14 the same for 64 other flags. Other values of argument 0 are other operations |
 | `0x059` | GetDate        | 784    | 1 | Copies the date and the hour of the game to the 7 bytes pointed by argument 0: the year minus 1900 (86 for 1986), the month, the day, the day of the week, the hour, the minute and the second. See [Date, weather and variants of the map](#date-weather-and-variants-of-the-map) |
-| `0x06C` | SoundCommand   | 6,031  | 3 | *Probably* a command to the sound driver: argument 0 is a command in the style of MIDI (its high nibble selects the function), arguments 1 and 2 a channel and a value (masked with `0x7F`) |
+| `0x06C` | SoundCommand   | 6,031  | 3 | *Probably* a command to the sound driver: argument 0 is a command in the style of MIDI (its high nibble selects the function), arguments 1 and 2 a channel and a value (masked with `0x7F`). With arguments 1 and 2 equal to 0, the programs play the effect sequences of the sound bank of a cutscene, with the sound IDs of the [AUTH](AUTH#sound-bank) files (e.g. `0x1D04A9`, see [Code run with the cutscenes](#code-run-with-the-cutscenes)) |
 | `0x06D` | PlayVoice      | 14,339 | 1 | *Probably* plays the voice clip named in argument 0 (e.g. `"SY11A006"`) |
 | `0x084` | LoadMotionBank | 258    | 3 | Loads a [motion](MOTN) file `m_*.bin` (argument 2, e.g. `"M_TPIN.BIN"`) from `scene/NN/<folder>`, `NN` being argument 0 and the folder the 4-character ID of argument 1 (`'FREE'`, `'D000'`...); `"M_MOBJ.BIN"` and `"M_MDOR.BIN"` are loaded from `misc` |
 | `0x098` | MapModelDisplay | 1,206 | 2 | Shows (argument 1: 1) or hides (0) the MAP model of the slot of argument 0, in a table of 32 slots of 0x60 bytes (`0x0C21E328`): slot 0 is `MAP.MT5` and slot `n` is `MAPnn.MT5`. Returns the previous value |
@@ -178,6 +178,7 @@ The functions with a known meaning (*probably*: inferred from the values passed 
 | `0x0A8` | CharacterActive | 2,944 | 2 | Wakes (argument 1: 1) or puts to sleep (0) the character whose ID is argument 0 (e.g. `'AKIR'`, see [Character IDs](#character-ids)): it sets or clears the bit `0x04` of the word `0x5C` of the character, as the flag `SLEEP` of the [CHRT](CHRT) scripts clears it, and makes the same two other calls as that flag |
 | `0x0B2` | VoicePlaying   | 10,502 | 1 | Returns 1 while the voice of argument 0 (the value returned by PlayVoice) is playing, or with 0 while any of the 2 voices is: the programs wait after PlayVoice until it returns 0 |
 | `0x0B4` | ScrollSprite   | 106    | 2 to 4 | *Probably* the sprites of the scrolls: with argument 0 equal to 0, loads the SPR file of argument 2 (e.g. `"SCROLL00.SPR"`, `sprite/scroll00.spr`) from the folder of argument 1 (`"sprite"`) |
+| `0x0C9` | NodeTransform  | 9,117  | 5 | Moves a node of the model of the character of ID argument 0: the node whose `id` has argument 1 in its low 16 bits, searched in the tree of the [MT5](MT5#node-0x40-bytes) nodes of the model. Argument 4 is the operation: 0 sets the `position` of the node (3 floats) from the vector pointed by argument 2 and its `rotation` (3 integers, `0x10000` = 360°) from the vector pointed by argument 3, 1 adds the vectors to them, 2 copies them to the vectors, 3 sets the `scale` from the vector of argument 2. A vector at 0 leaves the value. See [Code run with the cutscenes](#code-run-with-the-cutscenes) |
 | `0x0CA` | VoiceArchive   | 1,312  | 2 | *Probably* opens (argument 0: 1) or closes (0) the archive of voices of argument 1 (e.g. `"E1032"`) |
 | `0x0DD` | LoadHmotFile   | 70     | 3 | Loads a `HMOT_*.BIN` file (argument 2, e.g. `"HMOT_CAN.BIN"`) of the loaded package of argument 1, or else from `scene/NN/<folder>` as LoadMotionBank (e.g. `scene/01/d000/hmot_can.bin`) |
 | `0x0F3` | SoundBanks     | 77     | 8 | *Probably* the [sound banks](#sndd--sound-banks) of the 8 slots at once, a name per argument (e.g. `"system1.snd"`, `"amb022.snd"`), `"FREE"` to empty a slot and 0 to keep it |
@@ -237,6 +238,41 @@ With them, they choose:
 - Other variants by the date itself: `dcbn` loads one of its packages `DCB0` to `DCB4` each week, `((days since 30 November) + 1) / 7 % 5` (from the month and the day of GetDate), and `mkyu` one of `MKY0` to `MKY4` (the same ones at the dates below, *probably* in the same way).
 
 Running the [bytecode](SCN#bytecode) of the 136 SCN files with the date known (GetDate and the operation 12 of Weather giving it, at 4 dates from 3 December 1986 to 1 January 1987 at 12:00, and at 23:00), the loads of the packages finishing at once, and the display of each slot taken when the threads of the program first yield (their first frame): 23 programs show or hide MAP models when they start, and 25 change their models or their packages with the date or the hour.
+
+#### Code run with the cutscenes
+
+The function of a program that plays a cutscene of the table goes on while the cutscene plays: after `0x050` with the slot, it loops once per frame, calling `0x050` with -1 (1 while the cutscene plays, 0 at its end) and waiting a frame (the service 0 of `ctx[0x2C]` with 1), and counts the frames. The count is the frame of the cutscene (0 at the call that plays it, 30 per second, the frames of the commands of [AUTH](AUTH#aseq--commands)). At given frames, it does what the AUTH file doesn't:
+
+- it moves nodes of the models of the characters of the cutscene with `0x0C9` (NodeTransform), before the cutscene starts (the pose at its first frame) and during it;
+- it plays effect sequences of the bank of the cutscene with `0x06C` (SoundCommand), with the sound IDs of the sound commands of AUTH;
+- it starts threads with `0x002` (StartThread) that do the same every frame, until the cutscene ends or the function ends them with `0x003` (KillThread).
+
+In `scene/01/d000` (Dobuita), the cutscenes 16 (`seqdata1.bin` or `seqdata4.bin` of `BUSS`, Ryo gets on the bus) and 17 (`seqdata2.bin` or `seqdata5.bin`, he gets off) open and close the doors of the bus `BUS_` (its model `BUSS530G.chrm`) and turn its wheels. Its nodes:
+
+| Node | Parent | Position | Part |
+|-----:|--------|----------|------|
+| 153, 154 | root, 153 | −1.32, 0.21, −3.80 | Front door: two leaves, 154 at 0.45 m from 153 |
+| 157, 158 | root, 157 | −1.32, 0.22, −1.26 | Middle door, first pair of leaves |
+| 155, 156 | root, 155 | −1.32, 0.22, 0.54 | Middle door, second pair of leaves, toward the first one |
+| 163 | 162 (1.11, 0.5, −2.08) | | Front wheel of one side |
+| 173 | 172 (−1.11, 0.5, −2.08) | | Front wheel of the other side, turned 180° around Y |
+| 182 | root | 0, 0.5, 2.40 | Back wheels (one mesh) |
+| 196 | root | 0, 0, 0 | *Probably* the lights: moved 100 down (out of sight) before 17:30, at its place after (GetDate) |
+
+| Cutscene | Frame | Calls |
+|---------:|------:|-------|
+| 16 | 0 | Front door open: rotation Y of 153 `0x371C` (77.3°) and of 154 `0x770A` (167.6°). Sound `0x1D04A9` (the effect 28 of `a1_busno.snd`) |
+| 16 | 100 to 130 | A thread closes the front door: 153 from `0x393E`, −455 per frame, and 154 from `-0x770A`, +983 per frame, 31 frames (to 0) |
+| 16 | 125 | Sound `0x1E04A9` (stops the effect 28). A thread turns the wheels every frame: `0xAAA` (15°) added to the rotation X of 163 and 173, `-0xAAA` to 182 |
+| 16 | 260 | The thread of the wheels is ended and the loop of the function ends (the two files last 325 frames) |
+| 17 | 0 | Middle door open: rotation Y of 157 `0x371C`, 158 `-0x770A`, 155 `-0x371C`, 156 `0x770A`. With `seqdata2.bin`, sound `0x1B04A9` (the effect 27) |
+| 17 | 132 to 162 | A thread closes the middle door in 31 frames, as the front door |
+| 17 | 165 | Sound `0x1C04A9` (stops the effect 27) and the wheels turn, until the end |
+| 17 | 216 | The loop of the function ends: a fade of 30 frames, then the cutscene is stopped (`0x050` with -6; the two files last 246 frames) |
+
+The same function of `scene/03/ma00` (cutscene 0) and `scene/03/msbs` (cutscene 1) moves the same nodes of `BUS_`.
+
+Running the [bytecode](SCN#bytecode) of the 136 SCN files frame after frame from the function that plays each slot (the slots played or loaded with known values: 290; the call that plays them is found in 251), with `0x050` (-1) returning 1 during 600 frames, the threads it starts and the waits of `ctx[0x2C]` (the service 0 waits the number of frames of its argument): 18 cutscenes move nodes (12,663 calls), and 51 play sound commands (134). Besides the bus: the nodes 8, 13 and 18 of `CAR_` in the cutscenes 0 and 1 of `scene/02/d000` (every frame), 8, 18 and 23 of `FORK` in the cutscene 0 of `scene/03/m3fb`, 7 and 12 of `DOOR` in the cutscenes 0 to 3 of `scene/02/gmct`, and one or two calls in `scene/01/toki` (`TEGS`), `scene/03/mend` (`SHIP`) and `scene/03/mfsy` (`KMEM`).
 
 ### Strings of the code
 

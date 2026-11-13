@@ -47,7 +47,7 @@ The transform of a node is relative to its parent and is applied in this order: 
 
 | Offset | Size | Type      | Name            | Description                                                                 |
 |-------:|-----:|-----------|-----------------|-----------------------------------------------------------------------------|
-| 0x00   | 4    | uint32    | `id`            | Node (bone) ID. The lowest byte looks like the bone number; the next byte is `0x00` or `0xFF`. The upper 16 bits go from 0 to 0xB; their meaning is unknown, except 2, which marks an [invisible mesh](#invisible-meshes) |
+| 0x00   | 4    | uint32    | `id`            | Node (bone) ID. The lowest byte looks like the bone number; the next byte is `0x00` or `0xFF`. The upper 16 bits go from 0 to 0xB; their meaning is unknown, except 2, which marks an [invisible mesh](#invisible-meshes). The game finds a node of a model by its low 16 bits, searching the tree depth first (children before siblings): the programs of the maps move nodes in this way, e.g. the doors and the wheels of a bus (see [MAPINFO](MAPINFO#code-run-with-the-cutscenes)) |
 | 0x04   | 4    | uint32    | `meshOffset`    | Position of the [mesh header](#mesh-header-0x20-bytes), 0 if the node has no mesh |
 | 0x08   | 12   | int32[3]  | `rotation`      | Rotation around X, Y, Z. `0x10000` = 360°. Only the lowest 16 bits are used (e.g. `0xFFFF` = −1, `0xC000` = −90°). See [rotation of the feet](#rotation-of-the-feet) |
 | 0x14   | 12   | float[3]  | `scale`         | Scale                                                                       |

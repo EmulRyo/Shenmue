@@ -25,7 +25,33 @@ typedef struct {
     uint8_t*    overlayBytes;   // Value, known
     bool        yielded;        // The thread has yielded on this path
     uint8_t     path[VM_PATH_SIZE]; // Of the environment
+    uint8_t     status;         // Of a thread run with time (ThreadStatus)
+    uint32_t    wake;           // Frame at which a thread run with time goes on after a wait
 } State;
+
+typedef enum {
+    THREAD_RUNNING,
+    THREAD_WAITING,
+    THREAD_ENDED,
+} ThreadStatus;
+
+struct VM_Snapshot {
+    State*      state;
+    uint32_t    address;
+    uint32_t    variableSize;
+};
+
+// The threads of a run with time
+typedef struct {
+    const VM_TimedEnvironment* environment;
+    State**     threads;        // VM_TIMED_THREADS
+    uint32_t    count;
+    uint32_t    current;
+    uint32_t    frame;
+    uint32_t    start;          // Address of the call of the snapshot
+    bool        started;
+    uint8_t*    variables;      // Shared by the threads
+} Timeline;
 
 // A thread to run: its function and arguments, and the variables when it was started
 typedef struct {
@@ -55,7 +81,15 @@ typedef struct {
     uint32_t            thread;         // Index of the current thread
     const VM_Environment* environment;  // NULL if none
     bool                ok;
+    bool                stop;           // A call was captured
+    State*              captured;
+    Timeline*           timeline;       // Of a run with time, NULL otherwise
 } Machine;
+
+struct VM_Memory {
+    const Machine*      machine;
+    State*              state;
+};
 
 // Memory of the states
 
@@ -440,6 +474,50 @@ static void Settle(Machine* machine, State* state) {
         environment->settled(environment->context, machine->thread, state->path);
 }
 
+static State* NewThread(Machine* machine, uint32_t function, uint32_t count, const Value* arguments, const uint8_t* variables);
+
+// A call to the game in a run with time: the threads are started and ended, the environment answers the other calls
+static Value TimedGameCall(Machine* machine, State* state, const VM_Call* call, const Value* arguments) {
+    const BC_Program* program = machine->program;
+    Timeline* timeline = machine->timeline;
+    if (!timeline->started && timeline->current == 0 && call->address == timeline->start)
+        timeline->started = true;
+    if (call->id == VM_START_THREAD) {
+        if (call->count < 2 || !arguments[0].known || !arguments[1].known || timeline->count == VM_TIMED_THREADS ||
+            arguments[0].value < VM_PROGRAM_BASE + program->scn->header.codeStart ||
+            arguments[0].value >= VM_PROGRAM_BASE + program->codeEnd)
+            return g_unknown;
+        uint32_t count = arguments[1].value < call->count - 2 ? arguments[1].value : call->count - 2;
+        State* thread = NewThread(machine, arguments[0].value - VM_PROGRAM_BASE, count, arguments + 2, NULL);
+        if (thread == NULL)
+            return g_unknown;
+        thread->wake = timeline->frame;
+        timeline->threads[timeline->count++] = thread;
+        return Known(timeline->count);  // The thread: its index + 1
+    }
+    if (call->id == VM_KILL_THREAD) {
+        if (call->count < 1 || !arguments[0].known)
+            return g_unknown;
+        uint32_t index = arguments[0].value == 0 ? timeline->current : arguments[0].value - 1;
+        if (index >= timeline->count)
+            return Known(0);
+        bool running = timeline->threads[index]->status != THREAD_ENDED;
+        timeline->threads[index]->status = THREAD_ENDED;
+        return Known(running);
+    }
+    const VM_TimedEnvironment* environment = timeline->environment;
+    if (environment == NULL || environment->call == NULL)
+        return g_unknown;
+    VM_Answer answer;
+    memset(&answer, 0, sizeof(answer));
+    VM_Memory memory = { machine, state };
+    environment->call(environment->context, timeline->frame, timeline->current, call, &memory, &answer);
+    uint32_t size = answer.size < VM_ANSWER_BYTES ? answer.size : VM_ANSWER_BYTES;
+    for (uint32_t i = 0; i < size; i++)
+        WriteByte(machine, state, answer.address + i, answer.bytes[i], (answer.knownBytes >> i) & 1);
+    return answer.known ? Known(answer.value) : g_unknown;
+}
+
 // A call to the game: its arguments are the values on the stack, dropped by the next instruction (sp += 4 * count).
 // Returns its result
 static Value GameCall(Machine* machine, State* state, const BC_Instruction* ins) {
@@ -462,6 +540,15 @@ static Value GameCall(Machine* machine, State* state, const BC_Instruction* ins)
             call.known |= (uint16_t)(1u << i);
         }
     }
+    if (machine->timeline != NULL)
+        return TimedGameCall(machine, state, &call, arguments);
+    const VM_Environment* environment = machine->environment;
+    if (environment != NULL && environment->capture != NULL && environment->capture(environment->context, &call, state->path)) {
+        machine->captured = CopyState(machine, state);
+        machine->ok = machine->captured != NULL;
+        machine->stop = true;
+        return g_unknown;
+    }
     if (call.known != 0)
         AddCall(machine, &call);
     // A thread: the function (an address of the code) and its arguments
@@ -478,8 +565,9 @@ static Value GameCall(Machine* machine, State* state, const BC_Instruction* ins)
 static void RunPath(Machine* machine, State* state) {
     const BC_Program* program = machine->program;
     VM_Result* result = machine->result;
+    uint64_t maxSteps = machine->timeline != NULL ? VM_TIMED_STEPS : VM_MAX_STEPS;
     for (;;) {
-        if (machine->steps >= VM_MAX_STEPS || !machine->ok)
+        if (machine->steps >= maxSteps || !machine->ok || machine->stop)
             return;
         machine->steps++;
         result->steps++;
@@ -547,6 +635,7 @@ static void RunPath(Machine* machine, State* state) {
             Value pc = Pop(machine, state);
             if (fp.known && fp.value == 0) {
                 Settle(machine, state);
+                state->status = THREAD_ENDED;
                 return;     // The end of the thread
             }
             if (!fp.known || !pc.known) {
@@ -589,6 +678,8 @@ static void RunPath(Machine* machine, State* state) {
             if (state->result.known) {
                 if (state->result.value == 0)
                     next = ins.target;
+            } else if (machine->timeline != NULL) {
+                next = ins.target;  // As 0
             } else {
                 // Both ways, if this state wasn't seen at a branch
                 if (!AddHash(machine, &machine->seen, &machine->seenCount, &machine->seenSize, StateHash(machine, state)))
@@ -609,12 +700,27 @@ static void RunPath(Machine* machine, State* state) {
             break;
         case BC_GAME:
             state->result = GameCall(machine, state, &ins);
+            if (state->status == THREAD_ENDED)
+                return;     // KillThread ended it
             break;
         case BC_DATA_SERVICE:
         case BC_SERVICE2C:
             // They yield: the next frames
             Settle(machine, state);
             state->result = g_unknown;
+            if (machine->timeline != NULL) {
+                // The service 0 waits the frames of its argument, the first value of the stack
+                uint32_t frames = 1;
+                if (ins.kind == BC_SERVICE2C && ins.operand == 0) {
+                    Value wait = Load(machine, state, Known(state->sp), 4);
+                    if (wait.known && wait.value >= 1 && wait.value <= 100000)
+                        frames = wait.value;
+                }
+                state->wake = machine->timeline->frame + frames;
+                state->status = THREAD_WAITING;
+                state->pc = next;
+                return;
+            }
             break;
         case BC_NATIVE:
         case BC_NATIVE4:
@@ -632,23 +738,43 @@ static void RunPath(Machine* machine, State* state) {
     }
 }
 
-// Runs a thread: its function called with its arguments, and every path of its branches
-static void RunThread(Machine* machine, const Root* root) {
+// A thread: its function called with its arguments. The variables are copied, or shared with the timeline (NULL).
+// Returns NULL on memory error (ok false) or if the arguments don't fit
+static State* NewThread(Machine* machine, uint32_t function, uint32_t count, const Value* arguments, const uint8_t* variables) {
     State* state = NewState(machine);
     if (state == NULL) {
         machine->ok = false;
-        return;
+        return NULL;
     }
-    memcpy(state->variables, root->variables, machine->variableSize * 2);
+    if (variables != NULL)
+        memcpy(state->variables, variables, machine->variableSize * 2);
+    else {
+        free(state->variables);
+        state->variables = machine->timeline->variables;
+    }
     state->sp = VM_STACK_BASE + VM_STACK_SIZE;
     state->fp = 0;
     bool ok = true;
-    for (uint32_t i = root->count; i-- > 0 && ok;)
-        ok = Push(machine, state, root->arguments[i]);
+    for (uint32_t i = count; i-- > 0 && ok;)
+        ok = Push(machine, state, arguments[i]);
     // As a call: the return address and fp (0, which ends the thread at the return)
     ok = ok && Push(machine, state, Known(0)) && Push(machine, state, Known(0));
     state->fp = state->sp;
-    state->pc = root->function;
+    state->pc = function;
+    if (!ok) {
+        if (variables == NULL)
+            state->variables = NULL;
+        FreeState(state);
+        return NULL;
+    }
+    return state;
+}
+
+// Runs a thread: its function called with its arguments, and every path of its branches
+static void RunThread(Machine* machine, const Root* root) {
+    State* state = NewThread(machine, root->function, root->count, root->arguments, root->variables);
+    if (state == NULL)
+        return;
     machine->steps = 0;
     machine->seenCount = 0;
     if (machine->seen != NULL)
@@ -657,7 +783,7 @@ static void RunThread(Machine* machine, const Root* root) {
     machine->work[machine->workCount++] = state;
     while (machine->workCount > 0 && machine->ok) {
         State* path = machine->work[--machine->workCount];
-        if (states++ < VM_MAX_STATES && machine->steps < VM_MAX_STEPS && ok)
+        if (states++ < VM_MAX_STATES && machine->steps < VM_MAX_STEPS)
             RunPath(machine, path);
         FreeState(path);
     }
@@ -675,7 +801,10 @@ bool VM_Run(const BC_Program* program, VM_Result* result) {
     return VM_RunEnvironment(program, NULL, result);
 }
 
-bool VM_RunEnvironment(const BC_Program* program, const VM_Environment* environment, VM_Result* result) {
+// Runs the program from a function (its entry point, or another one called without arguments). With captured, stops at
+// the first call captured by the environment and returns the state of its path (NULL if none)
+static bool Run(const BC_Program* program, uint32_t function, const VM_Environment* environment, VM_Result* result,
+    State** captured) {
     memset(result, 0, sizeof(*result));
     const SCN_Header* header = &program->scn->header;
     Machine machine;
@@ -693,8 +822,8 @@ bool VM_RunEnvironment(const BC_Program* program, const VM_Environment* environm
     if (machine.roots == NULL || machine.rootHashes == NULL || machine.work == NULL || variables == NULL)
         machine.ok = false;
     else
-        AddRoot(&machine, header->entry, 0, NULL, variables);
-    for (uint32_t r = 0; r < machine.rootCount && machine.ok && result->steps < VM_MAX_TOTAL_STEPS; r++) {
+        AddRoot(&machine, function, 0, NULL, variables);
+    for (uint32_t r = 0; r < machine.rootCount && machine.ok && !machine.stop && result->steps < VM_MAX_TOTAL_STEPS; r++) {
         machine.thread = r;
         RunThread(&machine, &machine.roots[r]);
         result->threads++;
@@ -712,9 +841,150 @@ bool VM_RunEnvironment(const BC_Program* program, const VM_Environment* environm
     free(machine.seen);
     free(machine.callTable);
     free(variables);
+    if (captured != NULL)
+        *captured = machine.captured;
+    else
+        FreeState(machine.captured);
     if (!machine.ok) {
         VM_Free(result);
         return false;
+    }
+    return true;
+}
+
+bool VM_RunEnvironment(const BC_Program* program, const VM_Environment* environment, VM_Result* result) {
+    return Run(program, program->scn->header.entry, environment, result, NULL);
+}
+
+VM_Snapshot* VM_Capture(const BC_Program* program, const VM_Environment* environment) {
+    return VM_CaptureFrom(program, program->scn->header.entry, environment);
+}
+
+VM_Snapshot* VM_CaptureFrom(const BC_Program* program, uint32_t function, const VM_Environment* environment) {
+    VM_Result result;
+    State* captured = NULL;
+    bool ok = Run(program, function, environment, &result, &captured);
+    VM_Free(&result);
+    if (!ok || captured == NULL) {
+        FreeState(captured);
+        return NULL;
+    }
+    VM_Snapshot* snapshot = malloc(sizeof(VM_Snapshot));
+    if (snapshot == NULL) {
+        FreeState(captured);
+        return NULL;
+    }
+    snapshot->state = captured;
+    snapshot->address = captured->pc;
+    snapshot->variableSize = program->scn->header.variableSize;
+    return snapshot;
+}
+
+void VM_FreeSnapshot(VM_Snapshot* snapshot) {
+    if (snapshot == NULL)
+        return;
+    FreeState(snapshot->state);
+    free(snapshot);
+}
+
+uint32_t VM_SnapshotAddress(const VM_Snapshot* snapshot) {
+    return snapshot->address;
+}
+
+// Runs a thread with time until it waits or ends. Before the call of the snapshot, the waits of its thread don't wait
+static void RunTimedThread(Machine* machine, uint32_t index, VM_TimedResult* result) {
+    Timeline* timeline = machine->timeline;
+    State* state = timeline->threads[index];
+    uint32_t preWaits = 0;
+    timeline->current = index;
+    for (;;) {
+        state->status = THREAD_RUNNING;
+        machine->steps = 0;
+        RunPath(machine, state);
+        if (state->status == THREAD_RUNNING) {
+            state->status = THREAD_ENDED;   // By a limit or an error
+            result->stopped++;
+        }
+        if (index != 0 || timeline->started || state->status != THREAD_WAITING || preWaits++ >= VM_TIMED_PRE_WAITS)
+            return;
+    }
+}
+
+bool VM_RunTimed(const BC_Program* program, const VM_Snapshot* snapshot, bool rewind, uint32_t frames,
+    const VM_TimedEnvironment* environment, VM_TimedResult* result) {
+    memset(result, 0, sizeof(*result));
+    const SCN_Header* header = &program->scn->header;
+    VM_Result calls;
+    memset(&calls, 0, sizeof(calls));
+    Timeline timeline;
+    memset(&timeline, 0, sizeof(timeline));
+    timeline.environment = environment;
+    timeline.start = snapshot->address;
+    Machine machine;
+    memset(&machine, 0, sizeof(machine));
+    machine.program = program;
+    machine.programSize = header->end < header->size ? header->end : header->size;
+    machine.variableSize = header->variableSize;
+    machine.result = &calls;
+    machine.ok = true;
+    machine.timeline = &timeline;
+    timeline.threads = calloc(VM_TIMED_THREADS, sizeof(State*));
+    timeline.variables = malloc(machine.variableSize * 2 + 1);
+    State* first = timeline.threads != NULL && timeline.variables != NULL ? CopyState(&machine, snapshot->state) : NULL;
+    if (first == NULL) {
+        free(timeline.threads);
+        free(timeline.variables);
+        return false;
+    }
+    memcpy(timeline.variables, first->variables, machine.variableSize * 2);
+    free(first->variables);
+    first->variables = timeline.variables;
+    first->status = THREAD_RUNNING;
+    first->wake = 0;
+    // From the start of the function of the call, called from the same place: sp and fp as after the call
+    int function = rewind ? BC_FunctionAt(program, snapshot->address) : -1;
+    if (function >= 0) {
+        first->pc = program->functions[function];
+        first->sp = first->fp;
+    }
+    timeline.threads[timeline.count++] = first;
+    for (uint32_t frame = 0; frame < frames && machine.ok; frame++) {
+        timeline.frame = frame;
+        bool running = false;
+        for (uint32_t t = 0; t < timeline.count && machine.ok; t++) {
+            State* thread = timeline.threads[t];
+            if (thread->status != THREAD_ENDED && thread->wake <= frame)
+                RunTimedThread(&machine, t, result);
+            if (t == 0 && !timeline.started)
+                break;      // The thread of the snapshot ended before its call
+            running |= thread->status != THREAD_ENDED;
+        }
+        if (!timeline.started)
+            break;
+        result->frames = frame + 1;
+        if (!running)
+            break;
+    }
+    result->started = timeline.started;
+    result->threads = timeline.count;
+    result->steps = calls.steps;
+    for (uint32_t t = 0; t < timeline.count; t++) {
+        timeline.threads[t]->variables = NULL;  // Shared
+        FreeState(timeline.threads[t]);
+    }
+    free(timeline.threads);
+    free(timeline.variables);
+    return machine.ok;
+}
+
+bool VM_ReadMemory(const VM_Memory* memory, uint32_t address, uint32_t size, uint8_t* bytes, uint32_t* known) {
+    *known = 0;
+    for (uint32_t i = 0; i < size; i++) {
+        bool byteKnown;
+        if (!ReadByte(memory->machine, memory->state, address + i, &bytes[i], &byteKnown))
+            return false;
+        if (byteKnown && i < 32)
+            *known |= 1u << i;
     }
     return true;
 }
@@ -729,4 +999,12 @@ int64_t VM_DataOffset(const BC_Program* program, uint32_t value) {
     if (value < VM_PROGRAM_BASE + header->dataStart || value >= VM_PROGRAM_BASE + header->end)
         return -1;
     return (int64_t)(value - VM_PROGRAM_BASE - header->dataStart);
+}
+
+bool VM_WriteMemory(VM_Memory* memory, uint32_t address, uint32_t size, const uint8_t* bytes, uint32_t known) {
+    for (uint32_t i = 0; i < size && i < 32; i++) {
+        if (!WriteByte(memory->machine, memory->state, address + i, bytes[i], (known >> i) & 1))
+            return false;
+    }
+    return true;
 }

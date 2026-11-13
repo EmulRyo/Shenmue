@@ -38,6 +38,9 @@ static struct {
     AUTHSound*      sounds;
     uint32_t        commandCount;
     int*            commandSounds;  // First sound of each command, -1 if none
+    const SCNCutscene* program;     // While it loads, NULL if none
+    uint32_t        programCount;
+    int*            programSounds;  // First sound of each sound command of the program, -1 if none
     uint32_t        cueCount;
     AUTHCue*        cues;           // In order of time
     float           lastTime;       // Time of the last update: the cues after it are played
@@ -226,6 +229,11 @@ static const SND_Sequence* CommandSoundSequence(const SND_Bank* bank, const AUTH
     return CommandSequence(command, &group, &index) ? FindSequence(bank, group, index) : NULL;
 }
 
+// Effect sequence of a sound command of the program (its sound ID), NULL if none
+static const SND_Sequence* ProgramSequence(const SND_Bank* bank, uint32_t id) {
+    return id != 0xFFFFFFFF ? FindSequence(bank, (uint16_t)(id & 0xFFFF), id >> 16) : NULL;
+}
+
 // Split of the effect program that plays an effect, NULL if none
 static const SND_Split* EffectSplit(const SND_Bank* bank, int effect) {
     if (!bank->hasEffectProgram || bank->effectProgram.layerCount == 0 || effect < 0 || effect > 127)
@@ -304,6 +312,8 @@ static bool LoadProgramBank(const AUTH_Sequence* sequence, const char* sceneFold
         int score = 0;
         for (uint32_t i = 0; i < sequence->commandCount; i++)
             score += CommandSoundSequence(&candidate, &sequence->commands[i]) != NULL;
+        for (uint32_t i = 0; i < g_sounds.programCount; i++)
+            score += ProgramSequence(&candidate, g_sounds.program->sounds[i].command) != NULL;
         if (score > bestScore) {
             secondScore = bestScore;
             bestScore = score;
@@ -385,6 +395,8 @@ static void LoadEffects(const AUTH_Sequence* sequence, const char* sceneFolder, 
         g_sounds.info.effectCommands += sequence->commands[i].opcode == AUTH_COMMAND_SOUND;
         any |= CommandSequence(&sequence->commands[i], &group, &index);
     }
+    g_sounds.info.programCommands = g_sounds.programCount;
+    any |= g_sounds.programCount > 0;
     SND_Bank bank;
     if (!any || mapinfo == NULL || !LoadProgramBank(sequence, sceneFolder, mapinfo, name, &bank, g_sounds.info.bank, sizeof(g_sounds.info.bank)))
         return;
@@ -395,6 +407,13 @@ static void LoadEffects(const AUTH_Sequence* sequence, const char* sceneFolder, 
         int sound = AddSequenceCues(&bank, effects, sequence->commands[i].frame / AUTH_FRAME_RATE);
         g_sounds.commandSounds[i] = sound;
         g_sounds.info.effects += sound >= 0;
+    }
+    for (uint32_t i = 0; i < g_sounds.programCount; i++) {
+        const SCNCutscene_Sound* command = &g_sounds.program->sounds[i];
+        const SND_Sequence* effects = ProgramSequence(&bank, command->command);
+        int sound = effects != NULL ? AddSequenceCues(&bank, effects, command->frame / AUTH_FRAME_RATE) : -1;
+        g_sounds.programSounds[i] = sound;
+        g_sounds.info.programEffects += sound >= 0;
     }
     SND_Free(&bank);
 }
@@ -409,22 +428,28 @@ void AUTHSounds_Free(void) {
         UnloadSound(g_sounds.sounds[i].sound);
     free(g_sounds.sounds);
     free(g_sounds.commandSounds);
+    free(g_sounds.programSounds);
     free(g_sounds.cues);
     memset(&g_sounds, 0, sizeof(g_sounds));
 }
 
-void AUTHSounds_Load(const char* sceneFolder, const char* mapinfo, const char* name, const AUTH_Sequence* sequence) {
+void AUTHSounds_Load(const char* sceneFolder, const char* mapinfo, const char* name, const AUTH_Sequence* sequence,
+    const SCNCutscene* program) {
     AUTHSounds_Free();
     g_sounds.lastTime = -1.0f / AUTH_FRAME_RATE;
     g_sounds.commandCount = sequence->commandCount;
+    g_sounds.programCount = program != NULL ? program->soundCount : 0;
     g_sounds.commandSounds = malloc((sequence->commandCount + 1) * sizeof(int));
-    g_sounds.sounds = calloc(sequence->commandCount * AUTHSOUNDS_SEQUENCE_EVENTS + 1, sizeof(AUTHSound));
-    if (g_sounds.commandSounds == NULL || g_sounds.sounds == NULL) {
+    g_sounds.programSounds = malloc((g_sounds.programCount + 1) * sizeof(int));
+    g_sounds.sounds = calloc((sequence->commandCount + g_sounds.programCount) * AUTHSOUNDS_SEQUENCE_EVENTS + 1, sizeof(AUTHSound));
+    if (g_sounds.commandSounds == NULL || g_sounds.programSounds == NULL || g_sounds.sounds == NULL) {
         AUTHSounds_Free();
         return;
     }
     for (uint32_t i = 0; i < sequence->commandCount; i++)
         g_sounds.commandSounds[i] = -1;
+    for (uint32_t i = 0; i < g_sounds.programCount; i++)
+        g_sounds.programSounds[i] = -1;
 
     if (sceneFolder == NULL)
         return;
@@ -436,12 +461,15 @@ void AUTHSounds_Load(const char* sceneFolder, const char* mapinfo, const char* n
         if (g_sounds.commandSounds[i] >= 0)
             AddCue(sequence->commands[i].frame / AUTH_FRAME_RATE, g_sounds.commandSounds[i], 1.0f);
     }
+    g_sounds.program = program;
     LoadEffects(sequence, sceneFolder, mapinfo, name);
+    g_sounds.program = NULL;
     // The events of a sequence can come after the next commands
     if (g_sounds.cues != NULL)
         qsort(g_sounds.cues, g_sounds.cueCount, sizeof(AUTHCue), CompareCues);
-    printf("[AUTHSounds_Load]: %u/%u voices, %u/%u sound effects in %.2f s\n", g_sounds.info.voices, g_sounds.info.voiceCommands,
-        g_sounds.info.effects, g_sounds.info.effectCommands, GetTime() - start);
+    printf("[AUTHSounds_Load]: %u/%u voices, %u/%u sound effects, %u/%u of the program in %.2f s\n", g_sounds.info.voices,
+        g_sounds.info.voiceCommands, g_sounds.info.effects, g_sounds.info.effectCommands, g_sounds.info.programEffects,
+        g_sounds.info.programCommands, GetTime() - start);
 }
 
 static void StopAll(void) {
@@ -502,4 +530,8 @@ void AUTHSounds_GetInfo(AUTHSounds_Info* info) {
 
 bool AUTHSounds_HasSound(uint32_t command) {
     return command < g_sounds.commandCount && g_sounds.commandSounds[command] >= 0;
+}
+
+bool AUTHSounds_HasProgramSound(uint32_t sound) {
+    return sound < g_sounds.programCount && g_sounds.programSounds[sound] >= 0;
 }

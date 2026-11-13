@@ -23,6 +23,7 @@
 #define VM_MAX_THREADS      512
 #define VM_MAX_ARGUMENTS    12
 #define VM_START_THREAD     0x002       // ID of StartThread: (function, count, arguments...)
+#define VM_KILL_THREAD      0x003       // ID of KillThread: (thread returned by StartThread, 0 for the current one)
 
 // A call to the game run with some known arguments
 typedef struct {
@@ -72,6 +73,9 @@ typedef struct {
     // When a path yields for the first time or ends its thread before. thread: the index of the thread, in the order in
     // which they are started (0 is the entry point). Can be NULL
     void        (*settled)(void* context, uint32_t thread, const uint8_t* path);
+    // Before each call to the game run, with its arguments: returns true to keep the state of the path at the call and
+    // stop the emulation (VM_Capture). Can be NULL
+    bool        (*capture)(void* context, const VM_Call* call, const uint8_t* path);
 } VM_Environment;
 
 // Runs the program from its entry point. Returns false on memory error
@@ -79,6 +83,59 @@ bool VM_Run(const BC_Program* program, VM_Result* result);
 // The same in an environment (NULL: the functions of the game return unknown values)
 bool VM_RunEnvironment(const BC_Program* program, const VM_Environment* environment, VM_Result* result);
 void VM_Free(VM_Result* result);
+
+// The state of a path at a call to the game: its memory, its stack and the functions that called it
+typedef struct VM_Snapshot VM_Snapshot;
+
+// Runs the program in an environment as VM_RunEnvironment, until the environment captures a call. Returns the state of
+// the path at that call, NULL if none was captured or on memory error
+VM_Snapshot* VM_Capture(const BC_Program* program, const VM_Environment* environment);
+// The same from a function of the program, run as a thread with unknown arguments (the variables are unknown too)
+VM_Snapshot* VM_CaptureFrom(const BC_Program* program, uint32_t function, const VM_Environment* environment);
+void VM_FreeSnapshot(VM_Snapshot* snapshot);
+// Address of the call of the snapshot
+uint32_t VM_SnapshotAddress(const VM_Snapshot* snapshot);
+
+// Run with time: from a snapshot, the threads of the program run frame after frame, as the game runs them while a
+// cutscene plays. The thread of the snapshot runs from the start of the function of its call (rewind), or from the call
+// itself; the frame 0 is the frame of that call, and the code of the function before it runs without time (its waits
+// don't wait). A wait (a service of ctx[0x2C]) yields: the service 0 waits the number of frames of its argument, the
+// others 1 frame. The threads started with StartThread run from the frame they are started, after those started before
+// them, and KillThread ends them. The values aren't forked: a conditional branch on an unknown result goes the way of 0
+// (the loops that wait for something of the game end, the blocks of an unknown condition are skipped). A thread that
+// doesn't wait within VM_TIMED_STEPS instructions is stopped
+
+#define VM_TIMED_STEPS      200000
+#define VM_TIMED_THREADS    64
+#define VM_TIMED_PRE_WAITS  1000        // Waits of the thread of the snapshot before its call, which don't wait
+
+// Reads the memory of the thread that makes a call
+typedef struct VM_Memory VM_Memory;
+
+typedef struct {
+    void*       context;
+    // At each call to the game, at a frame, by a thread (0: the thread of the snapshot, then those started, in order).
+    // answer starts unknown (StartThread and KillThread are answered by the machine). Can be NULL
+    void        (*call)(void* context, uint32_t frame, uint32_t thread, const VM_Call* call, VM_Memory* memory,
+                    VM_Answer* answer);
+} VM_TimedEnvironment;
+
+typedef struct {
+    bool        started;        // The call of the snapshot was run
+    uint32_t    frames;         // Run, up to the number asked (fewer if every thread ended)
+    uint32_t    threads;        // Run, the thread of the snapshot included
+    uint32_t    stopped;        // Stopped by the limit of instructions, an invalid instruction or stack
+    uint64_t    steps;
+} VM_TimedResult;
+
+// Runs frames frames from a snapshot. Returns false on memory error
+bool VM_RunTimed(const BC_Program* program, const VM_Snapshot* snapshot, bool rewind, uint32_t frames,
+    const VM_TimedEnvironment* environment, VM_TimedResult* result);
+// size bytes of the memory at an address (of the program, of its variables or of the stack of the thread). Bit i of
+// known: bytes[i] is known. Returns false if the address isn't valid
+bool VM_ReadMemory(const VM_Memory* memory, uint32_t address, uint32_t size, uint8_t* bytes, uint32_t* known);
+// Writes size bytes (up to 32) to the memory, as the game does at a call. Returns false if the address isn't valid
+bool VM_WriteMemory(VM_Memory* memory, uint32_t address, uint32_t size, const uint8_t* bytes, uint32_t known);
 // The offset in the data of a known argument that is an address of the data of the program, -1 if it isn't one
 int64_t VM_DataOffset(const BC_Program* program, uint32_t value);
 

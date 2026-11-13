@@ -167,6 +167,8 @@ The bank of the sound commands is not named in the AUTH file: the [program](MAPI
 
 With these banks, every sound command with a sound ID of the 33 files of these PKS with sound commands has an effect sequence in the bank, also those of the files with only 3-argument commands. The sequence is not always the effect with the same index: in `a1_busno.snd`, sequences 0 to 27 play effects 0 to 27, sequence 28 stops effect 27 (volume 0), 29 plays effect 28 and 30 stops it, and sequences 31 to 38 play effects 29 to 36 (the commands of sequences 37 and 38 of `buss/SEQDATA2` have the length of effects 35 and 36). The functions that load `YQ14` (`d000/yq14`, sound ID `0x0FA9`) load no bank, and the program of `scene/01/yd01` (`sakr`) is a bytecode.
 
+The program of the map also plays sequences of the bank of a cutscene while it plays (see [Code run with the cutscenes](MAPINFO#code-run-with-the-cutscenes)): in `scene/01/d000`, the sequences 27 to 30 of `a1_busno.snd` (`0x1B04A9` to `0x1E04A9`) start and stop the effects 27 and 28 with the cutscenes of `buss`.
+
 The sound commands of the cutscenes of the `SCEX` chunk of the [MAPINFO](MAPINFO) files use the same kind of banks. The program of the file loads the bank with the name of the map or of the AFS of the voices in `jomo` (the three discs), `msbs` and `ydma` (e.g. `a1_fukan.snd`, `a1_gakri.snd`, `a1_busno.snd`), and in some cutscenes of `scene/01/op00` (`a1_tkine.snd`, `a1_unasa.snd`). For the other cutscenes of `op00` and those of `scene/01/op02` and `scene/03/dxms`, no function of the program loads a bank with those names, and a single bank of the `SNDD` chunk of the file has the groups of their sound commands: `a1_prolg.snd`, `a1_opni.snd` and `a1_crido.snd`; with them, every sound command of these three files has an effect sequence (409 commands).
 
 ## Characters
@@ -178,6 +180,8 @@ The file only has the IDs of the characters. Their models are those of the `Char
 - the characters of the [MAPINFO](MAPINFO) of the map that contains the cutscene (the parent folder): Ryo, `AKIR`, is `YKB_M`, whose model is `scene/01/model/chara/ykb_m.mt5`.
 
 The persons (`Human` command) have the origin of their model at the hips; the position of their curves is the point of the floor where they stand.
+
+The nodes of the models of some characters are moved by the [program](MAPINFO#code-run-with-the-cutscenes) of the map while the cutscene plays, not by the AUTH file: e.g. the doors and the wheels of the bus `BUS_` in the cutscenes of `scene/01/d000/buss`.
 
 ## Animation curves
 

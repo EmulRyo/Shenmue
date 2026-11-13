@@ -107,7 +107,7 @@ id	handler	arguments	name	description	character
 069	0x0C164DDA	2			
 06A	0x0C164DEA	3			
 06B	0x0C158504	5			
-06C	0x0C16BA88	3	SoundCommand	*Probably* a command to the sound driver: argument 0 is a command in the style of MIDI (its high nibble selects the function, at 0x0C1D6400 to 0x0C1D67A8), arguments 1 and 2 a channel and a value (the value masked with 0x7F)	
+06C	0x0C16BA88	3	SoundCommand	*Probably* a command to the sound driver: argument 0 is a command in the style of MIDI (its high nibble selects the function, at 0x0C1D6400 to 0x0C1D67A8), arguments 1 and 2 a channel and a value (the value masked with 0x7F). With 0, 0, the programs play the effect sequences of the sound bank of a cutscene with the sound IDs of the AUTH files (group in the low 16 bits, sequence in the high 16 bits, e.g. 0x1D04A9)	
 06D	0x0C16BBF6	1	PlayVoice	Probably plays a voice clip, named in argument 0 (e.g. "SY11A006")	
 06E	0x0C1573B8	2, 4			
 06F	0x0C16B8B4	2			
@@ -200,7 +200,7 @@ id	handler	arguments	name	description	character
 0C6	0x0C1575B4	1			
 0C7	0x0C15917A				
 0C8	0x0C09C270	2			yes
-0C9	0x0C1589FE	5			yes
+0C9	0x0C1589FE	5	NodeTransform	The node of the model of the character of ID argument 0 whose ID has argument 1 in its low 16 bits (searched in the tree of nodes of its MT5 model): argument 4 equal to 0 sets its position (3 floats, at node+0x20) from the vector pointed by argument 2 and its rotation (3 integers, 0x10000 = 360°, at node+0x08) from that pointed by argument 3, 1 adds them, 2 copies them to the vectors, 3 sets its scale (node+0x14) from argument 2. A NULL vector is left (e.g. the doors and the wheels of the bus BUS_ of scene/01/d000)	yes
 0CA	0x0C16C238	2	VoiceArchive	Probably opens (argument 0: 1) or closes (0) the archive of voices named in argument 1 (e.g. "E1032", "SY11")	
 0CB	0x0C166AD6	4			yes
 0CC	0x0C15915C				yes

@@ -26,6 +26,7 @@ void Test_Decompile(const TestContext* context);
 void Test_ScnData(const TestContext* context);
 void Test_Vm(const TestContext* context);
 void Test_Display(const TestContext* context);
+void Test_Cutscene(const TestContext* context);
 
 static const Test s_tests[] = {
     { "mapinfo_chunks", Test_MapinfoChunks, true },
@@ -44,6 +45,7 @@ static const Test s_tests[] = {
     { "scn_data",       Test_ScnData,       true },
     { "vm",             Test_Vm,            true },
     { "display",        Test_Display,       true },
+    { "cutscene",       Test_Cutscene,      true },
 };
 
 static int s_checks;

@@ -15,6 +15,7 @@
 #include "formats/archive/pks.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/chrt.h"
+#include "formats/script/scnCutscene.h"
 #include "render/freeCamera.h"
 #include "render/mt5Pose.h"
 #include "render/mt5Render.h"
@@ -54,6 +55,7 @@ typedef struct {
     MT5Pose_Body    bodyNodes;
     Matrix*         pose;       // World matrices of the nodes
     bool            posed;      // In the pose of the motion of its character at the current frame
+    bool            programPosed; // Nodes moved by the program of the map at the current frame
 } AUTHView_Model;
 
 // A motion played by the commands, decoded from the MOTN files
@@ -79,10 +81,22 @@ typedef enum {
     GROUP_VOICES,
     GROUP_SOUNDS,
     GROUP_OTHER,
+    GROUP_PROGRAM,
     GROUP_COUNT,
 } Group;
 
-static const char* g_groupNames[GROUP_COUNT] = { "Characters", "Motions", "Voices", "Sounds", "Other" };
+static const char* g_groupNames[GROUP_COUNT] = { "Characters", "Motions", "Voices", "Sounds", "Other", "Program" };
+
+// What the program of the map does while the cutscene plays (scnCutscene.h), in the tree: the calls that move a node of
+// a character, grouped while they follow each other frame after frame, and the sound commands
+typedef struct {
+    bool            sound;
+    uint32_t        first;      // Index of the first call (of the nodes or of the sounds) and of the last one
+    uint32_t        last;
+    uint32_t        count;
+    uint32_t        firstFrame;
+    uint32_t        lastFrame;
+} AUTHView_ProgramItem;
 
 typedef struct {
     bool            open;
@@ -118,6 +132,11 @@ typedef struct {
     AUTHView_CharacterModel* characterModels;
     IPAC_FileList*  humanFiles; // Of each character: the files of its PKF/PKS pair in stream/humans if it isn't extracted
     MT5Render_Instance* instances; // Of the characters drawn with their model, filled before drawing them
+    SCNCutscene     program;    // What the program of the map does with the cutscene (a cutscene of the table of a map)
+    uint32_t        programItemCount;
+    AUTHView_ProgramItem* programItems;
+    char            (*programLabels)[AUTHVIEW_LABEL_SIZE];
+    int             selectedProgram; // Item of the program selected, -1 if none
 } AUTHView_State;
 
 // Kept when another cutscene is opened
@@ -135,7 +154,7 @@ static AUTHView_Options g_options = {
     .cutsceneCamera = true,
     .labels = true,
     .map = true,
-    .expanded = { true, true, true, true, true },
+    .expanded = { true, true, true, true, true, true },
     .charactersShown = true,
 };
 
@@ -149,6 +168,7 @@ static const Color g_motionColor = { 90, 140, 220, 255 };
 static const Color g_voiceColor = { 240, 160, 60, 255 };
 static const Color g_soundColor = { 110, 200, 110, 255 };
 static const Color g_otherColor = { 170, 120, 220, 255 };
+static const Color g_programColor = { 80, 200, 220, 255 };
 
 #define COLOR_COUNT (sizeof(g_characterColors) / sizeof(g_characterColors[0]))
 
@@ -819,14 +839,106 @@ void AUTHView_Close(void) {
     free(g_view.labels);
     free(g_view.characterLabels);
     free(g_view.shownCharacters);
+    SCNCutscene_Free(&g_view.program);
+    free(g_view.programItems);
+    free(g_view.programLabels);
     MapFiles_Free(&g_view.mapFiles);
     memset(&g_view, 0, sizeof(g_view));
 }
 
+static const char* g_programFields[] = { "rotation", "position", "scale" };
+
+// The items of the program in the tree: the calls for the same node, field and mode are one item while each one comes at
+// most a frame after the previous one; then the sound commands, all in the order of their first frame
+static int CompareProgramItems(const void* a, const void* b) {
+    const AUTHView_ProgramItem* x = a;
+    const AUTHView_ProgramItem* y = b;
+    if (x->firstFrame != y->firstFrame)
+        return x->firstFrame < y->firstFrame ? -1 : 1;
+    if (x->sound != y->sound)
+        return x->sound ? 1 : -1;
+    return x->first < y->first ? -1 : x->first > y->first;
+}
+
+static bool CreateProgramItems(void) {
+    const SCNCutscene* program = &g_view.program;
+    uint32_t capacity = program->nodeCount + program->soundCount;
+    if (capacity == 0)
+        return true;
+    g_view.programItems = malloc(capacity * sizeof(AUTHView_ProgramItem));
+    g_view.programLabels = malloc(capacity * sizeof(*g_view.programLabels));
+    if (g_view.programItems == NULL || g_view.programLabels == NULL)
+        return false;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < program->nodeCount; i++) {
+        const SCNCutscene_Node* node = &program->nodes[i];
+        AUTHView_ProgramItem* item = NULL;
+        for (uint32_t j = count; j-- > 0 && item == NULL;) {
+            AUTHView_ProgramItem* other = &g_view.programItems[j];
+            const SCNCutscene_Node* last = &program->nodes[other->last];
+            if (!other->sound && last->character == node->character && last->node == node->node && last->field == node->field &&
+                last->add == node->add && node->frame <= other->lastFrame + 1)
+                item = other;
+        }
+        if (item == NULL) {
+            item = &g_view.programItems[count++];
+            *item = (AUTHView_ProgramItem) { false, i, i, 0, node->frame, node->frame };
+        }
+        item->last = i;
+        item->lastFrame = node->frame;
+        item->count++;
+    }
+    for (uint32_t i = 0; i < program->soundCount; i++)
+        g_view.programItems[count++] = (AUTHView_ProgramItem) { true, i, i, 1, program->sounds[i].frame, program->sounds[i].frame };
+    qsort(g_view.programItems, count, sizeof(AUTHView_ProgramItem), CompareProgramItems);
+    g_view.programItemCount = count;
+    for (uint32_t i = 0; i < count; i++) {
+        const AUTHView_ProgramItem* item = &g_view.programItems[i];
+        char* label = g_view.programLabels[i];
+        const char* frames = item->lastFrame != item->firstFrame ? TextFormat("%u-%u", item->firstFrame, item->lastFrame) :
+            TextFormat("%u", item->firstFrame);
+        if (item->sound)
+            snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  Sound 0x%08X", frames, program->sounds[item->first].command);
+        else {
+            const SCNCutscene_Node* node = &program->nodes[item->first];
+            snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  Node %s %u %s%s", frames, IDText(node->character), node->node,
+                node->add ? "+" : "", g_programFields[node->field]);
+        }
+    }
+    return true;
+}
+
+// Runs the program of the map for a cutscene of its table: the slot cutscene, loaded from file (NULL for a cutscene of
+// the SCEX chunk)
+static bool RunProgram(int cutscene, const char* file) {
+    g_view.selectedProgram = -1;
+    if (cutscene < 0 || !g_view.hasMapinfo)
+        return true;
+    MAPINFO_File mapinfo;
+    if (!MAPINFO_Load(g_view.mapinfoPath, &mapinfo))
+        return true;
+    MapBytecode bytecode;
+    bool ok = true;
+    if (MapProgram_LoadBytecode(g_view.mapinfoPath, &mapinfo, &bytecode)) {
+        double start = GetTime();
+        ok = SCNCutscene_Run(&bytecode.program, (uint32_t)cutscene, file, g_view.sequence.duration, &g_view.program);
+        const SCNCutscene* program = &g_view.program;
+        if (ok && program->found)
+            printf("[AUTHView_Open]: program of the map: cutscene played at 0x%X (function 0x%X), %u threads, %u frames, %u node "
+                "calls, %u sound commands in %.2f s\n", program->address, program->function, program->run.threads,
+                program->run.frames, program->nodeCount, program->soundCount, GetTime() - start);
+        else if (ok)
+            printf("[AUTHView_Open]: the program of the map doesn't play the cutscene %d\n", cutscene);
+        MapProgram_FreeBytecode(&bytecode);
+    }
+    MAPINFO_Free(&mapinfo);
+    return ok && CreateProgramItems();
+}
+
 // Shows a loaded cutscene, of the AUTH file filepath or of the TRCK chunk cutscene of the SCEX chunk of the mapinfo.bin
-// filepath (cutscene -1 for an AUTH file), replacing the current one. package: the package of the AUTH file that the
-// program of the map loads in the slot cutscene (e.g. "BUSS"), NULL if none
-static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutscene, const char* package) {
+// filepath (cutscene -1 for an AUTH file), replacing the current one. package and file: the package and the AUTH file
+// that the program of the map loads in the slot cutscene (e.g. "BUSS", "seqdata1.bin"), NULL if none
+static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutscene, const char* package, const char* file) {
     AUTHView_Close();
     snprintf(g_view.path, sizeof(g_view.path), "%s", filepath);
     g_view.sequence = *sequence;
@@ -854,7 +966,7 @@ static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutsc
     printf("%s%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files\n", GetFileName(g_view.path),
         cutscene >= 0 ? TextFormat(" #%d", cutscene) : "", sequence->duration, sequence->characterCount, sequence->commandCount,
         sequence->soundCount, g_view.bankCount);
-    if (!LoadMotions() || !CreateLabels() || !LoadCharacterModels()) {
+    if (!LoadMotions() || !CreateLabels() || !LoadCharacterModels() || !RunProgram(cutscene, file)) {
         fputs("[AUTHView_Open]: Memory error\n", stderr);
         AUTHView_Close();
         return false;
@@ -866,7 +978,8 @@ static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutsc
     // The program of the map loads the bank of the sounds with the name of the PKS of an AUTH file (the package it loads
     // the cutscene from, e.g. a1_busno.snd with BUSS for the cutscene 16 of scene/01/d000), or of the map
     AUTHSounds_Load(g_view.sceneFolder[0] != '\0' ? g_view.sceneFolder : NULL, g_view.mapinfoPath,
-        package != NULL && package[0] != '\0' ? package : GetFileName(GetDirectoryPath(g_view.path)), &g_view.sequence);
+        package != NULL && package[0] != '\0' ? package : GetFileName(GetDirectoryPath(g_view.path)), &g_view.sequence,
+        g_view.program.found ? &g_view.program : NULL);
     ComputeBounds();
     ResetCamera();
     FreeCamera_SetFly(&g_view.camera, g_options.fly);
@@ -877,7 +990,7 @@ static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutsc
 
 bool AUTHView_Open(const char* filepath) {
     AUTH_Sequence sequence;
-    return AUTH_Load(filepath, &sequence) && Start(&sequence, filepath, -1, NULL);
+    return AUTH_Load(filepath, &sequence) && Start(&sequence, filepath, -1, NULL, NULL);
 }
 
 bool AUTHView_OpenMapCutscene(const char* filepath, uint32_t cutscene) {
@@ -888,7 +1001,7 @@ bool AUTHView_OpenMapCutscene(const char* filepath, uint32_t cutscene) {
     bool loaded = cutscene < file.cutsceneCount && AUTH_LoadFromMemory(file.data + file.cutscenes[cutscene].offset,
         file.cutscenes[cutscene].size, TextFormat("%s #%u", filepath, cutscene), &sequence);
     MAPINFO_Free(&file);
-    return loaded && Start(&sequence, filepath, (int)cutscene, NULL);
+    return loaded && Start(&sequence, filepath, (int)cutscene, NULL, NULL);
 }
 
 bool AUTHView_OpenMapSequence(const char* filepath, const SD_Reference* sequence) {
@@ -908,7 +1021,7 @@ bool AUTHView_OpenMapSequence(const char* filepath, const SD_Reference* sequence
     size_t length = strlen(name);
     if (length > 0 && (name[length - 1] == '/' || name[length - 1] == '\\'))
         name[length - 1] = '\0';
-    return ok && Start(&loaded, filepath, sequence->number, name);
+    return ok && Start(&loaded, filepath, sequence->number, name, sequence->name);
 }
 
 bool AUTHView_IsMapCutscene(void) {
@@ -1146,8 +1259,67 @@ static const AUTH_Command* PoseCommand(uint32_t idValue) {
     return motion;
 }
 
+// The values of a node at a frame of the program, from those of the model
+static void ProgramNode(uint32_t character, const MT5Mesh_Node* node, uint32_t frame, SCNCutscene_Transform* transform) {
+    *transform = (SCNCutscene_Transform) {
+        { (int32_t)lroundf(node->rotation.x * 65536.0f / 360.0f), (int32_t)lroundf(node->rotation.y * 65536.0f / 360.0f),
+            (int32_t)lroundf(node->rotation.z * 65536.0f / 360.0f) },
+        { node->position.x, node->position.y, node->position.z }, { node->scale.x, node->scale.y, node->scale.z } };
+    SCNCutscene_NodeAt(&g_view.program, character, (uint16_t)node->id, frame, transform);
+}
+
+// Puts the model of a character in the pose that the program of the map gives to its nodes at the current time (e.g.
+// the doors and the wheels of the bus of scene/01/d000), between the values of two frames. Returns false if the
+// program doesn't move them
+static bool ProgramPose(uint32_t character, AUTHView_Model* model) {
+    const SCNCutscene* program = &g_view.program;
+    const MT5Mesh* mesh = &model->model.mesh;
+    if (!SCNCutscene_MovesCharacter(program, character) || mesh->nodeCount == 0)
+        return false;
+    if (model->pose == NULL && (model->pose = malloc((mesh->nodeCount + 1) * sizeof(Matrix))) == NULL)
+        return false;
+    bool* moved = malloc(mesh->nodeCount * sizeof(bool));
+    if (moved == NULL)
+        return false;
+    float frame = fmaxf(g_view.time * AUTH_FRAME_RATE, 0.0f), whole = floorf(frame), t = frame - whole;
+    bool any = false;
+    // The parents are before their children
+    for (uint32_t i = 0; i < mesh->nodeCount; i++) {
+        const MT5Mesh_Node* node = &mesh->nodes[i];
+        SCNCutscene_Transform a, b;
+        bool own = SCNCutscene_NodeAt(program, character, (uint16_t)node->id, (uint32_t)whole, &(SCNCutscene_Transform) { 0 });
+        moved[i] = own || (node->parent >= 0 && moved[node->parent]);
+        if (!moved[i]) {
+            model->pose[i] = mesh->pose[i];
+            continue;
+        }
+        MT5Mesh_Node posed = *node;
+        if (own) {
+            ProgramNode(character, node, (uint32_t)whole, &a);
+            ProgramNode(character, node, (uint32_t)whole + 1, &b);
+            for (int v = 0; v < 3; v++) {
+                float rotation = (a.rotation[v] + (float)(b.rotation[v] - a.rotation[v]) * t) * 360.0f / 65536.0f;
+                float position = Lerp(a.position[v], b.position[v], t), scale = Lerp(a.scale[v], b.scale[v], t);
+                (&posed.rotation.x)[v] = rotation;
+                (&posed.position.x)[v] = position;
+                (&posed.scale.x)[v] = scale;
+            }
+            any = true;
+        }
+        Matrix local = MT5Mesh_NodeMatrix(&posed);
+        if (node->parent >= 0)
+            model->pose[i] = MatrixMultiply(local, model->pose[node->parent]);
+        else    // As the root in the pose of the file
+            model->pose[i] = MatrixMultiply(local, MatrixMultiply(MatrixInvert(MT5Mesh_NodeMatrix(node)), mesh->pose[i]));
+    }
+    free(moved);
+    if (any)
+        MT5Render_Pose(&model->model, model->pose);
+    return any;
+}
+
 // Puts the model of a character in the pose of its motion at the current time (from the first frame of the command to
-// its last one), or in the pose of the file if it has none
+// its last one), or in the pose that the program of the map gives to its nodes, or in the pose of the file
 static void PoseCharacter(uint32_t index) {
     const AUTH_Character* character = &g_view.sequence.characters[index];
     AUTHView_Model* model = &g_view.models[g_view.characterModels[index].model];
@@ -1159,7 +1331,9 @@ static void PoseCharacter(uint32_t index) {
         frame = Clamp(first + g_view.time * AUTH_FRAME_RATE - command->frame, first, fmaxf(first, last));
     }
     model->posed = motion != NULL && model->pose != NULL && MT5Pose_Compute(&model->model.mesh, &model->bodyNodes, motion, frame, model->pose);
-    MT5Render_Pose(&model->model, model->posed ? model->pose : NULL);
+    model->programPosed = !model->posed && ProgramPose(character->idValue, model);
+    if (!model->programPosed)
+        MT5Render_Pose(&model->model, model->posed ? model->pose : NULL);
 }
 
 // As the nodes of the models: rotation around X, Y and Z, and translation, at the current time. The models of the persons
@@ -1354,6 +1528,14 @@ static void DrawTimeline(Rectangle area, Font font, float fontSize) {
             break;
         }
     }
+    // The calls of the program, in the lane of the other commands
+    for (uint32_t i = 0; i < g_view.programItemCount; i++) {
+        const AUTHView_ProgramItem* item = &g_view.programItems[i];
+        float x = area.x + item->firstFrame / AUTH_FRAME_RATE * scale;
+        float width = fmaxf((item->lastFrame - item->firstFrame) / AUTH_FRAME_RATE * scale, 2.0f);
+        float y = area.y + 3.0f * laneHeight + (item->sound ? 2.0f : laneHeight * 0.5f);
+        DrawRectangleRec((Rectangle) { x, y, width, laneHeight * 0.5f - 2.0f }, Fade(g_programColor, item->sound ? 1.0f : 0.6f));
+    }
     const AUTH_Curve* camera = &sequence->camera[AUTH_CAMERA_X];
     for (uint32_t k = 0; k + 1 < camera->count; k++) {
         if (camera->times[k] == camera->times[k + 1]) {
@@ -1415,7 +1597,7 @@ static void DrawTree(Rectangle bounds) {
             clickedCharacter = (int)i;
     }
     Tree_EndGroup(tree);
-    for (int g = GROUP_MOTIONS; g < GROUP_COUNT; g++) {
+    for (int g = GROUP_MOTIONS; g < GROUP_PROGRAM; g++) {
         Tree_BeginGroup(tree, g_groupNames[g], &g_options.expanded[g], NULL);
         for (uint32_t i = 0; i < sequence->commandCount; i++) {
             if ((int)CommandGroup(&sequence->commands[i]) == g &&
@@ -1424,16 +1606,32 @@ static void DrawTree(Rectangle bounds) {
         }
         Tree_EndGroup(tree);
     }
+    int clickedProgram = -1;
+    if (g_view.programItemCount > 0) {
+        Tree_BeginGroup(tree, g_groupNames[GROUP_PROGRAM], &g_options.expanded[GROUP_PROGRAM], NULL);
+        for (uint32_t i = 0; i < g_view.programItemCount; i++) {
+            if (Tree_Item(tree, g_view.programLabels[i], (int)i == g_view.selectedProgram ? TREE_SELECTED : 0, NULL))
+                clickedProgram = (int)i;
+        }
+        Tree_EndGroup(tree);
+    }
     Tree_End(tree);
 
     if (clickedCommand >= 0) {
         SeekFrame(sequence->commands[clickedCommand].frame);
         g_view.selectedCharacter = -1;
+        g_view.selectedProgram = -1;
+    }
+    if (clickedProgram >= 0) {
+        SeekFrame(g_view.programItems[clickedProgram].firstFrame);
+        g_view.selectedCharacter = -1;
+        g_view.selectedProgram = clickedProgram == g_view.selectedProgram ? -1 : clickedProgram;
     }
     if (clickedCharacter >= 0 && clickedCharacter == g_view.selectedCharacter)
         g_view.selectedCharacter = -1;
     else if (clickedCharacter >= 0) {
         g_view.selectedCharacter = clickedCharacter;
+        g_view.selectedProgram = -1;
         const AUTH_Character* character = &sequence->characters[clickedCharacter];
         if (!HasMovement(character))
             return;
@@ -1477,8 +1675,8 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
         Properties_Text(properties, "Motion", motion == NULL ? "none" : name != NULL ? name : TextFormat("0x%X", Arg(motion, 1)));
         if (characterModel->model >= 0) {
             const AUTHView_Model* model = &g_view.models[characterModel->model];
-            Properties_Text(properties, "Pose", model->posed ? "of the motion" : !model->body ? "of the file: not a body" :
-                "of the file: no motion found");
+            Properties_Text(properties, "Pose", model->posed ? "of the motion" : model->programPosed ? "nodes moved by the program" :
+                !model->body ? "of the file: not a body" : "of the file: no motion found");
         }
         const char* sound = CharacterSound(character->idValue);
         Properties_Text(properties, "Sound", sound != NULL ? sound : "none");
@@ -1503,7 +1701,58 @@ static void CommandProperties(Properties* properties, uint32_t index) {
             AUTH_ArgFloat(command, i)));
 }
 
-// Of the selected character, or of the command of the current frame
+// The values of a call for a node: degrees for the rotation
+static const char* NodeValues(const SCNCutscene_Node* node) {
+    char values[3][24];
+    for (int v = 0; v < 3; v++) {
+        if (!(node->known & (1 << v)))
+            snprintf(values[v], sizeof(values[v]), "?");
+        else if (node->field == SCNCUTSCENE_ROTATION)
+            snprintf(values[v], sizeof(values[v]), "%.1f", (int32_t)node->values[v] * 360.0f / 65536.0f);
+        else {
+            float value;
+            memcpy(&value, &node->values[v], sizeof(value));
+            snprintf(values[v], sizeof(values[v]), "%g", value);
+        }
+    }
+    return TextFormat("%s, %s, %s", values[0], values[1], values[2]);
+}
+
+// The frames, the calls and their values
+static void ProgramProperties(Properties* properties, uint32_t index) {
+    const AUTHView_ProgramItem* item = &g_view.programItems[index];
+    const SCNCutscene* program = &g_view.program;
+    Properties_Text(properties, "Frames", item->lastFrame != item->firstFrame ? TextFormat("%u-%u", item->firstFrame, item->lastFrame) :
+        TextFormat("%u", item->firstFrame));
+    Properties_Text(properties, "Time", FormatTime(item->firstFrame / AUTH_FRAME_RATE));
+    Properties_Int(properties, "Calls", item->count);
+    if (item->sound) {
+        const SCNCutscene_Sound* sound = &program->sounds[item->first];
+        Properties_Text(properties, "Function", TextFormat("SoundCommand (0x%03X)", SCNCUTSCENE_SOUND));
+        Properties_Hex(properties, "Command", sound->command);
+        Properties_Text(properties, "Sequence", TextFormat("group 0x%04X, sequence %u", sound->command & 0xFFFF, sound->command >> 16));
+        Properties_Text(properties, "Audio", AUTHSounds_HasProgramSound(item->first) ? "found" : "not found");
+        Properties_Hex(properties, "Address", sound->address);
+    } else {
+        const SCNCutscene_Node* first = &program->nodes[item->first];
+        const SCNCutscene_Node* last = &program->nodes[item->last];
+        Properties_Text(properties, "Function", TextFormat("NodeTransform (0x%03X)", SCNCUTSCENE_NODE));
+        Properties_Text(properties, "Character", GameDB_CharacterDisplay(IDText(first->character)));
+        Properties_Int(properties, "Node", first->node);
+        Properties_Text(properties, "Value", TextFormat("%s, %s", g_programFields[first->field], first->add ? "added" : "set"));
+        Properties_Text(properties, "First", NodeValues(first));
+        if (item->count > 1)
+            Properties_Text(properties, "Last", NodeValues(last));
+        Properties_Hex(properties, "Address", first->address);
+    }
+    Properties_Section(properties, "Program of the map");
+    Properties_Hex(properties, "Cutscene played at", program->address);
+    Properties_Hex(properties, "Function run", program->function);
+    Properties_Int(properties, "Threads", program->run.threads);
+    Properties_Int(properties, "Frames run", program->run.frames);
+}
+
+// Of the selected character or item of the program, or of the command of the current frame
 static void DrawProperties(Rectangle bounds) {
     Properties* properties = &g_view.properties;
     const AUTH_Sequence* sequence = &g_view.sequence;
@@ -1512,6 +1761,10 @@ static void DrawProperties(Rectangle bounds) {
         const AUTH_Character* character = &sequence->characters[g_view.selectedCharacter];
         Properties_Begin(properties, bounds, TextFormat("Character %s", GameDB_CharacterDisplay(character->id)));
         CharacterProperties(properties, (uint32_t)g_view.selectedCharacter);
+    }
+    else if (g_view.selectedProgram >= 0) {
+        Properties_Begin(properties, bounds, "Program of the map");
+        ProgramProperties(properties, (uint32_t)g_view.selectedProgram);
     }
     else if (current >= 0) {
         Properties_Begin(properties, bounds, TextFormat("Command %d", current));
@@ -1575,9 +1828,10 @@ void AUTHView_Status(ViewStatus* status) {
     snprintf(status->file, sizeof(status->file), "%s", g_view.path);
     AUTHSounds_Info sounds;
     AUTHSounds_GetInfo(&sounds);
-    snprintf(status->info, sizeof(status->info), "%s%s, %u characters, %u commands, voices %u/%u, effects %u/%u%s%s",
+    snprintf(status->info, sizeof(status->info), "%s%s, %u characters, %u commands, voices %u/%u, effects %u/%u%s%s%s",
         CutsceneText(), FormatTime(Duration()), sequence->characterCount, sequence->commandCount, sounds.voices, sounds.voiceCommands, sounds.effects, sounds.effectCommands,
-        sounds.bank[0] != '\0' ? " in " : "", sounds.bank);
+        sounds.bank[0] != '\0' ? " in " : "", sounds.bank, g_view.program.found ? TextFormat(", program: %u node calls, sounds %u/%u",
+        g_view.program.nodeCount, sounds.programEffects, sounds.programCommands) : "");
     if (g_options.cutsceneCamera)
         snprintf(status->hint, sizeof(status->hint), "Click the timeline: seek");
     else

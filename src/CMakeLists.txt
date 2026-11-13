@@ -73,6 +73,8 @@ set(SRC
     src/formats/script/scnBytecode.h
     src/formats/script/scnDecompile.c
     src/formats/script/scnDecompile.h
+    src/formats/script/scnCutscene.c
+    src/formats/script/scnCutscene.h
     src/formats/script/scnDisplay.c
     src/formats/script/scnDisplay.h
     src/formats/script/scnData.c

@@ -17,6 +17,7 @@ add_executable(ShenmueTests
     testScnData.c
     testVm.c
     testDisplay.c
+    testCutscene.c
 
     ../src/core/bytes.h
     ../src/core/file.c
@@ -48,7 +49,9 @@ add_executable(ShenmueTests
     ../src/formats/script/scnVm.c
     ../src/formats/script/scnVm.h
     ../src/formats/script/scnDisplay.c
-    ../src/formats/script/scnDisplay.h)
+    ../src/formats/script/scnDisplay.h
+    ../src/formats/script/scnCutscene.c
+    ../src/formats/script/scnCutscene.h)
 
 target_include_directories(ShenmueTests PRIVATE ../src)
 # file.c decompresses the gzipped files with raylib
@@ -57,7 +60,7 @@ set_target_properties(ShenmueTests PROPERTIES FOLDER tests)
 # The databases of resources/, read by the tests from the source tree
 target_compile_definitions(ShenmueTests PRIVATE SHENMUE_RESOURCES="${CMAKE_SOURCE_DIR}/resources")
 
-foreach(test mapinfo_chunks scn3_chunks scn_files scn_pairs sh4_encodings sh4_code sh4_program sh4_listing game_functions bc_encodings bc_files scn_pair decompile scn_data vm display)
+foreach(test mapinfo_chunks scn3_chunks scn_files scn_pairs sh4_encodings sh4_code sh4_program sh4_listing game_functions bc_encodings bc_files scn_pair decompile scn_data vm display cutscene)
     add_test(NAME ${test} COMMAND ShenmueTests ${SHENMUE_CONTENT} ${test})
     set_tests_properties(${test} PROPERTIES SKIP_RETURN_CODE 77)
 endforeach()
