@@ -447,52 +447,114 @@ static void AddFamilyMotionBanks(const char* folder) {
 }
 
 // The MOTN files of the PKF/PKS files of the map of a cutscene of a mapinfo.bin, extracted or not (e.g. M_01JA of
-// scene/01/jomo/common01.pks)
-static void AddMapMotionBanks(void) {
+// scene/01/jomo/common01.pks), of a package (NULL: of all of them), but those already loaded (loaded: per file of the
+// map). Returns the number of files loaded
+static uint32_t AddMapMotionBanks(const char* package, bool* loaded) {
+    uint32_t count = 0;
     for (uint32_t i = 0; i < g_view.mapFiles.count; i++) {
         const MapFile* file = &g_view.mapFiles.files[i];
-        if (!IsFileExtension(file->name, ".motn"))
+        if (loaded[i] || !IsFileExtension(file->name, ".motn") || (package != NULL && !EqualsIgnoreCase(file->package, package)))
             continue;
+        loaded[i] = true;
         MOTN_Bank* banks = realloc(g_view.banks, (g_view.bankCount + 1) * sizeof(MOTN_Bank));
         if (banks == NULL)
-            return;
+            return count;
         g_view.banks = banks;
-        bool loaded = file->packed != NULL ?
+        bool read = file->packed != NULL ?
             MOTN_LoadFromMemory(file->packed->data, file->packed->size, file->name, &g_view.banks[g_view.bankCount]) :
             MOTN_Load(file->path, &g_view.banks[g_view.bankCount]);
-        if (loaded)
+        if (read) {
             g_view.bankCount++;
+            count++;
+        }
     }
+    return count;
+}
+
+// The MOTN files of the other packages of the map of the family of a package named <family>_<suffix> (e.g. DJHN_05):
+// first <family>_mot, then the others in order, as AddFamilyMotionBanks
+static void AddMapFamilyMotionBanks(const char* package, bool* loaded) {
+    const char* underscore = strrchr(package, '_');
+    if (underscore == NULL || underscore == package)
+        return;
+    int familyLength = (int)(underscore - package + 1); // With the underscore
+    char name[IPAC_FILENAME_SIZE], prefix[IPAC_FILENAME_SIZE];
+    snprintf(name, sizeof(name), "%.*s", familyLength, package);
+    const char** family = calloc(g_view.mapFiles.count + 1, sizeof(const char*));
+    if (family == NULL)
+        return;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < g_view.mapFiles.count; i++) {
+        const char* other = g_view.mapFiles.files[i].package;
+        bool known = false;
+        for (uint32_t f = 0; f < count && !known; f++)
+            known = EqualsIgnoreCase(family[f], other);
+        snprintf(prefix, sizeof(prefix), "%.*s", familyLength, other);
+        if (!known && (int)strlen(other) > familyLength && EqualsIgnoreCase(prefix, name) && !EqualsIgnoreCase(other, package))
+            family[count++] = other;
+    }
+    qsort(family, count, sizeof(const char*), CompareFolders);
+    for (int mot = 1; mot >= 0; mot--) {
+        for (uint32_t i = 0; i < count; i++) {
+            if (EqualsIgnoreCase(family[i] + familyLength, "mot") == (mot == 1))
+                AddMapMotionBanks(family[i], loaded);
+        }
+    }
+    free(family);
+}
+
+// The m_*.bin files of a map folder of the scene (e.g. scene/01/yq14)
+static void AddMapFolderMotionBanks(const char* name) {
+    if (g_view.sceneFolder[0] == '\0' || name == NULL || name[0] == '\0')
+        return;
+    const char* map = TextFormat("%s/%s", g_view.sceneFolder, name);
+    if (!DirectoryExists(map))
+        return;
+    FilePathList mapFiles = LoadDirectoryFilesEx(map, ".bin", false);
+    for (unsigned int i = 0; i < mapFiles.count; i++) {
+        const char* file = GetFileName(mapFiles.paths[i]);
+        if ((file[0] == 'm' || file[0] == 'M') && file[1] == '_')
+            AddMotionBank(mapFiles.paths[i]);
+    }
+    UnloadDirectoryFiles(mapFiles);
 }
 
 // The MOTN files of the folder of an AUTH file; if it has none, those of the other PKS of its family (see
 // AddFamilyMotionBanks); the m_*.bin files of the map of the scene with the name of that folder, the name of its PKS
 // (e.g. scene/01/yq14/m_01114.bin for scene/01/d000/yq14/SEQDATA2.auth); then the common motions of the game
 // (motion/motion.bin, next to the scene folder), with the small motion IDs (e.g. 0x2DF, the walk of Ryo). For a
-// cutscene of a mapinfo.bin: the m_*.bin files of its map (e.g. scene/03/nbik/m_01bike.bin), the MOTN files of the
-// PKF/PKS files of its map (AddMapMotionBanks), then the common motions
-static void LoadMotionBanks(const char* filepath) {
+// cutscene of a mapinfo.bin loaded by the program of the map from a package (package, e.g. "YQ14"), the same with the
+// files of the map: the MOTN files of the package, or of its family, and the m_*.bin files of the map with its name
+// (the motions 0x1001 to 0x1003 of SEQDATA2 of yq14.pks of scene/01/d000 are those of scene/01/yq14/m_01114.bin, not
+// those of the m_*.bin of d000, which have the same IDs). Then, for every cutscene of a mapinfo.bin, the m_*.bin files
+// of its map (e.g. scene/03/nbik/m_01bike.bin), the other MOTN files of the PKF/PKS files of its map, and the common
+// motions
+static void LoadMotionBanks(const char* filepath, const char* package) {
     char folder[AUTHVIEW_PATH_SIZE];
     snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(filepath));
     if (g_view.cutscene < 0) {
         AddFolderMotionBanks(folder);
         if (g_view.bankCount == 0)
             AddFamilyMotionBanks(folder);
-    }
-    if (g_view.sceneFolder[0] != '\0') {
-        const char* map = TextFormat("%s/%s", g_view.sceneFolder, GetFileName(folder));
-        if (DirectoryExists(map)) {
-            FilePathList mapFiles = LoadDirectoryFilesEx(map, ".bin", false);
-            for (unsigned int i = 0; i < mapFiles.count; i++) {
-                const char* name = GetFileName(mapFiles.paths[i]);
-                if ((name[0] == 'm' || name[0] == 'M') && name[1] == '_')
-                    AddMotionBank(mapFiles.paths[i]);
-            }
-            UnloadDirectoryFiles(mapFiles);
+        AddMapFolderMotionBanks(GetFileName(folder));
+    } else {
+        bool* loaded = calloc(g_view.mapFiles.count + 1, sizeof(bool));
+        if (loaded == NULL)
+            return;
+        if (package != NULL && package[0] != '\0') {
+            if (AddMapMotionBanks(package, loaded) == 0)
+                AddMapFamilyMotionBanks(package, loaded);
+            char lower[IPAC_FILENAME_SIZE];
+            snprintf(lower, sizeof(lower), "%s", package);
+            for (char* c = lower; *c != '\0'; c++)
+                *c = (char)tolower((unsigned char)*c);
+            if (!EqualsIgnoreCase(lower, GetFileName(folder)))
+                AddMapFolderMotionBanks(lower);
         }
+        AddMapFolderMotionBanks(GetFileName(folder));
+        AddMapMotionBanks(NULL, loaded);
+        free(loaded);
     }
-    if (g_view.cutscene >= 0)
-        AddMapMotionBanks();
     char common[AUTHVIEW_PATH_SIZE];
     snprintf(common, sizeof(common), "%s", g_view.sceneFolder);
     if (common[0] != '\0' && ToParent(common) && ToParent(common)) {
@@ -1092,7 +1154,7 @@ static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutsc
         AUTHView_Close();
         return false;
     }
-    LoadMotionBanks(g_view.path);
+    LoadMotionBanks(g_view.path, package);
     printf("%s%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files\n", GetFileName(g_view.path),
         cutscene >= 0 ? TextFormat(" #%d", cutscene) : "", sequence->duration, sequence->characterCount, sequence->commandCount,
         sequence->soundCount, g_view.bankCount);
