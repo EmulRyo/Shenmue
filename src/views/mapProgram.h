@@ -20,6 +20,21 @@ bool MapProgram_Emulate(SD_Data* data, const SH4_Program* sh4, const BC_Program*
 // Reads the data of the program of the SCN3 chunk of a loaded mapinfo.bin, with the emulation of its bytecode. Returns
 // false if it has no valid program or on memory error
 bool MapProgram_Read(const char* mapinfoPath, const MAPINFO_File* file, SD_Data* data);
+// The bytecode of the program of a map: its SCN3 chunk if it is one, or its SCN file. The structure isn't moved while
+// it is loaded (program points to scn)
+typedef struct {
+    uint8_t*        data;       // Of the SCN file, NULL for the chunk (in the data of the mapinfo.bin, which must outlive it)
+    SCN_Program     scn;
+    BC_Program      program;
+    bool            loaded;
+} MapBytecode;
+
+// Returns false if the map has no bytecode (or no SCN file)
+bool MapProgram_LoadBytecode(const char* mapinfoPath, const MAPINFO_File* file, MapBytecode* bytecode);
+void MapProgram_FreeBytecode(MapBytecode* bytecode);
+// The folder that contains the scene folders (e.g. content/Shenmue1 for content/Shenmue1/scene/01/d000/mapinfo.bin).
+// Returns false if the path isn't the one of a map
+bool MapProgram_ContentFolder(const char* mapinfoPath, char* folder, size_t size);
 // The AUTH file of a cutscene that the program loads in the table of cutscenes (SD_SEQUENCE): in the PKS file of its
 // package in the folder of the map, or in the folder of the package extracted, or a file of a scene folder (e.g.
 // "SCENE/01/DNOZ", seqdata2.bin). Returns NULL if it isn't found. The data is freed with free

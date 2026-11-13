@@ -59,6 +59,8 @@ set(SRC
 
     src/formats/map/mapinfo.c
     src/formats/map/mapinfo.h
+    src/formats/map/weather.c
+    src/formats/map/weather.h
 
     src/formats/model/mt5.c
     src/formats/model/mt5.h
@@ -71,6 +73,8 @@ set(SRC
     src/formats/script/scnBytecode.h
     src/formats/script/scnDecompile.c
     src/formats/script/scnDecompile.h
+    src/formats/script/scnDisplay.c
+    src/formats/script/scnDisplay.h
     src/formats/script/scnData.c
     src/formats/script/scnData.h
     src/formats/script/scnPair.c
@@ -136,6 +140,8 @@ set(SRC
     src/views/fonView.h
     src/views/imageView.c
     src/views/imageView.h
+    src/views/mapDate.c
+    src/views/mapDate.h
     src/views/mapFiles.c
     src/views/mapFiles.h
     src/views/mapProgram.c

@@ -14,6 +14,7 @@
 **Maps**
 - [MAPINFO](MAPINFO)
 - [SCN](SCN)
+- [WEATHER](WEATHER)
 
 **Scripts**
 - [CHRT](CHRT)

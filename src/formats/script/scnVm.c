@@ -23,6 +23,8 @@ typedef struct {
     uint32_t    overlayCapacity;
     uint32_t*   overlayAddresses;
     uint8_t*    overlayBytes;   // Value, known
+    bool        yielded;        // The thread has yielded on this path
+    uint8_t     path[VM_PATH_SIZE]; // Of the environment
 } State;
 
 // A thread to run: its function and arguments, and the variables when it was started
@@ -50,6 +52,8 @@ typedef struct {
     State**             work;
     uint32_t            workCount;
     uint64_t            steps;          // Of the current thread
+    uint32_t            thread;         // Index of the current thread
+    const VM_Environment* environment;  // NULL if none
     bool                ok;
 } Machine;
 
@@ -86,6 +90,8 @@ static State* CopyState(const Machine* machine, const State* source) {
     state->sp = source->sp;
     state->fp = source->fp;
     state->result = source->result;
+    state->yielded = source->yielded;
+    memcpy(state->path, source->path, sizeof(state->path));
     memcpy(state->variables, source->variables, machine->variableSize * 2);
     // The stack above sp: below it, the values are not used before they are written
     uint32_t used = source->sp >= VM_STACK_BASE && source->sp <= VM_STACK_BASE + VM_STACK_SIZE ? source->sp - VM_STACK_BASE : 0;
@@ -230,6 +236,10 @@ static uint64_t StateHash(const Machine* machine, const State* state) {
     hash = Hash(hash, &state->sp, sizeof(state->sp));
     hash = Hash(hash, &state->fp, sizeof(state->fp));
     hash = Hash(hash, &state->result, sizeof(state->result));
+    if (machine->environment != NULL) {
+        hash = Hash(hash, &state->yielded, sizeof(state->yielded));
+        hash = Hash(hash, state->path, sizeof(state->path));
+    }
     hash = Hash(hash, state->variables, machine->variableSize * 2);
     if (state->sp >= VM_STACK_BASE && state->sp < VM_STACK_BASE + VM_STACK_SIZE) {
         uint32_t used = state->sp - VM_STACK_BASE;
@@ -406,8 +416,33 @@ static bool IsBinary(uint8_t byte) {
     return (byte >= 0x88 && byte <= 0x8D) || (byte >= 0x8F && byte <= 0x98) || (byte >= 0x9F && byte <= 0xA6);
 }
 
-// A call to the game: its arguments are the values on the stack, dropped by the next instruction (sp += 4 * count)
-static void GameCall(Machine* machine, State* state, const BC_Instruction* ins) {
+// What the environment knows of a call: its result, and the memory written by the game
+static Value Answer(Machine* machine, State* state, const VM_Call* call) {
+    const VM_Environment* environment = machine->environment;
+    if (environment == NULL || environment->call == NULL)
+        return g_unknown;
+    VM_Answer answer;
+    memset(&answer, 0, sizeof(answer));
+    environment->call(environment->context, call, state->yielded, state->path, &answer);
+    uint32_t size = answer.size < VM_ANSWER_BYTES ? answer.size : VM_ANSWER_BYTES;
+    for (uint32_t i = 0; i < size; i++)
+        WriteByte(machine, state, answer.address + i, answer.bytes[i], (answer.knownBytes >> i) & 1);
+    return answer.known ? Known(answer.value) : g_unknown;
+}
+
+// The environment is told when a path settles: it yields for the first time, or ends its thread
+static void Settle(Machine* machine, State* state) {
+    const VM_Environment* environment = machine->environment;
+    if (state->yielded)
+        return;
+    state->yielded = true;
+    if (environment != NULL && environment->settled != NULL)
+        environment->settled(environment->context, machine->thread, state->path);
+}
+
+// A call to the game: its arguments are the values on the stack, dropped by the next instruction (sp += 4 * count).
+// Returns its result
+static Value GameCall(Machine* machine, State* state, const BC_Instruction* ins) {
     const BC_Program* program = machine->program;
     BC_Instruction next;
     uint32_t count = 0;
@@ -436,6 +471,7 @@ static void GameCall(Machine* machine, State* state, const BC_Instruction* ins) 
         uint32_t threadArguments = arguments[1].value < call.count - 2 ? arguments[1].value : call.count - 2;
         AddRoot(machine, arguments[0].value - VM_PROGRAM_BASE, threadArguments, arguments + 2, state->variables);
     }
+    return Answer(machine, state, &call);
 }
 
 // Runs a path until its thread ends, it stops or the limits are reached
@@ -509,8 +545,10 @@ static void RunPath(Machine* machine, State* state) {
             state->sp = state->fp;
             Value fp = Pop(machine, state);
             Value pc = Pop(machine, state);
-            if (fp.known && fp.value == 0)
+            if (fp.known && fp.value == 0) {
+                Settle(machine, state);
                 return;     // The end of the thread
+            }
             if (!fp.known || !pc.known) {
                 result->errors++;
                 return;
@@ -570,13 +608,16 @@ static void RunPath(Machine* machine, State* state) {
             }
             break;
         case BC_GAME:
-            GameCall(machine, state, &ins);
-            state->result = g_unknown;
+            state->result = GameCall(machine, state, &ins);
             break;
         case BC_DATA_SERVICE:
+        case BC_SERVICE2C:
+            // They yield: the next frames
+            Settle(machine, state);
+            state->result = g_unknown;
+            break;
         case BC_NATIVE:
         case BC_NATIVE4:
-        case BC_SERVICE2C:
         case BC_SERVICE30:
             state->result = g_unknown;
             break;
@@ -631,11 +672,16 @@ static int CompareCalls(const void* a, const void* b) {
 }
 
 bool VM_Run(const BC_Program* program, VM_Result* result) {
+    return VM_RunEnvironment(program, NULL, result);
+}
+
+bool VM_RunEnvironment(const BC_Program* program, const VM_Environment* environment, VM_Result* result) {
     memset(result, 0, sizeof(*result));
     const SCN_Header* header = &program->scn->header;
     Machine machine;
     memset(&machine, 0, sizeof(machine));
     machine.program = program;
+    machine.environment = environment;
     machine.programSize = header->end < header->size ? header->end : header->size;
     machine.variableSize = header->variableSize;
     machine.result = result;
@@ -649,6 +695,7 @@ bool VM_Run(const BC_Program* program, VM_Result* result) {
     else
         AddRoot(&machine, header->entry, 0, NULL, variables);
     for (uint32_t r = 0; r < machine.rootCount && machine.ok && result->steps < VM_MAX_TOTAL_STEPS; r++) {
+        machine.thread = r;
         RunThread(&machine, &machine.roots[r]);
         result->threads++;
     }

@@ -101,6 +101,41 @@ bool MapProgram_Read(const char* mapinfoPath, const MAPINFO_File* file, SD_Data*
     return read;
 }
 
+bool MapProgram_LoadBytecode(const char* mapinfoPath, const MAPINFO_File* file, MapBytecode* bytecode) {
+    memset(bytecode, 0, sizeof(*bytecode));
+    const MAPINFO_Chunk* chunk = MAPINFO_FindChunk(file, "SCN3");
+    if (chunk == NULL || !SCN_Read(file->data + chunk->offset, chunk->size, &bytecode->scn))
+        return false;
+    if (SCN_IsSH4(&bytecode->scn)) {
+        char name[64], path[MAPPROGRAM_PATH_SIZE];
+        size_t size = 0;
+        if (!MapProgram_ScnPath(mapinfoPath, name, sizeof(name), path, sizeof(path)) || !FileExists(path) ||
+            (bytecode->data = File_LoadToMemoryDecompressed(path, &size)) == NULL ||
+            !SCN_Read(bytecode->data, size, &bytecode->scn) || SCN_IsSH4(&bytecode->scn)) {
+            MapProgram_FreeBytecode(bytecode);
+            return false;
+        }
+    }
+    if (!BC_AnalyzeProgram(&bytecode->program, &bytecode->scn)) {
+        MapProgram_FreeBytecode(bytecode);
+        return false;
+    }
+    bytecode->loaded = true;
+    return true;
+}
+
+void MapProgram_FreeBytecode(MapBytecode* bytecode) {
+    if (bytecode->loaded)
+        BC_FreeProgram(&bytecode->program);
+    free(bytecode->data);
+    memset(bytecode, 0, sizeof(*bytecode));
+}
+
+bool MapProgram_ContentFolder(const char* mapinfoPath, char* folder, size_t size) {
+    const char* parts[4] = { NULL };
+    return SplitPath(mapinfoPath, folder, size, parts, 4) && strlen(parts[2]) == 2;
+}
+
 // The name without its extension, in uppercase (e.g. "seqdata1.bin": "SEQDATA1")
 static void BaseName(const char* name, char* base, size_t size) {
     size_t i = 0;

@@ -15,6 +15,7 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [CHRT](CHRT)       | `.chrt`       | `CHRS`           | Script            | Characters and objects of a scene: models, position, flags... |
 | [MAPINFO](MAPINFO) | `.bin`        | —                | Map               | Program, characters, cameras, lights, fog, collisions, sounds and cutscenes of a map |
 | [SCN](SCN)         | `.scn`        | `SCN3`           | Map               | Program of a map, as a bytecode              |
+| [WEATHER](WEATHER) | `.bin`        | `WDAT`           | Map               | Weather of the game day by day: clouds, rain, snow and the events of the days (snow on the ground, Christmas, New Year) |
 | [SCNF](SCNF)       | — (`BIN`)     | `SCNF`           | Dialogue          | Voice and subtitle of each dialogue line     |
 | [Lip-sync](Lip-sync) | —           | —                | Dialogue          | Speaker, subtitle and mouth movements of each voice clip |
 | [AUTH](AUTH)       | `.auth`       | `TRCK`           | Cutscene          | Commands, camera and character movement of a cutscene |
@@ -39,6 +40,7 @@ TAD/TAC
  │   └─ PKS ─── IPAC → CHRT, CHRM (textures in the PKF), SCNF, AUTH, MOTN, PVR, ...
  ├─ MAPINFO → CHRT, AUTH, SCNF
  ├─ SCN (scenario/*.scn, the program of each MAPINFO)
+ ├─ WEATHER (misc/coldinit/WEATHER.bin, misc/cold_s/WEATHER.bin, sprite/weather.bin, sprite/weat_org.bin)
  ├─ MOTN (motion/motion.bin, m_*.bin of the maps)
  ├─ MT5 → TEXN → PVR / DDS
  ├─ PVR

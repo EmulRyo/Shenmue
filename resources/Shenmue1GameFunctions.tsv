@@ -88,7 +88,7 @@ id	handler	arguments	name	description	character
 056	0x0C1710B4	3			
 057	0x0C1710C4				
 058	0x0C1710E0	1			
-059	0x0C1710EE	1			
+059	0x0C1710EE	1	GetDate	Copies the date and the hour of the game to the 7 bytes pointed by argument 0: the year minus 1900 (86 for 1986), the month, the day, the day of the week, the hour, the minute and the second	
 05A	0x0C1710FC				
 05B	0x0C171112	1			
 05C	0x0C171120	5			
@@ -151,7 +151,7 @@ id	handler	arguments	name	description	character
 095	0x0C164C6C				
 096	0x0C174076	1			
 097	0x0C174098	0			
-098	0x0C1651D2	2			
+098	0x0C1651D2	2	MapModelDisplay	Shows (argument 1: 1) or hides (0) the MAP model of the slot of argument 0, in a table of 32 (0x0C21E328, 0x60 bytes each): slot 0 is MAP.MT5 and slot n MAPnn.MT5. Returns the previous value	
 099	0x0C1658B8	2-4			yes
 09A	0x0C17412C	3, 4	ArrayAccess	Operation chosen by argument 1 (18 operations) on the element of argument 2 of the array of argument 0, of bytes, halfwords or words	
 09B	0x0C1668C0	1			
@@ -315,7 +315,7 @@ id	handler	arguments	name	description	character
 139	0x0C165D38	1-3			yes
 13A	0x0C158CA4	2			yes
 13B	0x0C190B08	2-5			
-13C	0x0C15FC78	2-5	Package	Packages (PKF/PKS files), in a table of 32 loaded ones, the operation in arguments 0 and 1. (0, 0): starts loading the package named in argument 3 from the folder of argument 2 (e.g. "scene/01/JOMO", "COMMON01"), returning 0 if it is already loaded; (0, 2): returns 1 when the loading is finished; (0, 5): returns 1 if the package of argument 2 is loaded; (0, 6): frees it; (0, 8): loads the PKF and PKS pair of entries argument 3 and 4 of the AFS file of argument 2 (OP99.afs). (2, 2) and (2, 3) take a package by name too	
+13C	0x0C15FC78	2-5	Package	Packages (PKF/PKS files), in a table of 32 loaded ones, the operation in arguments 0 and 1. (0, 0): starts loading the package named in argument 3 from the folder of argument 2 (e.g. "scene/01/JOMO", "COMMON01"), returning 0 if it is already loaded; (0, 2): returns the state of the loading (the programs wait while it isn't 0); (0, 5): returns 1 if the package of argument 2 is loaded; (0, 6): frees it; (0, 8): loads the PKF and PKS pair of entries argument 3 and 4 of the AFS file of argument 2 (OP99.afs). (2, 2) and (2, 3) take a package by name too	
 13D	0x0C16951C	2, 3, 7			yes
 13E	0x0C155D4E	2, 4	SequenceData	Cutscenes of the table of 70 slots played by game_050, the slot in argument 1: with argument 0 equal to 0, loads in it the AUTH file named in argument 2 (e.g. "seqdata1.bin": SEQDATA1.AUTH) from the package of argument 3 (e.g. "D0W0": d0w0.pks)	
 13F	0x0C132078	2			yes
@@ -373,7 +373,7 @@ id	handler	arguments	name	description	character
 173	0x0C1579CA	1, 4			
 174	0x0C172E34	2			
 175	0x0C172E80	1, 2			
-176	0x0C1730C4	2, 4-7			
+176	0x0C1730C4	2, 4-7	Weather	The weather of the game (WEATHER.BIN), the operation in argument 0: 12 returns the events of the day of the FCAS chunk for argument 1 equal to 0 (bit 1: snow on the ground, 2: Christmas, 3: New Year), their bit 0 to 3 for 2 to 5, and for 1 whether the day has no event; 11 reads the low byte of the entry of a date (arguments 1 to 3). The operations 4 to 10 take a date (arguments 1 to 5) and probably return values of the curves of the clouds, the rain and the snow	
 177	0x0C1733E8				
 178	0x0C173504	1, 2, 7			
 179	0x0C173638	1-3, 7, 11			

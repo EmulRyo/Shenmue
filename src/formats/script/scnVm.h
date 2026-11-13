@@ -44,8 +44,40 @@ typedef struct {
     uint32_t    errors;         // Paths stopped by an invalid instruction or stack
 } VM_Result;
 
+// An environment gives what the emulation can know of the game: the results of some of its functions and the memory
+// they write (e.g. the date and the hour of the game), so that the branches on them follow only one way. It can also
+// follow each path: it keeps a state in VM_PATH_SIZE bytes of the path (0 at the start of a thread, copied when the path
+// forks at a branch) and it is told when the path settles: when its thread yields for the first time (a service of
+// ctx[0x2C], which waits for the next frames) or ends without yielding
+
+#define VM_PATH_SIZE        64
+#define VM_ANSWER_BYTES     16
+
+// What the game does at a call, as the environment knows it
+typedef struct {
+    bool        known;                          // The result is known
+    uint32_t    value;
+    uint32_t    address;                        // Where the game writes bytes (a known address of the program, of its
+                                                // variables or of the stack), if size > 0
+    uint32_t    size;                           // Up to VM_ANSWER_BYTES
+    uint8_t     bytes[VM_ANSWER_BYTES];
+    uint16_t    knownBytes;                     // Bit i: bytes[i] is known (the others are written unknown)
+} VM_Answer;
+
+typedef struct {
+    void*       context;
+    // At each call to the game run, in the order of its path, with its arguments (known ones and their values) and
+    // whether its thread has yielded before on the path. answer starts unknown. Can be NULL
+    void        (*call)(void* context, const VM_Call* call, bool yielded, uint8_t* path, VM_Answer* answer);
+    // When a path yields for the first time or ends its thread before. thread: the index of the thread, in the order in
+    // which they are started (0 is the entry point). Can be NULL
+    void        (*settled)(void* context, uint32_t thread, const uint8_t* path);
+} VM_Environment;
+
 // Runs the program from its entry point. Returns false on memory error
 bool VM_Run(const BC_Program* program, VM_Result* result);
+// The same in an environment (NULL: the functions of the game return unknown values)
+bool VM_RunEnvironment(const BC_Program* program, const VM_Environment* environment, VM_Result* result);
 void VM_Free(VM_Result* result);
 // The offset in the data of a known argument that is an address of the data of the program, -1 if it isn't one
 int64_t VM_DataOffset(const BC_Program* program, uint32_t value);

@@ -11,7 +11,9 @@
 #include "raygui.h"
 #include "app/gameDB.h"
 #include "formats/map/mapinfo.h"
+#include "formats/map/weather.h"
 #include "formats/script/chrt.h"
+#include "formats/script/scnDisplay.h"
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
@@ -19,6 +21,7 @@
 #include "ui/toolbar.h"
 #include "ui/tree.h"
 #include "views/authView.h"
+#include "views/mapDate.h"
 #include "views/mapFiles.h"
 #include "views/mapProgram.h"
 #include "views/mapinfoView.h"
@@ -152,6 +155,11 @@ typedef struct {
     MT5Render_Model*    models;         // The models of the map, then the models of the doors and of the characters
     uint32_t            mapModelCount;
     char                (*mapModelNames)[MAPINFOVIEW_LABEL_SIZE]; // File and package of each model of the map
+    int*                mapModelSlots;  // Slot of each model of the map for the program (MapModelDisplay, 0x098: 0 for
+                                        // MAP.MT5, n for MAPnn.MT5), -1 if none
+    char                (*mapModelPackages)[IPAC_FILENAME_SIZE]; // Package of each model of the map, empty if none
+    bool*               mapModelVariants; // The program loads the package of the model: a variant of the map
+    bool                hasDate;        // The program can be emulated at a date (mapDate.h)
     uint32_t            instanceCount;
     MT5Render_Instance* instances;      // Each model of the map (mapModelCount), then each door with its model
                                         // (loadedDoors), then the shown characters with their model (from
@@ -190,13 +198,23 @@ typedef struct {
     bool                expanded[LAYER_COUNT];  // In the tree
     bool                labels;
     bool                fly;
+    bool                date;                   // The models of the map are those that the program shows at the date
+    bool                dateSet;                // The date is set (at the first map with weather)
+    WEATHER_Date        gameDate;               // Its hour is one of g_hours
+    int                 hour;                   // In g_hours
 } MAPINFOView_Options;
+
+// The hours of the date: morning and afternoon (the shops are open from 8:30 to 18:30 in scene/01/d000), evening (the
+// lights are on from 19:00) and night
+static const int g_hours[][2] = { { 10, 0 }, { 15, 0 }, { 19, 30 }, { 23, 0 } };
+#define MAPINFOVIEW_HOURS "10:00;15:00;19:30;23:00"
 
 static MAPINFOView_State g_view;
 static MAPINFOView_Options g_options = {
     .layers = { [LAYER_MAP] = true, [LAYER_DOORS] = true, [LAYER_SHAPES] = true, [LAYER_CHARACTERS] = true },
     .expanded = { [LAYER_INFO] = true, [LAYER_CAMERAS] = true, [LAYER_CHARACTERS] = true, [LAYER_CUTSCENES] = true },
     .labels = true,
+    .date = true,
 };
 
 // The eye of the item in the tree. All of them are visible before the tree is created
@@ -509,6 +527,8 @@ static void PlaceModels(const char* folder, const MapFile* files, uint32_t count
         if (IsMapModel(&files[i]) && FileModel(files, (int)i, fileModels, packed) >= 0) {
             snprintf(g_view.mapModelNames[g_view.instanceCount], MAPINFOVIEW_LABEL_SIZE, "%s%s%s", files[i].name,
                 files[i].package[0] != '\0' ? "  " : "", files[i].package);
+            g_view.mapModelSlots[g_view.instanceCount] = SCNDisplay_SlotOfFile(files[i].name);
+            snprintf(g_view.mapModelPackages[g_view.instanceCount], IPAC_FILENAME_SIZE, "%s", files[i].package);
             AddInstance((uint32_t)fileModels[i], MatrixIdentity());
         }
     }
@@ -619,8 +639,12 @@ static void LoadModels(const char* folder) {
     g_view.doorErrors = calloc(file->doorCount + 1, sizeof(const char*));
     g_view.doorInstances = calloc(file->doorCount + 1, sizeof(int32_t));
     g_view.mapModelNames = calloc(count + 1, sizeof(*g_view.mapModelNames));
+    g_view.mapModelSlots = calloc(count + 1, sizeof(int));
+    g_view.mapModelPackages = calloc(count + 1, sizeof(*g_view.mapModelPackages));
+    g_view.mapModelVariants = calloc(count + 1, sizeof(bool));
     if (fileModels != NULL && g_view.scripts != NULL && g_view.doorErrors != NULL && g_view.doorInstances != NULL &&
-        g_view.mapModelNames != NULL) {
+        g_view.mapModelNames != NULL && g_view.mapModelSlots != NULL && g_view.mapModelPackages != NULL &&
+        g_view.mapModelVariants != NULL) {
         for (uint32_t i = 0; i < count; i++)
             fileModels[i] = -1;
 
@@ -772,6 +796,145 @@ static const char* ProgramCalls(SD_Kind kind, int32_t number, const char* name) 
         length += snprintf(text + length, sizeof(text) - length, " 0x%X", reference->address);
     }
     return text;
+}
+
+// The date of the game
+
+static const char* const g_weekdays[7] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+static const char* const g_months[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+
+// The models of the map whose package the program loads: variants of the map (e.g. MAPN and MAPY, the snow, of
+// scene/01/jd00), shown only if the program loads their package at the date
+static void FindVariants(void) {
+    for (uint32_t i = 0; i < g_view.mapModelCount && g_view.mapModelVariants != NULL; i++) {
+        const char* package = g_view.mapModelPackages[i];
+        g_view.mapModelVariants[i] = package[0] != '\0' && ProgramCount(SD_PACKAGE, -1, package) > 0;
+    }
+}
+
+static void RequestDate(void) {
+    if (g_view.hasDate)
+        MapDate_Request(&g_options.gameDate);
+}
+
+// Sets the date, within the days of the weather, at the hour of g_options.hour
+static void SetDate(WEATHER_Date date) {
+    const WEATHER_File* weather = MapDate_Weather();
+    WEATHER_Date first, last;
+    if (weather != NULL && WEATHER_FirstDay(weather, &first) && WEATHER_LastDay(weather, &last)) {
+        if (WEATHER_CompareDays(&date, &first) < 0)
+            date = first;
+        if (WEATHER_CompareDays(&date, &last) > 0)
+            date = last;
+    }
+    date.hour = g_hours[g_options.hour][0];
+    date.minute = g_hours[g_options.hour][1];
+    g_options.gameDate = date;
+    RequestDate();
+}
+
+// The first time, the first day of the weather without events (an ordinary day: the game starts on 29 November 1986,
+// with snow on the ground), or 2 December 1986 without weather
+static void InitDate(void) {
+    const WEATHER_File* weather = MapDate_Weather();
+    if (!g_options.dateSet) {
+        WEATHER_Date date = { 1986, 12, 2, 0, 0 }, first, last;
+        if (weather != NULL && WEATHER_FirstDay(weather, &first) && WEATHER_LastDay(weather, &last)) {
+            for (date = first; WEATHER_CompareDays(&date, &last) < 0 && MapDate_Events(&date) != 0;)
+                WEATHER_AddDays(&date, 1);
+        }
+        g_options.hour = 0;
+        g_options.dateSet = true;
+        SetDate(date);
+        return;
+    }
+    RequestDate();
+}
+
+static void MoveDate(int days) {
+    WEATHER_Date date = g_options.gameDate;
+    WEATHER_AddDays(&date, days);
+    SetDate(date);
+}
+
+// The next day whose events differ from those of the date, or the first day after the last one
+static void NextEvents(void) {
+    const WEATHER_File* weather = MapDate_Weather();
+    WEATHER_Date date = g_options.gameDate, first, last;
+    if (weather == NULL || !WEATHER_FirstDay(weather, &first) || !WEATHER_LastDay(weather, &last))
+        return;
+    uint8_t events = MapDate_Events(&date);
+    do
+        WEATHER_AddDays(&date, 1);
+    while (WEATHER_CompareDays(&date, &last) <= 0 && MapDate_Events(&date) == events);
+    SetDate(WEATHER_CompareDays(&date, &last) > 0 ? first : date);
+}
+
+// The events of a day, separated by commas, with their short names or not
+static const char* EventsText(uint8_t events, bool shortNames) {
+    static char text[96];
+    const char* names[3][2] = { { "snow on the ground", "snow" }, { "Christmas", "Christmas" }, { "New Year", "New Year" } };
+    const uint8_t bits[3] = { WEATHER_EVENT_SNOW, WEATHER_EVENT_CHRISTMAS, WEATHER_EVENT_NEW_YEAR };
+    int length = 0;
+    text[0] = '\0';
+    for (int i = 0; i < 3; i++) {
+        if (events & bits[i])
+            length += snprintf(text + length, sizeof(text) - length, "%s%s", length > 0 ? ", " : "", names[i][shortNames]);
+    }
+    return length > 0 ? text : shortNames ? "" : "none";
+}
+
+// e.g. "Thu 11 Dec 1986, snow"
+static const char* DateText(const WEATHER_Date* date) {
+    const char* events = EventsText(MapDate_Events(date), true);
+    return TextFormat("%s %d %s %d%s%s", g_weekdays[WEATHER_Weekday(date)], date->day,
+        g_months[date->month >= 1 && date->month <= 12 ? date->month - 1 : 0], date->year, events[0] != '\0' ? ", " : "", events);
+}
+
+// The display of the program at the date, if it is applied. While the display of a new date is computed, the one of
+// the previous date
+static const SCNDisplay* DateDisplay(void) {
+    return g_options.date && g_view.hasDate ? MapDate_Display() : NULL;
+}
+
+typedef enum {
+    DATE_UNCHANGED,     // The program doesn't show or hide it at the start
+    DATE_SHOWN,
+    DATE_HIDDEN,
+    DATE_VARIES,        // Shown or hidden by the paths of the program (e.g. after a flag of the game)
+    DATE_NOT_LOADED,    // A variant whose package the program doesn't load at the date
+} DateState;
+
+static DateState MapModelDate(uint32_t model) {
+    const SCNDisplay* display = DateDisplay();
+    if (display == NULL || g_view.mapModelSlots == NULL || model >= g_view.mapModelCount)
+        return DATE_UNCHANGED;
+    if (g_view.mapModelVariants[model] && !SCNDisplay_Loads(display, g_view.mapModelPackages[model]))
+        return DATE_NOT_LOADED;
+    int slot = g_view.mapModelSlots[model];
+    if (slot < 0)
+        return DATE_UNCHANGED;
+    switch (display->slots[slot]) {
+    case SCNDISPLAY_SHOWN: return DATE_SHOWN;
+    case SCNDISPLAY_HIDDEN: return DATE_HIDDEN;
+    case SCNDISPLAY_VARIES: return DATE_VARIES;
+    default: return DATE_UNCHANGED;
+    }
+}
+
+static bool IsHiddenByDate(uint32_t model) {
+    DateState state = MapModelDate(model);
+    return state == DATE_HIDDEN || state == DATE_NOT_LOADED;
+}
+
+static const char* MapModelDateText(uint32_t model) {
+    switch (MapModelDate(model)) {
+    case DATE_SHOWN: return "shown by the program";
+    case DATE_HIDDEN: return "hidden by the program";
+    case DATE_VARIES: return "shown or hidden, depending on the paths of the program";
+    case DATE_NOT_LOADED: return "not loaded: the program loads its package at other dates";
+    default: return g_view.mapModelVariants[model] ? "loaded by the program" : "not changed by the program";
+    }
 }
 
 // The distinct cutscenes that the program loads in the table of cutscenes, and whether their AUTH file is found.
@@ -1141,6 +1304,9 @@ void MAPINFOView_Close(void) {
     free(g_view.visibleInstances);
     free(g_view.doorInstances);
     free(g_view.mapModelNames);
+    free(g_view.mapModelSlots);
+    free(g_view.mapModelPackages);
+    free(g_view.mapModelVariants);
     free((void*)g_view.doorErrors);
     free(g_view.originalDoors);
     free(g_view.originalLights);
@@ -1159,6 +1325,7 @@ void MAPINFOView_Close(void) {
     free(g_view.sequences);
     free(g_view.sequenceFound);
     free(g_view.flags);
+    MapDate_Close();
     MAPINFO_Free(&g_view.file);
     memset(&g_view, 0, sizeof(g_view));
 }
@@ -1184,6 +1351,10 @@ bool MAPINFOView_Open(const char* filepath) {
     // What the program does with the map, if it has one
     if (!MapProgram_Read(filepath, &g_view.file, &g_view.program))
         SD_FreeData(&g_view.program);
+    // The models of the map at the date of the game, if its program can be emulated
+    g_view.hasDate = MapDate_Open(filepath, &g_view.file);
+    FindVariants();
+    InitDate();
     // After the models, for the doors whose model couldn't be loaded
     if (!FindSequences() || !FindFlags() || g_view.originalDoors == NULL || g_view.originalLights == NULL || !ReadCutscenes() || !CreateItems()) {
         fputs("[MAPINFOView_Open]: Memory error\n", stderr);
@@ -1333,6 +1504,24 @@ void MAPINFOView_Toolbar(void) {
     Toolbar_Separator();
     Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the names of the characters and the IDs of the cameras", KEY_L, &g_options.labels);
     Toolbar_Separator();
+    // The date: the program of the map shows its models then
+    if (!g_view.hasDate)
+        GuiDisable();
+    Toolbar_Toggle(ICON_CLOCK, "Date", "Show the models of the map that its program shows at the date and the hour of the game "
+        "(the events of the day of WEATHER.BIN: snow on the ground, Christmas, New Year)", KEY_T, &g_options.date);
+    if (!g_options.date)
+        GuiDisable();
+    if (Toolbar_Button(ICON_ARROW_LEFT, NULL, "Previous day", KEY_COMMA | TOOLBAR_REPEAT))
+        MoveDate(-1);
+    if (Toolbar_Button(ICON_PLAYER_NEXT, DateText(&g_options.gameDate), "Next day with other events (snow on the ground, Christmas, "
+        "New Year)", KEY_N))
+        NextEvents();
+    if (Toolbar_Button(ICON_ARROW_RIGHT, NULL, "Next day", KEY_PERIOD | TOOLBAR_REPEAT))
+        MoveDate(1);
+    if (Toolbar_Choice(MAPINFOVIEW_HOURS, "Hour of the date", KEY_H, &g_options.hour))
+        SetDate(g_options.gameDate);
+    GuiEnable();
+    Toolbar_Separator();
     if (!IsAnyEdited())
         GuiDisable();
     if (Toolbar_Button(ICON_UNDO, "Restore", "Restore the values of the file of the edited items", 0))
@@ -1372,7 +1561,7 @@ static void DrawModels(Camera3D camera, bool (*hidden)(const char* id)) {
         return;
     uint32_t count = 0;
     for (uint32_t i = 0; i < g_view.mapModelCount && g_options.layers[LAYER_MAP]; i++) {
-        if (IsItemVisible(ITEM_MAP_MODEL, i))
+        if (IsItemVisible(ITEM_MAP_MODEL, i) && !IsHiddenByDate(i))
             g_view.visibleInstances[count++] = g_view.instances[i];
     }
     for (uint32_t i = 0; i < g_view.file.doorCount && g_options.layers[LAYER_DOORS]; i++) {
@@ -1585,7 +1774,11 @@ static void DrawTree(Rectangle bounds) {
     int clicked = -1;
     Tree_Begin(tree, bounds);
     TreeLayer(LAYER_INFO, ITEM_INFO, g_view.firstItems[ITEM_MAP_MODEL] - g_view.firstItems[ITEM_INFO], false, &clicked);
-    TreeLayer(LAYER_MAP, ITEM_MAP_MODEL, g_view.mapModelCount, true, &clicked);
+    // The models hidden at the date are dimmed
+    Tree_BeginGroup(tree, g_layerNames[LAYER_MAP], &g_options.expanded[LAYER_MAP], &g_options.layers[LAYER_MAP]);
+    for (uint32_t i = 0; i < g_view.mapModelCount; i++)
+        TreeItem(g_view.firstItems[ITEM_MAP_MODEL] + i, true, IsHiddenByDate(i), &clicked);
+    Tree_EndGroup(tree);
     TreeLayer(LAYER_DOORS, ITEM_DOOR, file->doorCount, true, &clicked);
     TreeLayer(LAYER_CAMERAS, ITEM_CAMERA, file->cameraCount, true, &clicked);
     TreeLayer(LAYER_LIGHTS, ITEM_LIGHT, file->lightCount, true, &clicked);
@@ -1636,6 +1829,61 @@ static void DrawTree(Rectangle bounds) {
 
 static const char* g_cameraCurves[AUTH_CAMERA_CURVES] = { "X", "Y", "Z", "Target X", "Target Y", "Target Z", "Roll", "Field of view" };
 
+// The date, its events and weather, and what the program shows then
+static void DateProperties(Properties* properties) {
+    const WEATHER_Date* date = &g_options.gameDate;
+    const WEATHER_File* weather = MapDate_Weather();
+    Properties_Section(properties, "Date of the game");
+    if (!g_view.hasDate) {
+        Properties_Note(properties, "The program of the map has no bytecode to emulate (SCN file)");
+        return;
+    }
+    Properties_Text(properties, "Date", TextFormat("%s %d %s %d, %02d:%02d", g_weekdays[WEATHER_Weekday(date)], date->day,
+        g_months[date->month - 1], date->year, date->hour, date->minute));
+    if (weather == NULL)
+        Properties_Note(properties, "No WEATHER.BIN in misc/coldinit, misc/cold_s or sprite: no events");
+    else {
+        Properties_Text(properties, "Events", EventsText(MapDate_Events(date), false));
+        Properties_Text(properties, "Clouds", TextFormat("%.0f%%", WEATHER_Intensity(weather, WEATHER_CLOUDS, date) * 100.0f));
+        Properties_Text(properties, "Rain", TextFormat("%.0f%%", WEATHER_Intensity(weather, WEATHER_RAIN, date) * 100.0f));
+        Properties_Text(properties, "Snowfall", TextFormat("%.0f%%", WEATHER_Intensity(weather, WEATHER_SNOW, date) * 100.0f));
+    }
+    const SCNDisplay* display = g_view.hasDate ? MapDate_Display() : NULL;
+    if (!MapDate_Current())
+        Properties_Text(properties, "Program", MapDate_Busy() ? "emulating..." : "not emulated");
+    else if (display != NULL) {
+        uint32_t counts[4] = { 0 };
+        for (int s = 0; s < SCNDISPLAY_SLOTS; s++)
+            counts[display->slots[s]]++;
+        Properties_Text(properties, "MAP models", TextFormat("%u shown, %u hidden, %u depending on the paths",
+            counts[SCNDISPLAY_SHOWN], counts[SCNDISPLAY_HIDDEN], counts[SCNDISPLAY_VARIES]));
+        uint32_t variants = 0, loaded = 0;
+        for (uint32_t i = 0; i < g_view.mapModelCount; i++) {
+            variants += g_view.mapModelVariants[i];
+            loaded += g_view.mapModelVariants[i] && SCNDisplay_Loads(display, g_view.mapModelPackages[i]);
+        }
+        if (variants > 0)
+            Properties_Text(properties, "Variants", TextFormat("%u of %u models of packages loaded", loaded, variants));
+        Properties_Text(properties, "Packages loaded", TextFormat("%u", display->packageCount));
+        if (display->truncated > 0 || display->skipped > 0)
+            Properties_Note(properties, "The emulation stopped at its limits: some paths weren't followed");
+    }
+    if (!g_options.date)
+        Properties_Note(properties, "Not applied: Date is off in the toolbar");
+}
+
+// A model of the map: its slot and package, and what the program does with it at the date
+static void MapModelProperties(Properties* properties, uint32_t index) {
+    int slot = g_view.mapModelSlots != NULL ? g_view.mapModelSlots[index] : -1;
+    const char* package = g_view.mapModelPackages != NULL ? g_view.mapModelPackages[index] : "";
+    if (slot >= 0)
+        Properties_Int(properties, "Slot", slot);
+    Properties_Text(properties, "Package", package[0] != '\0' ? package : "none");
+    if (g_view.hasDate && g_options.date)
+        Properties_Text(properties, "At the date", MapModelDateText(index));
+    Properties_Section(properties, "Model");
+}
+
 // The chunks of the file, when nothing is selected
 static void FileProperties(Properties* properties) {
     const MAPINFO_File* file = &g_view.file;
@@ -1646,6 +1894,7 @@ static void FileProperties(Properties* properties) {
         if (map->area[0] != '\0')
             Properties_Text(properties, "Area", map->area);
     }
+    DateProperties(properties);
     Properties_Section(properties, TextFormat("%u chunks", file->chunkCount));
     for (uint32_t i = 0; i < file->chunkCount; i++)
         Properties_Text(properties, file->chunks[i].id, TextFormat("0x%X bytes at 0x%X", file->chunks[i].size, file->chunks[i].offset));
@@ -1851,6 +2100,7 @@ static void DrawProperties(Rectangle bounds) {
         break;
     case ITEM_MAP_MODEL:
         Properties_Begin(properties, bounds, TextFormat("Model %s", g_view.mapModelNames[item->index]));
+        MapModelProperties(properties, item->index);
         ModelProperties(properties, &g_view.models[item->index]);
         break;
     case ITEM_CHARACTER:
