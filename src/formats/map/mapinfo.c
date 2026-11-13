@@ -514,7 +514,8 @@ uint32_t MAPINFO_ProgramBanks(const MAPINFO_File* file, const char* const* keys,
     uint32_t function = 0;
     for (uint32_t pc = 0x30; pc + 2 <= dataStart; pc += 2) {
         const char* string = ProgramString(scn, chunk->size, dataStart, pc);
-        for (uint32_t k = 0; string != NULL && k < keyCount; k++)
+        selected[function] |= keys == NULL;
+        for (uint32_t k = 0; keys != NULL && string != NULL && k < keyCount; k++)
             selected[function] |= EqualsNoCase(string, keys[k]);
         function += Bytes_ReadU16(scn + pc) == 0x000B;
     }

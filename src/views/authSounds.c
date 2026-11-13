@@ -15,6 +15,7 @@
 #define AUTHSOUNDS_PATH_SIZE    1024
 #define AUTHSOUNDS_NAME_SIZE    64
 #define AUTHSOUNDS_PROGRAM_BANKS 16     // Banks and names of the cutscene compared in the program of the map
+#define AUTHSOUNDS_ALL_BANKS    128     // Banks loaded by the whole program of a map (77 at most)
 #define AUTHSOUNDS_SEQUENCE_EVENTS 16   // Events read of an effect sequence
 #define AUTHSOUNDS_JUMP         0.25f   // Seconds: a bigger step of the time is a jump
 
@@ -275,33 +276,11 @@ static uint32_t CutsceneKeys(const AUTH_Sequence* sequence, const char* name, ch
     return count;
 }
 
-// Loads the bank of the sounds of the cutscene: among the banks loaded by the functions of the program of its map (its
-// mapinfo.bin) that also load the name of the cutscene or of the AFS of its voices, or else among the banks of the SNDD
-// chunk of the map (e.g. a1_prolg.snd for the cutscenes of scene/01/op00), the one with a sequence for the most sound
-// commands (the group with the ID of the low 16 bits of their sound ID); it has to have more than any other one.
-// Returns false if there is none
-static bool LoadProgramBank(const AUTH_Sequence* sequence, const char* sceneFolder, const char* mapinfo, const char* cutscene,
-    SND_Bank* bank, char* name, size_t size) {
-    char keys[AUTHSOUNDS_PROGRAM_BANKS][AUTHSOUNDS_NAME_SIZE];
-    const char* keyPointers[AUTHSOUNDS_PROGRAM_BANKS];
-    uint32_t keyCount = CutsceneKeys(sequence, cutscene, keys, AUTHSOUNDS_PROGRAM_BANKS);
-    for (uint32_t k = 0; k < keyCount; k++)
-        keyPointers[k] = keys[k];
-    MAPINFO_File map;
-    if (!FileExists(mapinfo) || !MAPINFO_Load(mapinfo, &map)) {
-        printf("[AUTHSounds_Load]: The bank of the sounds isn't known: no mapinfo.bin of the map\n");
-        return false;
-    }
-    const char* names[AUTHSOUNDS_PROGRAM_BANKS];
-    uint32_t nameCount = MAPINFO_ProgramBanks(&map, keyPointers, keyCount, names, AUTHSOUNDS_PROGRAM_BANKS);
-    const char* source = "the program of the map";
-    if (nameCount == 0) {
-        for (uint32_t i = 0; i < map.bankCount && nameCount < AUTHSOUNDS_PROGRAM_BANKS; i++) {
-            if (strcmp(map.banks[i].name, "FREE") != 0)
-                names[nameCount++] = map.banks[i].name;
-        }
-        source = "the SNDD chunk";
-    }
+// Loads, among some banks of the sound folder of the scene, the one with a sequence for the most sound commands of the
+// cutscene and of the program (the group with the ID of the low 16 bits of their sound ID); it has to have more than any
+// other one. Returns false if there is none
+static bool LoadBestBank(const AUTH_Sequence* sequence, const char* sceneFolder, const char* const* names, uint32_t nameCount,
+    const char* source, SND_Bank* bank, char* name, size_t size) {
     int bestScore = 0, secondScore = 0;
     bool found = false;
     for (uint32_t n = 0; n < nameCount; n++) {
@@ -328,13 +307,48 @@ static bool LoadProgramBank(const AUTH_Sequence* sequence, const char* sceneFold
             SND_Free(&candidate);
         }
     }
-    printf("[AUTHSounds_Load]: %u banks loaded with %s by %s: %s, %d commands with a sequence (%d in the next bank)\n",
-        nameCount, keys[0], source, found ? name : "none", bestScore, secondScore);
-    MAPINFO_Free(&map);
+    printf("[AUTHSounds_Load]: %u banks loaded by %s: %s, %d commands with a sequence (%d in the next bank)\n",
+        nameCount, source, found ? name : "none", bestScore, secondScore);
     if (found && bestScore <= secondScore) {
         SND_Free(bank);
         found = false;
     }
+    return found;
+}
+
+// Loads the bank of the sounds of the cutscene (see LoadBestBank): among the banks loaded by the functions of the program
+// of its map (its mapinfo.bin) that also load the name of the cutscene or of the AFS of its voices, or else among the
+// banks of the SNDD chunk of the map (e.g. a1_prolg.snd for the cutscenes of scene/01/op00), or else among all the banks
+// loaded by the program (e.g. n1014_4.snd, loaded with qtebat.snd, for the cutscene 0 of the SCEX chunk of
+// scene/01/d000, whose name is the map). Returns false if there is none
+static bool LoadProgramBank(const AUTH_Sequence* sequence, const char* sceneFolder, const char* mapinfo, const char* cutscene,
+    SND_Bank* bank, char* name, size_t size) {
+    char keys[AUTHSOUNDS_PROGRAM_BANKS][AUTHSOUNDS_NAME_SIZE];
+    const char* keyPointers[AUTHSOUNDS_PROGRAM_BANKS];
+    uint32_t keyCount = CutsceneKeys(sequence, cutscene, keys, AUTHSOUNDS_PROGRAM_BANKS);
+    for (uint32_t k = 0; k < keyCount; k++)
+        keyPointers[k] = keys[k];
+    MAPINFO_File map;
+    if (!FileExists(mapinfo) || !MAPINFO_Load(mapinfo, &map)) {
+        printf("[AUTHSounds_Load]: The bank of the sounds isn't known: no mapinfo.bin of the map\n");
+        return false;
+    }
+    const char* names[AUTHSOUNDS_ALL_BANKS];
+    uint32_t nameCount = MAPINFO_ProgramBanks(&map, keyPointers, keyCount, names, AUTHSOUNDS_PROGRAM_BANKS);
+    bool found = nameCount > 0 && LoadBestBank(sequence, sceneFolder, names, nameCount,
+        TextFormat("the program of the map with %s", keys[0]), bank, name, size);
+    if (!found && nameCount == 0) {
+        for (uint32_t i = 0; i < map.bankCount && nameCount < AUTHSOUNDS_PROGRAM_BANKS; i++) {
+            if (strcmp(map.banks[i].name, "FREE") != 0)
+                names[nameCount++] = map.banks[i].name;
+        }
+        found = LoadBestBank(sequence, sceneFolder, names, nameCount, "the SNDD chunk", bank, name, size);
+    }
+    if (!found) {
+        nameCount = MAPINFO_ProgramBanks(&map, NULL, 0, names, AUTHSOUNDS_ALL_BANKS);
+        found = LoadBestBank(sequence, sceneFolder, names, nameCount, "the program of the map", bank, name, size);
+    }
+    MAPINFO_Free(&map);
     return found;
 }
 
