@@ -11,6 +11,8 @@
 #include "app/gameDB.h"
 #include "formats/animation/auth.h"
 #include "formats/animation/motn.h"
+#include "formats/archive/pkf.h"
+#include "formats/archive/pks.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/chrt.h"
 #include "render/freeCamera.h"
@@ -38,7 +40,7 @@
 #define AUTHVIEW_NEAR           0.05    // Planes of the camera of the cutscene, and of the free camera with the map
 #define AUTHVIEW_FAR            2000.0
 #define AUTHVIEW_SCENE_MODELS   "model/chara" // Models of the characters in the folder of the scene
-#define AUTHVIEW_HUMANS         "stream/humans" // Folder of each character of the scene, with its script and models
+#define AUTHVIEW_HUMANS         "stream/humans" // Folder (or PKF/PKS pair) of each character of the scene, with its script and models
 #define AUTHVIEW_COMMON_MOTIONS "/motion/motion.bin" // Motions shared by the whole game, from the parent of the scene folder
 
 // A model file, loaded for each character that uses it: each one is in the pose of its motion
@@ -114,6 +116,7 @@ typedef struct {
     uint32_t        modelCount;
     AUTHView_Model* models;
     AUTHView_CharacterModel* characterModels;
+    IPAC_FileList*  humanFiles; // Of each character: the files of its PKF/PKS pair in stream/humans if it isn't extracted
     MT5Render_Instance* instances; // Of the characters drawn with their model, filled before drawing them
 } AUTHView_State;
 
@@ -473,17 +476,35 @@ static bool ModelPath(const char* folder, const char* file, char* path, size_t s
     return false;
 }
 
+// Name of a model of the CHRT scripts without the $ and @ prefixes and the extension
+static void ModelBase(const char* file, char* base, size_t size) {
+    while (*file == '$' || *file == '@')
+        file++;
+    snprintf(base, size, "%s", file);
+    char* dot = strchr(base, '.');
+    if (dot != NULL)
+        *dot = '\0';
+}
+
+// Model file of a model name of the CHRT scripts in the files of a PKF/PKS pair (e.g. FUK_M.MT5 of
+// scene/01/stream/humans/FUKU.pkf). Returns NULL if there is none
+static const IPAC_File* PackageModel(const IPAC_FileList* files, const char* file) {
+    char base[64];
+    ModelBase(file, base, sizeof(base));
+    for (uint32_t i = 0; i < files->count; i++) {
+        const IPAC_File* candidate = &files->files[i];
+        if (IsFileExtension(candidate->filename, ".chrm;.mt5") && EqualsIgnoreCase(GetFileNameWithoutExt(candidate->filename), base))
+            return candidate;
+    }
+    return NULL;
+}
+
 // Model file of a model name of the CHRT scripts in the files of the map of a cutscene of a mapinfo.bin, preferably of a
 // package (the PKF/PKS files can have models with the same name). path is the file, or <package>/<name> for a packed
 // file. Returns NULL if there is none
 static const MapFile* MapModel(const char* file, const char* package, char* path, size_t size) {
-    while (*file == '$' || *file == '@')
-        file++;
     char base[64];
-    snprintf(base, sizeof(base), "%s", file);
-    char* dot = strchr(base, '.');
-    if (dot != NULL)
-        *dot = '\0';
+    ModelBase(file, base, sizeof(base));
     const MapFile* found = NULL;
     for (uint32_t i = 0; i < g_view.mapFiles.count; i++) {
         const MapFile* candidate = &g_view.mapFiles.files[i];
@@ -500,12 +521,12 @@ static const MapFile* MapModel(const char* file, const char* package, char* path
 }
 
 // Model of a character of a CHRT script: the file of its first Image (of the DefImage with that name, or the name itself),
-// in the folder of the script (none for a packed script), in the files of the map of a cutscene of a mapinfo.bin
-// (preferably of the package of the script), or in the folder of the models of the scene (e.g.
-// scene/01/model/chara/ykb_m.mt5, Ryo). packed is the file if it is packed, NULL otherwise. Returns false if the script
-// has no such character with a model file
-static bool ScriptModel(const CHRT_Script* script, const char* id, const char* folder, const char* package, char* path, size_t size,
-    const IPAC_File** packed, bool* human) {
+// in the folder of the script (none for a packed script), in the files of the PKF/PKS pair of the script (files, NULL if
+// none), in the files of the map of a cutscene of a mapinfo.bin (preferably of the package of the script), or in the
+// folder of the models of the scene (e.g. scene/01/model/chara/ykb_m.mt5, Ryo). packed is the file if it is packed, NULL
+// otherwise, and textures the files with its textures. Returns false if the script has no such character with a model file
+static bool ScriptModel(const CHRT_Script* script, const char* id, const char* folder, const char* package, const IPAC_FileList* files,
+    char* path, size_t size, const IPAC_File** packed, const IPAC_FileList** textures, bool* human) {
     for (uint32_t i = 0; i < script->commandCount; i++) {
         const CHRT_Command* command = &script->commands[i];
         if (!CHRT_IsCommand(command, "Character") || command->argCount == 0 || command->args[0].type != CHRT_ARG_LITERAL ||
@@ -520,10 +541,19 @@ static bool ScriptModel(const CHRT_Script* script, const char* id, const char* f
             file = character.image;
         char models[AUTHVIEW_PATH_SIZE];
         snprintf(models, sizeof(models), "%s/%s", g_view.sceneFolder, AUTHVIEW_SCENE_MODELS);
+        const IPAC_File* packageFile = files != NULL ? PackageModel(files, file) : NULL;
+        if (packageFile != NULL) {
+            snprintf(path, size, "%s/%s", id, packageFile->filename);
+            *packed = packageFile;
+            *textures = files;
+            *human = character.human;
+            return true;
+        }
         const MapFile* mapFile = NULL;
         if ((folder != NULL && ModelPath(folder, file, path, size)) || (mapFile = MapModel(file, package, path, size)) != NULL ||
             (g_view.sceneFolder[0] != '\0' && ModelPath(models, TextToLower(file), path, size))) {
             *packed = mapFile != NULL ? mapFile->packed : NULL;
+            *textures = &g_view.mapFiles.packed;
             *human = character.human;
             return true;
         }
@@ -532,20 +562,52 @@ static bool ScriptModel(const CHRT_Script* script, const char* id, const char* f
 }
 
 // Model of a character in a CHRT file
-static bool ScriptFileModel(const char* scriptPath, const char* id, char* path, size_t size, const IPAC_File** packed, bool* human) {
+static bool ScriptFileModel(const char* scriptPath, const char* id, char* path, size_t size, const IPAC_File** packed,
+    const IPAC_FileList** textures, bool* human) {
     CHRT_Script script;
     if (!FileExists(scriptPath) || !CHRT_Load(scriptPath, &script))
         return false;
     char folder[AUTHVIEW_PATH_SIZE];
     snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(scriptPath));
-    bool found = ScriptModel(&script, id, folder, NULL, path, size, packed, human);
+    bool found = ScriptModel(&script, id, folder, NULL, NULL, path, size, packed, textures, human);
     CHRT_Free(&script);
     return found;
 }
 
+// Model of a character in the CHRT script of its PKF/PKS pair in the scene when it isn't extracted (e.g.
+// scene/01/stream/humans/FUKU.pkf, with CHARA.chrt and FUK_M.MT5), whose files are loaded into files. Returns the
+// script where it was found, NULL if none
+static const char* HumanPackageModel(const char* id, IPAC_FileList* files, char* path, size_t size, const IPAC_File** packed,
+    const IPAC_FileList** textures, bool* human) {
+    const char* extensions[2] = { "pkf", "pks" };
+    uint32_t pksFirst = 0;
+    for (int i = 0; i < 2; i++) {
+        char package[AUTHVIEW_PATH_SIZE];
+        snprintf(package, sizeof(package), "%s/%s/%s.%s", g_view.sceneFolder, AUTHVIEW_HUMANS, id, extensions[i]);
+        if (FileExists(package) && i == 0)
+            PKF_LoadFiles(package, files);
+        else if (FileExists(package))
+            PKS_LoadFiles(package, files);
+        if (i == 0)
+            pksFirst = files->count;
+    }
+    for (uint32_t i = 0; i < files->count; i++) {
+        const IPAC_File* file = &files->files[i];
+        CHRT_Script script;
+        if (!IsFileExtension(file->filename, ".chrt") || !CHRT_LoadFromMemory(file->data, file->size, file->filename, &script))
+            continue;
+        bool found = ScriptModel(&script, id, NULL, NULL, files, path, size, packed, textures, human);
+        CHRT_Free(&script);
+        if (found)
+            return TextFormat("%s/%s.%s/%s", AUTHVIEW_HUMANS, id, extensions[i < pksFirst ? 0 : 1], file->filename);
+    }
+    return NULL;
+}
+
 // Model of a character in the CHRT files of the map of a cutscene of a mapinfo.bin (e.g. the CHARA.chrt of
 // scene/01/jomo/common01.pks), extracted or not. Returns the script where it was found, NULL if none
-static const char* MapScriptsModel(const char* id, char* path, size_t size, const IPAC_File** packed, bool* human) {
+static const char* MapScriptsModel(const char* id, char* path, size_t size, const IPAC_File** packed, const IPAC_FileList** textures,
+    bool* human) {
     for (uint32_t i = 0; i < g_view.mapFiles.count; i++) {
         const MapFile* file = &g_view.mapFiles.files[i];
         CHRT_Script script;
@@ -555,7 +617,7 @@ static const char* MapScriptsModel(const char* id, char* path, size_t size, cons
         char folder[AUTHVIEW_PATH_SIZE];
         if (file->path != NULL)
             snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(file->path));
-        bool found = ScriptModel(&script, id, file->path != NULL ? folder : NULL, file->package, path, size, packed, human);
+        bool found = ScriptModel(&script, id, file->path != NULL ? folder : NULL, file->package, NULL, path, size, packed, textures, human);
         CHRT_Free(&script);
         if (found)
             return TextFormat("%s%s%s", file->package, file->package[0] != '\0' ? "/" : "", file->name);
@@ -565,20 +627,21 @@ static const char* MapScriptsModel(const char* id, char* path, size_t size, cons
 
 // Model file of a character: in the CHRT scripts of the folder of the cutscene (e.g. the bus driver BUSS of
 // scene/01/d000/buss), or of the PKF/PKS files of the map for a cutscene of a mapinfo.bin; in the folder of the character
-// in the scene (scene/01/stream/humans/YAMA); or in the characters of the mapinfo.bin of the map, the parent folder of an
-// AUTH file (Ryo, AKIR, in scene/01/d000). packed is the file if it is packed. Returns the script where it was found,
-// NULL if none
-static const char* FindCharacterModel(const char* id, const CHRT_Script* mapScript, const char* mapFolder, char* path, size_t size,
-    const IPAC_File** packed, bool* human) {
+// in the scene (scene/01/stream/humans/YAMA), or in its PKF/PKS pair if it isn't extracted (loaded into humanFiles); or in
+// the characters of the mapinfo.bin of the map, the parent folder of an AUTH file (Ryo, AKIR, in scene/01/d000). packed
+// is the file if it is packed, and textures the files with its textures. Returns the script where it was found, NULL if
+// none
+static const char* FindCharacterModel(const char* id, const CHRT_Script* mapScript, const char* mapFolder, IPAC_FileList* humanFiles,
+    char* path, size_t size, const IPAC_File** packed, const IPAC_FileList** textures, bool* human) {
     const char* source = NULL;
     if (g_view.cutscene >= 0)
-        source = MapScriptsModel(id, path, size, packed, human);
+        source = MapScriptsModel(id, path, size, packed, textures, human);
     else {
         char folder[AUTHVIEW_PATH_SIZE];
         snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(g_view.path));
         FilePathList scripts = LoadDirectoryFilesEx(folder, ".chrt", false);
         for (unsigned int i = 0; i < scripts.count && source == NULL; i++) {
-            if (ScriptFileModel(scripts.paths[i], id, path, size, packed, human))
+            if (ScriptFileModel(scripts.paths[i], id, path, size, packed, textures, human))
                 source = TextFormat("%s", GetFileName(scripts.paths[i]));
         }
         UnloadDirectoryFiles(scripts);
@@ -587,19 +650,21 @@ static const char* FindCharacterModel(const char* id, const CHRT_Script* mapScri
         return source;
     char humans[AUTHVIEW_PATH_SIZE];
     snprintf(humans, sizeof(humans), "%s/%s/%s/CHARA.chrt", g_view.sceneFolder, AUTHVIEW_HUMANS, id);
-    if (g_view.sceneFolder[0] != '\0' && ScriptFileModel(humans, id, path, size, packed, human))
+    if (g_view.sceneFolder[0] != '\0' && ScriptFileModel(humans, id, path, size, packed, textures, human))
         return TextFormat("%s/%s/CHARA.chrt", AUTHVIEW_HUMANS, id);
-    if (mapScript != NULL && ScriptModel(mapScript, id, mapFolder, NULL, path, size, packed, human))
+    if (g_view.sceneFolder[0] != '\0' && (source = HumanPackageModel(id, humanFiles, path, size, packed, textures, human)) != NULL)
+        return source;
+    if (mapScript != NULL && ScriptModel(mapScript, id, mapFolder, NULL, NULL, path, size, packed, textures, human))
         return g_view.cutscene >= 0 ? "mapinfo.bin" : "mapinfo.bin of the map";
     return NULL;
 }
 
 // Index of the loaded model of a file (on disk, or packed: path is then its package and name), for one character.
 // Returns -1 if it can't be loaded
-static int LoadModelFile(const char* path, const IPAC_File* packed) {
+static int LoadModelFile(const char* path, const IPAC_File* packed, const IPAC_FileList* textures) {
     AUTHView_Model* model = &g_view.models[g_view.modelCount++];
     snprintf(model->path, sizeof(model->path), "%s", path);
-    model->loaded = packed != NULL ? MT5Render_LoadPackedModel(packed, &g_view.mapFiles.packed, &model->model) :
+    model->loaded = packed != NULL ? MT5Render_LoadPackedModel(packed, textures, &model->model) :
         MT5Render_LoadModel(path, &model->model);
     if (model->loaded) {
         model->lift = -MT5Render_Bottom(&model->model);
@@ -674,7 +739,8 @@ static bool LoadCharacterModels(void) {
     g_view.models = calloc(sequence->characterCount + 1, sizeof(AUTHView_Model));
     g_view.characterModels = calloc(sequence->characterCount + 1, sizeof(AUTHView_CharacterModel));
     g_view.instances = calloc(sequence->characterCount + 1, sizeof(MT5Render_Instance));
-    if (g_view.models == NULL || g_view.characterModels == NULL || g_view.instances == NULL)
+    g_view.humanFiles = calloc(sequence->characterCount + 1, sizeof(IPAC_FileList));
+    if (g_view.models == NULL || g_view.characterModels == NULL || g_view.instances == NULL || g_view.humanFiles == NULL)
         return false;
 
     // The characters of the map
@@ -694,15 +760,16 @@ static bool LoadCharacterModels(void) {
             continue;
         char path[AUTHVIEW_PATH_SIZE];
         const IPAC_File* packed = NULL;
-        characterModel->source = FindCharacterModel(character->id, hasMapScript ? &mapScript : NULL, mapFolder, path, sizeof(path),
-            &packed, &characterModel->human);
+        const IPAC_FileList* textures = NULL;
+        characterModel->source = FindCharacterModel(character->id, hasMapScript ? &mapScript : NULL, mapFolder, &g_view.humanFiles[i],
+            path, sizeof(path), &packed, &textures, &characterModel->human);
         if (characterModel->source != NULL) {
             // A copy of the source is kept: TextFormat reuses its buffers
             char* source = malloc(strlen(characterModel->source) + 1);
             if (source != NULL)
                 strcpy(source, characterModel->source);
             characterModel->source = source;
-            characterModel->model = LoadModelFile(path, packed);
+            characterModel->model = LoadModelFile(path, packed, textures);
         }
         if (characterModel->model < 0)
             printf("[AUTHView_Open]: No model for %s (%s)\n", character->id, characterModel->source != NULL ? "invalid model file" : "not found");
@@ -737,6 +804,9 @@ void AUTHView_Close(void) {
     free(g_view.motions);
     for (uint32_t i = 0; g_view.characterModels != NULL && i < g_view.sequence.characterCount; i++)
         free((char*)g_view.characterModels[i].source);
+    for (uint32_t i = 0; g_view.humanFiles != NULL && i < g_view.sequence.characterCount; i++)
+        IPAC_FreeFiles(&g_view.humanFiles[i]);
+    free(g_view.humanFiles);
     if (g_view.open)
         MT5Render_Free(&g_view.render);
     free(g_view.models);

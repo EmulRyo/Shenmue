@@ -136,6 +136,8 @@ typedef struct {
     uint32_t            sequenceCount;
     uint32_t*           sequences;      // The cutscenes that the program loads in the table of cutscenes: their first
                                         // reference (SD_SEQUENCE) in program, one per slot, file and package
+    bool*               sequenceFound;  // Of each one: its AUTH file is in the game files (e.g. scene/01/JHD0/seqdataD.bin
+                                        // isn't)
     uint32_t            flagCount;
     int32_t*            flags;          // The flags (0 to 1023) and the bytes (SD_FLAGS + 0 to 31) used by the program, sorted
     uint32_t            scriptCount;
@@ -772,18 +774,25 @@ static const char* ProgramCalls(SD_Kind kind, int32_t number, const char* name) 
     return text;
 }
 
-// The distinct cutscenes that the program loads in the table of cutscenes. Returns false on memory error
+// The distinct cutscenes that the program loads in the table of cutscenes, and whether their AUTH file is found.
+// Returns false on memory error
 static bool FindSequences(void) {
     g_view.sequences = calloc(g_view.program.count + 1, sizeof(uint32_t));
-    if (g_view.sequences == NULL)
+    g_view.sequenceFound = calloc(g_view.program.count + 1, sizeof(bool));
+    if (g_view.sequences == NULL || g_view.sequenceFound == NULL)
         return false;
     const SD_Reference* references = g_view.program.references;
     for (uint32_t i = 0; i < g_view.program.count; i++) {
         bool found = references[i].kind != SD_SEQUENCE;
         for (uint32_t j = 0; j < g_view.sequenceCount && !found; j++)
             found = SameReference(&references[g_view.sequences[j]], &references[i]);
-        if (!found)
-            g_view.sequences[g_view.sequenceCount++] = i;
+        if (found)
+            continue;
+        size_t size = 0;
+        uint8_t* data = MapProgram_LoadSequence(g_view.filename, &references[i], &size);
+        g_view.sequenceFound[g_view.sequenceCount] = data != NULL;
+        free(data);
+        g_view.sequences[g_view.sequenceCount++] = i;
     }
     return true;
 }
@@ -830,7 +839,8 @@ static const char* CameraText(uint32_t index) {
 
 static const char* SequenceText(uint32_t index) {
     const SD_Reference* sequence = Sequence(index);
-    return TextFormat("%3d  %s of %s", sequence->number, sequence->name, sequence->folder);
+    return TextFormat("%3d  %s of %s%s", sequence->number, sequence->name, sequence->folder,
+        g_view.sequenceFound[index] ? "" : " (not found)");
 }
 
 // The flags and the bytes of the game used by the program: SD_FLAG_READ and SD_FLAG_SET give a flag, SD_BYTE_READ and
@@ -1147,6 +1157,7 @@ void MAPINFOView_Close(void) {
     free(g_view.cutscenes);
     SD_FreeData(&g_view.program);
     free(g_view.sequences);
+    free(g_view.sequenceFound);
     free(g_view.flags);
     MAPINFO_Free(&g_view.file);
     memset(&g_view, 0, sizeof(g_view));
@@ -1286,9 +1297,10 @@ static int SelectedCutscene(void) {
     return g_view.cutscenes[index].valid ? (int)index : -1;
 }
 
-// The selected cutscene loaded by the program, NULL if none
+// The selected cutscene loaded by the program, NULL if none or if its AUTH file isn't found
 static const SD_Reference* SelectedSequence(void) {
-    if (g_view.selected < 0 || g_view.items[g_view.selected].kind != ITEM_SEQUENCE)
+    if (g_view.selected < 0 || g_view.items[g_view.selected].kind != ITEM_SEQUENCE ||
+        !g_view.sequenceFound[g_view.items[g_view.selected].index])
         return NULL;
     return Sequence(g_view.items[g_view.selected].index);
 }
@@ -1610,7 +1622,7 @@ static void DrawTree(Rectangle bounds) {
     for (uint32_t i = 0; i < file->cutsceneCount; i++)
         TreeItem(g_view.firstItems[ITEM_CUTSCENE] + i, false, !g_view.cutscenes[i].valid, &clicked);
     for (uint32_t i = 0; i < g_view.sequenceCount; i++)
-        TreeItem(g_view.firstItems[ITEM_SEQUENCE] + i, false, false, &clicked);
+        TreeItem(g_view.firstItems[ITEM_SEQUENCE] + i, false, !g_view.sequenceFound[i], &clicked);
     Tree_EndGroup(tree);
     if (g_view.flagCount > 0)
         TreeLayer(LAYER_FLAGS, ITEM_FLAG, g_view.flagCount, false, &clicked);
@@ -1803,7 +1815,10 @@ static void SequenceProperties(Properties* properties, uint32_t index) {
     Properties_Text(properties, "Played by the program", ProgramCalls(SD_CUTSCENE, sequence->number, NULL));
     if ((uint32_t)sequence->number < g_view.file.cutsceneCount)
         Properties_Note(properties, "The slot of a TRCK chunk of the map: the program replaces its cutscene");
-    Properties_Note(properties, "Play it with the Play button of the toolbar (Enter)");
+    if (g_view.sequenceFound[index])
+        Properties_Note(properties, "Play it with the Play button of the toolbar (Enter)");
+    else
+        Properties_Note(properties, "Its file isn't in the game files: it can't be played");
 }
 
 // Of the selected item, or the chunks of the file
