@@ -47,6 +47,17 @@ bool MapProgram_ScnPath(const char* mapinfoPath, char* name, size_t nameSize, ch
     return true;
 }
 
+bool MapProgram_Emulate(SD_Data* data, const SH4_Program* sh4, const BC_Program* bytecode, const SCN_Pair* pair) {
+    VM_Result emulation;
+    if (!VM_Run(bytecode, &emulation))
+        return false;
+    printf("[MapProgram]: emulation: %u threads (%u not run), %llu instructions, %u calls\n", emulation.threads,
+        emulation.skipped, (unsigned long long)emulation.steps, emulation.callCount);
+    bool ok = SD_ReadEmulation(data, sh4, bytecode, pair, &emulation);
+    VM_Free(&emulation);
+    return ok;
+}
+
 bool MapProgram_Read(const char* mapinfoPath, const MAPINFO_File* file, SD_Data* data) {
     memset(data, 0, sizeof(*data));
     const MAPINFO_Chunk* chunk = MAPINFO_FindChunk(file, "SCN3");
@@ -58,7 +69,8 @@ bool MapProgram_Read(const char* mapinfoPath, const MAPINFO_File* file, SD_Data*
     if (!SCN_IsSH4(&scn)) {
         BC_Program bytecode;
         if (BC_AnalyzeProgram(&bytecode, &scn)) {
-            read = SD_ReadProgram(data, NULL, &bytecode, NULL, characterFunctions);
+            read = SD_ReadProgram(data, NULL, &bytecode, NULL, characterFunctions) &&
+                MapProgram_Emulate(data, NULL, &bytecode, NULL);
             BC_FreeProgram(&bytecode);
         }
         return read;
@@ -76,7 +88,8 @@ bool MapProgram_Read(const char* mapinfoPath, const MAPINFO_File* file, SD_Data*
     SCN_Pair pair;
     if (scnData != NULL && SCN_Read(scnData, size, &pairScn) && BC_AnalyzeProgram(&bytecode, &pairScn)) {
         if (SCN_PairPrograms(&pair, &sh4, &bytecode)) {
-            read = SD_ReadProgram(data, &sh4, &bytecode, &pair, characterFunctions);
+            read = SD_ReadProgram(data, &sh4, &bytecode, &pair, characterFunctions) &&
+                MapProgram_Emulate(data, &sh4, &bytecode, &pair);
             SCN_FreePair(&pair);
         }
         BC_FreeProgram(&bytecode);

@@ -100,6 +100,8 @@ For example `1B 02` is the control operation `0xB` with an operand of 1 byte (`0
 
 The operations 11 to 13 put the value returned in the result register.
 
+The interpreter (`0x0C08CD04`) keeps the address of the next instruction, `sp`, `fp` and the result in registers. A call (1) pushes the return address and `fp`, sets `fp` to `sp` and jumps; the return (0) sets `sp` to `fp`, pops `fp` and the return address, and ends the thread when the `fp` popped is 0: the first function of a thread is run as if called with `fp` equal to 0. The conditional branch (6) tests the result register.
+
 ### Push (`0x40–0x7F`)
 
 | Op  | Count     | Pushes |

@@ -8,12 +8,14 @@
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
 #include "formats/script/scnData.h"
+#include "formats/script/scnVm.h"
 #include "test.h"
 
 // What the scene programs of the 136 maps (the SH-4 code with the arguments of its SCN file, or the bytecode) do with
 // their map: the packages they load are PKF/PKS files of the scene folders, the cutscenes they play are TRCK chunks of
 // the map or AUTH files they load in the table of cutscenes, and the characters they wake, put to sleep or use are
-// defined in the files of the map, and the cameras they show are those of the ECAM chunk
+// defined in the files of the map, and the cameras they show are those of the ECAM chunk. The values computed at run
+// time are found by the emulation of the bytecode (scnVm.h): its paths never stop on an invalid instruction or stack
 
 #define LINE_SIZE 1024
 
@@ -36,7 +38,13 @@ static bool ReadCharacterFunctions(bool* functions) {
 
 typedef struct {
     uint64_t    kinds[SD_KIND_COUNT];
-    uint64_t    indirect[SD_KIND_COUNT];    // Whose values are given to a function of the program (via)
+    uint64_t    indirect[SD_KIND_COUNT];
+    uint64_t    emulated[SD_KIND_COUNT];    // Found by the emulation of the bytecode
+    uint64_t    threads;
+    uint64_t    skippedThreads;
+    uint64_t    truncatedThreads;
+    uint64_t    emulationErrors;
+    uint64_t    completePrograms;           // Whose threads were all run    // Whose values are given to a function of the program (via)
     uint64_t    packagesFound;
     uint64_t    sequencesFound;
     uint64_t    cutscenesOfMap;     // Slot of a TRCK chunk of the map
@@ -136,6 +144,7 @@ static void CheckData(const TestContext* context, const CorpusFile* map, const M
         const SD_Reference* reference = &data->references[i];
         stats->kinds[reference->kind]++;
         stats->indirect[reference->kind] += reference->via != 0;
+        stats->emulated[reference->kind] += reference->emulated;
         char path[CORPUS_PATH_SIZE];
         switch (reference->kind) {
         case SD_PACKAGE:
@@ -203,6 +212,22 @@ static void CheckData(const TestContext* context, const CorpusFile* map, const M
     free(bytes);
 }
 
+// The emulation of the bytecode, and the references it adds
+static bool Emulate(SD_Data* data, const SH4_Program* sh4, const BC_Program* bytecode, const SCN_Pair* pair,
+    DataStats* stats) {
+    VM_Result emulation;
+    if (!VM_Run(bytecode, &emulation))
+        return false;
+    stats->threads += emulation.threads;
+    stats->skippedThreads += emulation.skipped;
+    stats->truncatedThreads += emulation.truncated;
+    stats->emulationErrors += emulation.errors;
+    stats->completePrograms += emulation.skipped == 0;
+    bool ok = SD_ReadEmulation(data, sh4, bytecode, pair, &emulation);
+    VM_Free(&emulation);
+    return ok;
+}
+
 void Test_ScnData(const TestContext* context) {
     bool characterFunctions[SD_GAME_FUNCTIONS] = { false };
     SetTraceLogLevel(LOG_WARNING);  // The decompression of the PKF files
@@ -238,7 +263,8 @@ void Test_ScnData(const TestContext* context) {
                 SCN_Pair pair;
                 if (scnData != NULL && SCN_Read(scnData, size, &scn2) && BC_AnalyzeProgram(&bytecode, &scn2)) {
                     if (SCN_PairPrograms(&pair, &sh4, &bytecode)) {
-                        read = SD_ReadProgram(&data, &sh4, &bytecode, &pair, characterFunctions);
+                        read = SD_ReadProgram(&data, &sh4, &bytecode, &pair, characterFunctions) &&
+                            Emulate(&data, &sh4, &bytecode, &pair, &stats);
                         SCN_FreePair(&pair);
                     }
                     BC_FreeProgram(&bytecode);
@@ -249,7 +275,8 @@ void Test_ScnData(const TestContext* context) {
         } else {
             BC_Program bytecode;
             if (BC_AnalyzeProgram(&bytecode, &scn)) {
-                read = SD_ReadProgram(&data, NULL, &bytecode, NULL, characterFunctions);
+                read = SD_ReadProgram(&data, NULL, &bytecode, NULL, characterFunctions) &&
+                    Emulate(&data, NULL, &bytecode, NULL, &stats);
                 BC_FreeProgram(&bytecode);
             }
         }
@@ -269,8 +296,8 @@ void Test_ScnData(const TestContext* context) {
     CHECK_EQ(stats.sequencesFound, 184, "AUTH files whose package or file is found");
     CHECK_EQ(stats.kinds[SD_CUTSCENE], 764, "cutscenes played");
     CHECK_EQ(stats.cutscenesOfMap + stats.cutscenesLoaded, 672, "cutscenes played of the map or loaded by the program");
-    CHECK_EQ(stats.kinds[SD_WAKE], 1445, "characters woken");
-    CHECK_EQ(stats.kinds[SD_SLEEP], 1636, "characters put to sleep");
+    CHECK_EQ(stats.kinds[SD_WAKE], 1567, "characters woken");
+    CHECK_EQ(stats.kinds[SD_SLEEP], 1813, "characters put to sleep");
     CHECK_EQ(stats.idsMissing, 0, "character IDs not found in the files of the map");
     // Those whose values the program passes to its own functions, which pass them to the game
     CHECK_EQ(stats.indirect[SD_PACKAGE], 173, "packages loaded through functions of the program");
@@ -283,11 +310,22 @@ void Test_ScnData(const TestContext* context) {
     CHECK_EQ(stats.kinds[SD_FLAG_READ], 4529, "flags read");
     CHECK_EQ(stats.kinds[SD_FLAG_SET], 1951, "flags set");
     CHECK_EQ(stats.kinds[SD_BYTE_READ], 123, "bytes read");
-    CHECK_EQ(stats.kinds[SD_BYTE_SET], 150, "bytes set");
-    CHECK_EQ(stats.kinds[SD_CAMERA], 4986, "cameras shown");
+    CHECK_EQ(stats.kinds[SD_BYTE_SET], 281, "bytes set");
+    CHECK_EQ(stats.completePrograms, 125, "programs whose threads are all emulated");
+    CHECK_EQ(stats.emulationErrors, 0, "paths of the emulation stopped by an invalid instruction or stack");
+    Test_Info("emulation: %llu threads run (%llu stopped by a limit, %llu not run), all of them in %llu programs",
+        (unsigned long long)stats.threads, (unsigned long long)stats.truncatedThreads,
+        (unsigned long long)stats.skippedThreads, (unsigned long long)stats.completePrograms);
+    Test_Info("found by the emulation: %llu packages, %llu cutscenes loaded, %llu played, %llu characters woken, %llu put "
+        "to sleep, %llu cameras, %llu flags read, %llu set, %llu sound banks", (unsigned long long)stats.emulated[SD_PACKAGE],
+        (unsigned long long)stats.emulated[SD_SEQUENCE], (unsigned long long)stats.emulated[SD_CUTSCENE],
+        (unsigned long long)stats.emulated[SD_WAKE], (unsigned long long)stats.emulated[SD_SLEEP],
+        (unsigned long long)stats.emulated[SD_CAMERA], (unsigned long long)stats.emulated[SD_FLAG_READ],
+        (unsigned long long)stats.emulated[SD_FLAG_SET], (unsigned long long)stats.emulated[SD_SOUND_BANK]);
+    CHECK_EQ(stats.kinds[SD_CAMERA], 5032, "cameras shown");
     // The 4 others are the camera 0 of scene/03/mfsy, which has none
-    CHECK_EQ(stats.camerasFound, 4982, "cameras shown that are in the ECAM chunk of the map");
-    CHECK_EQ(stats.relativeWithCharacter, 1763, "relative cameras shown with a character");
+    CHECK_EQ(stats.camerasFound, 5028, "cameras shown that are in the ECAM chunk of the map");
+    CHECK_EQ(stats.relativeWithCharacter, 1782, "relative cameras shown with a character");
     Test_Info("%llu cameras shown (%llu in the ECAM chunk), %llu relative (%llu with a character), %llu not relative with "
         "a character", (unsigned long long)stats.kinds[SD_CAMERA], (unsigned long long)stats.camerasFound,
         (unsigned long long)stats.relativeCameras, (unsigned long long)stats.relativeWithCharacter,

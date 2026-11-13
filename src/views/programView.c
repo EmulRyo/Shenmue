@@ -382,6 +382,10 @@ static bool CreateDataLabels(void) {
     bool read = g_view.sh4 ? SD_ReadProgram(&g_view.data, &g_view.program, g_view.paired ? &g_view.pairBc : NULL,
         g_view.paired ? &g_view.pair : NULL, characterFunctions) :
         SD_ReadProgram(&g_view.data, NULL, &g_view.bc, NULL, characterFunctions);
+    // With the values computed at run time, found by the emulation of the bytecode
+    if (read && (g_view.bytecode || g_view.paired))
+        read = MapProgram_Emulate(&g_view.data, g_view.sh4 ? &g_view.program : NULL, g_view.sh4 ? &g_view.pairBc : &g_view.bc,
+            g_view.paired ? &g_view.pair : NULL);
     if (!read)
         return false;
     g_view.dataItems = calloc(g_view.data.count + 1, sizeof(uint32_t));
@@ -888,6 +892,8 @@ static void DrawProperties(Rectangle bounds) {
             Properties_Int(properties, "Value", reference->value);
         Properties_Text(properties, "Game function", name != NULL ? TextFormat("%s (0x%X)", name, reference->game) :
             TextFormat("0x%X", reference->game));
+        if (reference->emulated)
+            Properties_Text(properties, "Found by", "the emulation of the bytecode (values computed at run time)");
         if (reference->via != 0)
             Properties_Text(properties, "Called at", TextFormat("0x%X, with the values of the call at 0x%X", reference->via,
                 reference->address));

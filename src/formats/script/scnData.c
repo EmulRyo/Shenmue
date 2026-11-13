@@ -352,6 +352,86 @@ bool SD_ReadProgram(SD_Data* data, const SH4_Program* sh4, const BC_Program* byt
     return true;
 }
 
+// An argument of a call of the bytecode computed at run time: neither a constant, an address of the data nor a parameter
+static bool IsComputed(const SH4_Call* call, uint32_t count) {
+    for (uint32_t i = 0; i < count; i++) {
+        uint8_t kind = i < call->argumentCount ? call->arguments[i].kind : SH4_VALUE_UNKNOWN;
+        if (kind != SH4_VALUE_CONSTANT && kind != SH4_VALUE_DATA && kind != SH4_VALUE_PARAMETER)
+            return true;
+    }
+    return false;
+}
+
+bool SD_ReadEmulation(SD_Data* data, const SH4_Program* sh4, const BC_Program* bytecode, const SCN_Pair* pair,
+    const VM_Result* emulation) {
+    uint32_t capacity = data->count;
+    int32_t* sh4Calls = NULL;
+    if (sh4 != NULL) {
+        if (pair == NULL)
+            return true;
+        sh4Calls = malloc((bytecode->callCount + 1) * sizeof(int32_t));
+        if (sh4Calls == NULL)
+            return false;
+        for (uint32_t c = 0; c < bytecode->callCount; c++)
+            sh4Calls[c] = -1;
+        for (uint32_t s = 0; s < pair->callCount; s++) {
+            if (pair->calls[s] >= 0)
+                sh4Calls[pair->calls[s]] = (int32_t)s;
+        }
+    }
+    bool ok = true;
+    uint32_t address = UINT32_MAX, firstOfCall = data->count;     // The call of the references of the last runs
+    for (uint32_t v = 0; v < emulation->callCount && ok; v++) {
+        const VM_Call* run = &emulation->calls[v];
+        const SH4_Call* call = BC_CallAt(bytecode, run->address);
+        if (call == NULL || call->kind != SH4_CALL_GAME || !IsIndirectGame(run->id) || !IsComputed(call, run->count))
+            continue;
+        SH4_Call synthetic = *call;
+        synthetic.argumentCount = run->count;
+        for (uint32_t i = 0; i < run->count; i++) {
+            SH4_Value value = { SH4_VALUE_UNKNOWN, 0, 0 };
+            if (run->known & (1u << i)) {
+                int64_t offset = VM_DataOffset(bytecode, run->values[i]);
+                value.kind = offset >= 0 ? SH4_VALUE_DATA : SH4_VALUE_CONSTANT;
+                value.value = offset >= 0 ? (uint32_t)offset : run->values[i];
+            }
+            synthetic.arguments[i] = value;
+        }
+        if (sh4Calls != NULL) {
+            int32_t s = sh4Calls[call - bytecode->calls];
+            if (s < 0)
+                continue;
+            synthetic.address = sh4->calls[s].address;
+            synthetic.function = sh4->calls[s].function;
+        }
+        Source source = { NULL, bytecode, NULL, &synthetic, NULL };
+        uint32_t first = data->count;
+        ok = ReadCall(data, &capacity, &source, NULL, false);
+        // Each reference once per call: the runs with other values of the arguments not read give the same one
+        if (run->address != address) {
+            address = run->address;
+            firstOfCall = first;
+        }
+        for (uint32_t r = first; r < data->count;) {
+            SD_Reference* reference = &data->references[r];
+            reference->emulated = true;
+            bool found = false;
+            for (uint32_t o = firstOfCall; o < first && !found; o++) {
+                const SD_Reference* other = &data->references[o];
+                found = other->kind == reference->kind && other->number == reference->number &&
+                    other->value == reference->value && strcmp(other->name, reference->name) == 0 &&
+                    strcmp(other->folder, reference->folder) == 0;
+            }
+            if (found)
+                data->references[r] = data->references[--data->count];
+            else
+                r++;
+        }
+    }
+    free(sh4Calls);
+    return ok;
+}
+
 void SD_FreeData(SD_Data* data) {
     free(data->references);
     memset(data, 0, sizeof(*data));

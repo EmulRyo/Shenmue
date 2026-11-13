@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "formats/script/scnBytecode.h"
 #include "formats/script/scnPair.h"
+#include "formats/script/scnVm.h"
 #include "formats/script/sh4Program.h"
 
 // What a scene program does with the map, read from its calls to the functions of the game whose arguments are
@@ -61,6 +62,7 @@ typedef struct {
                                     // to one of its functions, which passes them to another one that loads the package)
     int32_t     number;             // -1 if none
     int32_t     value;              // Of SD_FLAG_SET and SD_BYTE_SET, SD_UNKNOWN otherwise
+    bool        emulated;           // Found by the emulation of the bytecode (SD_ReadEmulation)
     char        name[SD_NAME_SIZE];
     char        folder[SD_NAME_SIZE];
 } SD_Reference;
@@ -78,6 +80,12 @@ typedef struct {
 // on memory error
 bool SD_ReadProgram(SD_Data* data, const SH4_Program* sh4, const BC_Program* bytecode, const SCN_Pair* pair,
     const bool* characterFunctions);
+// Adds the references of the calls run by the emulation of the bytecode (scnVm.h) whose arguments the program computes
+// at run time (from its variables, its local variables or the results of calls): one per different set of known
+// arguments, for the functions read through their parameters (see SD_ReadProgram). The calls of the bytecode are mapped
+// to those of the SH-4 program with the pair if there is one. Returns false on memory error
+bool SD_ReadEmulation(SD_Data* data, const SH4_Program* sh4, const BC_Program* bytecode, const SCN_Pair* pair,
+    const VM_Result* emulation);
 void SD_FreeData(SD_Data* data);
 const char* SD_KindName(SD_Kind kind);
 // The value is a character ID: 4 characters (letters, digits or '_'), such as 'AKIR' (0x52494B41)

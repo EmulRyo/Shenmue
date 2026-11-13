@@ -75,6 +75,8 @@ set(SRC
     src/formats/script/scnData.h
     src/formats/script/scnPair.c
     src/formats/script/scnPair.h
+    src/formats/script/scnVm.c
+    src/formats/script/scnVm.h
     src/formats/script/sh4.c
     src/formats/script/sh4.h
     src/formats/script/sh4Code.c
