@@ -17,11 +17,25 @@
 //                 them, 3 sets its scale (3 floats at the position argument). A NULL address leaves the value
 //   SoundCommand  (0x06C): (command, 0, 0) plays a sequence of the sound bank of the cutscene, with the IDs of the sound
 //                 commands of the AUTH files (group in the low 16 bits, index of the sequence in the high 16 bits)
+//   SetPosition   (0x018) and SetAngle (0x01D): (character, flags, &vector) place a character of the map or of the
+//                 package of the cutscene that the AUTH file doesn't declare (e.g. the phone books TBK1 and TBK2 of the
+//                 cutscene of scene/01/d000/auth.pks). The flags 0x20000000, 0x10000000 and 0x08000000 select X, Y and Z,
+//                 0x80000000 adds the vector. The angles are integers (0x10000 = 360°). The vectors read from the game
+//                 with GetPosition (0x019) and GetAngle (0x01C) are unknown (e.g. the characters that follow Ryo and his
+//                 shadow in the cutscene 51 of scenario/act01_jomo.scn)
 
 #define SCNCUTSCENE_PLAY        0x050   // (slot): plays a cutscene; (-1): 1 while it plays
 #define SCNCUTSCENE_SEQUENCE    0x13E   // (0, slot, file, package): loads an AUTH file in a slot
 #define SCNCUTSCENE_NODE        0x0C9   // (character, node, &position, &rotation, mode)
 #define SCNCUTSCENE_SOUND       0x06C   // (command, channel, value)
+#define SCNCUTSCENE_SET_POSITION 0x018 // (character, flags, &position)
+#define SCNCUTSCENE_SET_ANGLE   0x01D   // (character, flags, &angles, value)
+#define SCNCUTSCENE_GET_POSITION 0x019  // (character, node, &position, flags)
+#define SCNCUTSCENE_GET_ANGLE   0x01C   // (character, &angles, flags)
+#define SCNCUTSCENE_PLACE_X     0x20000000
+#define SCNCUTSCENE_PLACE_Y     0x10000000
+#define SCNCUTSCENE_PLACE_Z     0x08000000
+#define SCNCUTSCENE_PLACE_ADD   0x80000000
 #define SCNCUTSCENE_NODE_SET    0
 #define SCNCUTSCENE_NODE_ADD    1
 #define SCNCUTSCENE_NODE_READ   2
@@ -45,6 +59,17 @@ typedef struct {
     uint8_t     known;      // Bit i: values[i] is known (an unknown value leaves the value of the node)
 } SCNCutscene_Node;
 
+// A call that sets or adds the position or the angles of a character
+typedef struct {
+    uint32_t    frame;
+    uint32_t    address;
+    uint32_t    character;
+    bool        angle;      // SetAngle, else SetPosition
+    uint32_t    flags;      // Argument 1
+    uint32_t    values[3];  // Bits of the floats
+    uint8_t     known;      // Bit i: values[i] is known and selected by the flags
+} SCNCutscene_Place;
+
 // A sound command
 typedef struct {
     uint32_t    frame;
@@ -61,6 +86,8 @@ typedef struct {
     SCNCutscene_Node*   nodes;      // In the order of the calls (the frames grow)
     uint32_t            soundCount;
     SCNCutscene_Sound*  sounds;
+    uint32_t            placeCount;
+    SCNCutscene_Place*  places;     // In the order of the calls
 } SCNCutscene;
 
 // The transform of a node: the values of its MT5 node
@@ -77,6 +104,11 @@ bool SCNCutscene_Run(const BC_Program* program, uint32_t slot, const char* file,
 void SCNCutscene_Free(SCNCutscene* cutscene);
 // The program moves nodes of the character
 bool SCNCutscene_MovesCharacter(const SCNCutscene* cutscene, uint32_t character);
+// The program places the character (SetPosition or SetAngle)
+bool SCNCutscene_PlacesCharacter(const SCNCutscene* cutscene, uint32_t character);
+// Applies to the position and the angles (in degrees) of a character the calls that place it up to a frame (included).
+// Returns false if none places it
+bool SCNCutscene_PlaceAt(const SCNCutscene* cutscene, uint32_t character, uint32_t frame, float position[3], float angle[3]);
 // Applies to a transform (the one of the node in the model) the calls for the node of the character up to a frame
 // (included). Returns false if none moves it
 bool SCNCutscene_NodeAt(const SCNCutscene* cutscene, uint32_t character, uint16_t node, uint32_t frame,

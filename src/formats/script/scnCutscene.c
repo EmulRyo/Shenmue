@@ -13,6 +13,7 @@ typedef struct {
     SCNCutscene*        cutscene;
     uint32_t            nodeCapacity;
     uint32_t            soundCapacity;
+    uint32_t            placeCapacity;
     bool                ok;
 } Context;
 
@@ -43,6 +44,16 @@ static bool IsProgramString(const BC_Program* program, uint32_t value, const cha
     return i < end && data[i] == '\0' && *name == '\0';
 }
 
+// GetPosition and GetAngle write a vector of the game, which isn't known
+static void ReadsVector(const VM_Call* call, VM_Answer* answer) {
+    uint32_t argument = call->id == SCNCUTSCENE_GET_POSITION ? 2 : call->id == SCNCUTSCENE_GET_ANGLE ? 1 : 0;
+    if (argument == 0 || !Known(call, argument))
+        return;
+    answer->address = call->values[argument];
+    answer->size = 12;
+    answer->knownBytes = 0;
+}
+
 static bool OnCapture(void* context, const VM_Call* call, const uint8_t* path) {
     const Context* c = context;
     return call->id == SCNCUTSCENE_PLAY && Known(call, 0) && call->values[0] == c->slot && path[0] != PATH_OTHER;
@@ -50,8 +61,8 @@ static bool OnCapture(void* context, const VM_Call* call, const uint8_t* path) {
 
 static void OnCall(void* context, const VM_Call* call, bool yielded, uint8_t* path, VM_Answer* answer) {
     (void)yielded;
-    (void)answer;
     const Context* c = context;
+    ReadsVector(call, answer);
     if (c->file != NULL && call->id == SCNCUTSCENE_SEQUENCE && Known(call, 0) && Known(call, 1) && call->values[0] == 0 &&
         call->values[1] == c->slot)
         path[0] = Known(call, 2) && IsProgramString(c->program, call->values[2], c->file) ? PATH_FILE : PATH_OTHER;
@@ -85,6 +96,41 @@ static void AddSound(Context* c, const SCNCutscene_Sound* sound) {
         c->soundCapacity = capacity;
     }
     cutscene->sounds[cutscene->soundCount++] = *sound;
+}
+
+static void AddPlace(Context* c, const SCNCutscene_Place* place) {
+    SCNCutscene* cutscene = c->cutscene;
+    if (cutscene->placeCount == c->placeCapacity) {
+        uint32_t capacity = c->placeCapacity == 0 ? 16 : c->placeCapacity * 2;
+        SCNCutscene_Place* places = realloc(cutscene->places, capacity * sizeof(SCNCutscene_Place));
+        if (places == NULL) {
+            c->ok = false;
+            return;
+        }
+        cutscene->places = places;
+        c->placeCapacity = capacity;
+    }
+    cutscene->places[cutscene->placeCount++] = *place;
+}
+
+// A call to SetPosition or SetAngle: the values of the vector selected by the flags
+static void PlaceCall(Context* c, uint32_t frame, const VM_Call* call, VM_Memory* memory) {
+    if (call->count < 3 || !Known(call, 0) || !Known(call, 1) || !Known(call, 2))
+        return;
+    SCNCutscene_Place place = { frame, call->address, call->values[0], call->id == SCNCUTSCENE_SET_ANGLE, call->values[1],
+        { 0 }, 0 };
+    uint8_t bytes[12];
+    uint32_t known;
+    if (!VM_ReadMemory(memory, call->values[2], sizeof(bytes), bytes, &known))
+        return;
+    const uint32_t selected[3] = { SCNCUTSCENE_PLACE_X, SCNCUTSCENE_PLACE_Y, SCNCUTSCENE_PLACE_Z };
+    for (int v = 0; v < 3; v++) {
+        memcpy(&place.values[v], bytes + v * 4, 4);
+        if ((place.flags & selected[v]) && ((known >> (v * 4)) & 0xF) == 0xF)
+            place.known |= (uint8_t)(1 << v);
+    }
+    if (place.known != 0)
+        AddPlace(c, &place);
 }
 
 // The value of a field of a node set by the calls so far: bit i of the result, values[i] is known (set by a call)
@@ -157,6 +203,7 @@ static void OnTimedCall(void* context, uint32_t frame, uint32_t thread, const VM
     VM_Answer* answer) {
     (void)thread;
     Context* c = context;
+    ReadsVector(call, answer);
     switch (call->id) {
     case SCNCUTSCENE_PLAY:
         if (Known(call, 0) && call->values[0] == 0xFFFFFFFF)
@@ -164,6 +211,10 @@ static void OnTimedCall(void* context, uint32_t frame, uint32_t thread, const VM
         break;
     case SCNCUTSCENE_NODE:
         NodeCall(c, frame, call, memory);
+        break;
+    case SCNCUTSCENE_SET_POSITION:
+    case SCNCUTSCENE_SET_ANGLE:
+        PlaceCall(c, frame, call, memory);
         break;
     case SCNCUTSCENE_SOUND:
         if (Known(call, 0))
@@ -222,11 +273,12 @@ static bool PlaysSlot(const BC_Program* program, const SH4_Call* call, const uin
 static void ClearCalls(SCNCutscene* cutscene) {
     cutscene->nodeCount = 0;
     cutscene->soundCount = 0;
+    cutscene->placeCount = 0;
 }
 
 bool SCNCutscene_Run(const BC_Program* program, uint32_t slot, const char* file, uint32_t frames, SCNCutscene* cutscene) {
     memset(cutscene, 0, sizeof(*cutscene));
-    Context context = { program, slot, file, frames, cutscene, 0, 0, true };
+    Context context = { program, slot, file, frames, cutscene, 0, 0, 0, true };
     VM_Environment environment = { &context, OnCall, NULL, OnCapture };
     VM_Snapshot* snapshot = VM_Capture(program, &environment);
     // From the functions that give the slot as a constant to a call that plays it, when the emulation from the entry
@@ -270,6 +322,7 @@ bool SCNCutscene_Run(const BC_Program* program, uint32_t slot, const char* file,
 void SCNCutscene_Free(SCNCutscene* cutscene) {
     free(cutscene->nodes);
     free(cutscene->sounds);
+    free(cutscene->places);
     memset(cutscene, 0, sizeof(*cutscene));
 }
 
@@ -279,6 +332,37 @@ bool SCNCutscene_MovesCharacter(const SCNCutscene* cutscene, uint32_t character)
             return true;
     }
     return false;
+}
+
+bool SCNCutscene_PlacesCharacter(const SCNCutscene* cutscene, uint32_t character) {
+    for (uint32_t i = 0; i < cutscene->placeCount; i++) {
+        if (cutscene->places[i].character == character)
+            return true;
+    }
+    return false;
+}
+
+bool SCNCutscene_PlaceAt(const SCNCutscene* cutscene, uint32_t character, uint32_t frame, float position[3], float angle[3]) {
+    bool placed = false;
+    for (uint32_t i = 0; i < cutscene->placeCount && cutscene->places[i].frame <= frame; i++) {
+        const SCNCutscene_Place* p = &cutscene->places[i];
+        if (p->character != character)
+            continue;
+        placed = true;
+        bool add = (p->flags & SCNCUTSCENE_PLACE_ADD) != 0;
+        for (int v = 0; v < 3; v++) {
+            if (!(p->known & (1 << v)))
+                continue;
+            float value;
+            if (p->angle)
+                value = (int32_t)p->values[v] * 360.0f / 65536.0f;
+            else
+                memcpy(&value, &p->values[v], sizeof(value));
+            float* target = p->angle ? &angle[v] : &position[v];
+            *target = add ? *target + value : value;
+        }
+    }
+    return placed;
 }
 
 bool SCNCutscene_NodeAt(const SCNCutscene* cutscene, uint32_t character, uint16_t node, uint32_t frame,

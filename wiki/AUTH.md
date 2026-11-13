@@ -181,7 +181,7 @@ The file only has the IDs of the characters. Their models are those of the `Char
 
 The persons (`Human` command) have the origin of their model at the hips; the position of their curves is the point of the floor where they stand.
 
-The nodes of the models of some characters are moved by the [program](MAPINFO#code-run-with-the-cutscenes) of the map while the cutscene plays, not by the AUTH file: e.g. the doors and the wheels of the bus `BUS_` in the cutscenes of `scene/01/d000/buss`.
+The nodes of the models of some characters are moved by the [program](MAPINFO#code-run-with-the-cutscenes) of the map while the cutscene plays, not by the AUTH file: e.g. the doors and the wheels of the bus `BUS_` in the cutscenes of `scene/01/d000/buss`. The program can also place characters that the AUTH file doesn't declare: in `scene/01/d000/auth.pks` (`SEQDATA0`, only `AKIR`), it swaps the closed phone book of the map, `TBK1`, for the open one of the `CHARA.chrt` of the package, `TBK2` (`DENS502G`), at the frame 120, while Ryo turns its pages.
 
 ## Animation curves
 

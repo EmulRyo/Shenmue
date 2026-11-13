@@ -74,6 +74,20 @@ typedef struct {
     const char*     source;     // Script where the character was found, NULL if none
 } AUTHView_CharacterModel;
 
+// A character that the AUTH file doesn't declare, placed by the program of the map while the cutscene plays (SetPosition
+// and SetAngle, e.g. the phone books TBK1 and TBK2 of the cutscene of scene/01/d000/auth.pks): a character of the map,
+// drawn by the cutscene from the first call that places it, or of the package of the cutscene
+typedef struct {
+    uint32_t        idValue;
+    char            id[5];
+    int             model;      // Index in the models, -1 if none
+    bool            human;
+    const char*     source;     // Script where it was found (allocated), NULL if none
+    float           position[3]; // Of its script, which the calls change
+    float           angle[3];   // Degrees
+    IPAC_FileList   files;      // Of its PKF/PKS pair in stream/humans if it isn't extracted
+} AUTHView_Placed;
+
 // Groups of the tree: the characters, then the commands in the lanes of the timeline
 typedef enum {
     GROUP_CHARACTERS,
@@ -88,10 +102,16 @@ typedef enum {
 static const char* g_groupNames[GROUP_COUNT] = { "Characters", "Motions", "Voices", "Sounds", "Other", "Program" };
 
 // What the program of the map does while the cutscene plays (scnCutscene.h), in the tree: the calls that move a node of
-// a character, grouped while they follow each other frame after frame, and the sound commands
+// a character or place a character, grouped while they follow each other frame after frame, and the sound commands
+typedef enum {
+    PROGRAM_NODE,
+    PROGRAM_PLACE,
+    PROGRAM_SOUND,
+} ProgramKind;
+
 typedef struct {
-    bool            sound;
-    uint32_t        first;      // Index of the first call (of the nodes or of the sounds) and of the last one
+    uint8_t         kind;       // ProgramKind
+    uint32_t        first;      // Index of the first call (of the nodes, the places or the sounds) and of the last one
     uint32_t        last;
     uint32_t        count;
     uint32_t        firstFrame;
@@ -137,6 +157,8 @@ typedef struct {
     AUTHView_ProgramItem* programItems;
     char            (*programLabels)[AUTHVIEW_LABEL_SIZE];
     int             selectedProgram; // Item of the program selected, -1 if none
+    uint32_t        placedCount;
+    AUTHView_Placed* placed;    // Characters placed by the program that the AUTH file doesn't declare
 } AUTHView_State;
 
 // Kept when another cutscene is opened
@@ -544,9 +566,10 @@ static const MapFile* MapModel(const char* file, const char* package, char* path
 // in the folder of the script (none for a packed script), in the files of the PKF/PKS pair of the script (files, NULL if
 // none), in the files of the map of a cutscene of a mapinfo.bin (preferably of the package of the script), or in the
 // folder of the models of the scene (e.g. scene/01/model/chara/ykb_m.mt5, Ryo). packed is the file if it is packed, NULL
-// otherwise, and textures the files with its textures. Returns false if the script has no such character with a model file
+// otherwise, and textures the files with its textures; info its Character block if not NULL (its image points into the
+// script). Returns false if the script has no such character with a model file
 static bool ScriptModel(const CHRT_Script* script, const char* id, const char* folder, const char* package, const IPAC_FileList* files,
-    char* path, size_t size, const IPAC_File** packed, const IPAC_FileList** textures, bool* human) {
+    char* path, size_t size, const IPAC_File** packed, const IPAC_FileList** textures, bool* human, CHRT_Character* info) {
     for (uint32_t i = 0; i < script->commandCount; i++) {
         const CHRT_Command* command = &script->commands[i];
         if (!CHRT_IsCommand(command, "Character") || command->argCount == 0 || command->args[0].type != CHRT_ARG_LITERAL ||
@@ -556,6 +579,8 @@ static bool ScriptModel(const CHRT_Script* script, const char* id, const char* f
         CHRT_ReadCharacter(script, i, &character);
         if (character.image == NULL || character.arm)
             continue;
+        if (info != NULL)
+            *info = character;
         const char* file = CHRT_ImageFile(script, character.image);
         if (file == NULL)
             file = character.image;
@@ -583,13 +608,13 @@ static bool ScriptModel(const CHRT_Script* script, const char* id, const char* f
 
 // Model of a character in a CHRT file
 static bool ScriptFileModel(const char* scriptPath, const char* id, char* path, size_t size, const IPAC_File** packed,
-    const IPAC_FileList** textures, bool* human) {
+    const IPAC_FileList** textures, bool* human, CHRT_Character* info) {
     CHRT_Script script;
     if (!FileExists(scriptPath) || !CHRT_Load(scriptPath, &script))
         return false;
     char folder[AUTHVIEW_PATH_SIZE];
     snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(scriptPath));
-    bool found = ScriptModel(&script, id, folder, NULL, NULL, path, size, packed, textures, human);
+    bool found = ScriptModel(&script, id, folder, NULL, NULL, path, size, packed, textures, human, info);
     CHRT_Free(&script);
     return found;
 }
@@ -598,7 +623,7 @@ static bool ScriptFileModel(const char* scriptPath, const char* id, char* path, 
 // scene/01/stream/humans/FUKU.pkf, with CHARA.chrt and FUK_M.MT5), whose files are loaded into files. Returns the
 // script where it was found, NULL if none
 static const char* HumanPackageModel(const char* id, IPAC_FileList* files, char* path, size_t size, const IPAC_File** packed,
-    const IPAC_FileList** textures, bool* human) {
+    const IPAC_FileList** textures, bool* human, CHRT_Character* info) {
     const char* extensions[2] = { "pkf", "pks" };
     uint32_t pksFirst = 0;
     for (int i = 0; i < 2; i++) {
@@ -616,7 +641,7 @@ static const char* HumanPackageModel(const char* id, IPAC_FileList* files, char*
         CHRT_Script script;
         if (!IsFileExtension(file->filename, ".chrt") || !CHRT_LoadFromMemory(file->data, file->size, file->filename, &script))
             continue;
-        bool found = ScriptModel(&script, id, NULL, NULL, files, path, size, packed, textures, human);
+        bool found = ScriptModel(&script, id, NULL, NULL, files, path, size, packed, textures, human, info);
         CHRT_Free(&script);
         if (found)
             return TextFormat("%s/%s.%s/%s", AUTHVIEW_HUMANS, id, extensions[i < pksFirst ? 0 : 1], file->filename);
@@ -627,7 +652,7 @@ static const char* HumanPackageModel(const char* id, IPAC_FileList* files, char*
 // Model of a character in the CHRT files of the map of a cutscene of a mapinfo.bin (e.g. the CHARA.chrt of
 // scene/01/jomo/common01.pks), extracted or not. Returns the script where it was found, NULL if none
 static const char* MapScriptsModel(const char* id, char* path, size_t size, const IPAC_File** packed, const IPAC_FileList** textures,
-    bool* human) {
+    bool* human, CHRT_Character* info) {
     for (uint32_t i = 0; i < g_view.mapFiles.count; i++) {
         const MapFile* file = &g_view.mapFiles.files[i];
         CHRT_Script script;
@@ -637,7 +662,7 @@ static const char* MapScriptsModel(const char* id, char* path, size_t size, cons
         char folder[AUTHVIEW_PATH_SIZE];
         if (file->path != NULL)
             snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(file->path));
-        bool found = ScriptModel(&script, id, file->path != NULL ? folder : NULL, file->package, NULL, path, size, packed, textures, human);
+        bool found = ScriptModel(&script, id, file->path != NULL ? folder : NULL, file->package, NULL, path, size, packed, textures, human, info);
         CHRT_Free(&script);
         if (found)
             return TextFormat("%s%s%s", file->package, file->package[0] != '\0' ? "/" : "", file->name);
@@ -652,16 +677,16 @@ static const char* MapScriptsModel(const char* id, char* path, size_t size, cons
 // is the file if it is packed, and textures the files with its textures. Returns the script where it was found, NULL if
 // none
 static const char* FindCharacterModel(const char* id, const CHRT_Script* mapScript, const char* mapFolder, IPAC_FileList* humanFiles,
-    char* path, size_t size, const IPAC_File** packed, const IPAC_FileList** textures, bool* human) {
+    char* path, size_t size, const IPAC_File** packed, const IPAC_FileList** textures, bool* human, CHRT_Character* info) {
     const char* source = NULL;
     if (g_view.cutscene >= 0)
-        source = MapScriptsModel(id, path, size, packed, textures, human);
+        source = MapScriptsModel(id, path, size, packed, textures, human, info);
     else {
         char folder[AUTHVIEW_PATH_SIZE];
         snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(g_view.path));
         FilePathList scripts = LoadDirectoryFilesEx(folder, ".chrt", false);
         for (unsigned int i = 0; i < scripts.count && source == NULL; i++) {
-            if (ScriptFileModel(scripts.paths[i], id, path, size, packed, textures, human))
+            if (ScriptFileModel(scripts.paths[i], id, path, size, packed, textures, human, info))
                 source = TextFormat("%s", GetFileName(scripts.paths[i]));
         }
         UnloadDirectoryFiles(scripts);
@@ -670,11 +695,11 @@ static const char* FindCharacterModel(const char* id, const CHRT_Script* mapScri
         return source;
     char humans[AUTHVIEW_PATH_SIZE];
     snprintf(humans, sizeof(humans), "%s/%s/%s/CHARA.chrt", g_view.sceneFolder, AUTHVIEW_HUMANS, id);
-    if (g_view.sceneFolder[0] != '\0' && ScriptFileModel(humans, id, path, size, packed, textures, human))
+    if (g_view.sceneFolder[0] != '\0' && ScriptFileModel(humans, id, path, size, packed, textures, human, info))
         return TextFormat("%s/%s/CHARA.chrt", AUTHVIEW_HUMANS, id);
-    if (g_view.sceneFolder[0] != '\0' && (source = HumanPackageModel(id, humanFiles, path, size, packed, textures, human)) != NULL)
+    if (g_view.sceneFolder[0] != '\0' && (source = HumanPackageModel(id, humanFiles, path, size, packed, textures, human, info)) != NULL)
         return source;
-    if (mapScript != NULL && ScriptModel(mapScript, id, mapFolder, NULL, NULL, path, size, packed, textures, human))
+    if (mapScript != NULL && ScriptModel(mapScript, id, mapFolder, NULL, NULL, path, size, packed, textures, human, info))
         return g_view.cutscene >= 0 ? "mapinfo.bin" : "mapinfo.bin of the map";
     return NULL;
 }
@@ -782,7 +807,7 @@ static bool LoadCharacterModels(void) {
         const IPAC_File* packed = NULL;
         const IPAC_FileList* textures = NULL;
         characterModel->source = FindCharacterModel(character->id, hasMapScript ? &mapScript : NULL, mapFolder, &g_view.humanFiles[i],
-            path, sizeof(path), &packed, &textures, &characterModel->human);
+            path, sizeof(path), &packed, &textures, &characterModel->human, NULL);
         if (characterModel->source != NULL) {
             // A copy of the source is kept: TextFormat reuses its buffers
             char* source = malloc(strlen(characterModel->source) + 1);
@@ -827,6 +852,11 @@ void AUTHView_Close(void) {
     for (uint32_t i = 0; g_view.humanFiles != NULL && i < g_view.sequence.characterCount; i++)
         IPAC_FreeFiles(&g_view.humanFiles[i]);
     free(g_view.humanFiles);
+    for (uint32_t i = 0; i < g_view.placedCount; i++) {
+        free((char*)g_view.placed[i].source);
+        IPAC_FreeFiles(&g_view.placed[i].files);
+    }
+    free(g_view.placed);
     if (g_view.open)
         MT5Render_Free(&g_view.render);
     free(g_view.models);
@@ -848,21 +878,22 @@ void AUTHView_Close(void) {
 
 static const char* g_programFields[] = { "rotation", "position", "scale" };
 
-// The items of the program in the tree: the calls for the same node, field and mode are one item while each one comes at
-// most a frame after the previous one; then the sound commands, all in the order of their first frame
+// The items of the program in the tree: the calls for the same node, field and mode, or that place the same character
+// with the same function and flags, are one item while each one comes at most a frame after the previous one; then the
+// sound commands, all in the order of their first frame
 static int CompareProgramItems(const void* a, const void* b) {
     const AUTHView_ProgramItem* x = a;
     const AUTHView_ProgramItem* y = b;
     if (x->firstFrame != y->firstFrame)
         return x->firstFrame < y->firstFrame ? -1 : 1;
-    if (x->sound != y->sound)
-        return x->sound ? 1 : -1;
+    if (x->kind != y->kind)
+        return x->kind < y->kind ? -1 : 1;
     return x->first < y->first ? -1 : x->first > y->first;
 }
 
 static bool CreateProgramItems(void) {
     const SCNCutscene* program = &g_view.program;
-    uint32_t capacity = program->nodeCount + program->soundCount;
+    uint32_t capacity = program->nodeCount + program->placeCount + program->soundCount;
     if (capacity == 0)
         return true;
     g_view.programItems = malloc(capacity * sizeof(AUTHView_ProgramItem));
@@ -876,20 +907,39 @@ static bool CreateProgramItems(void) {
         for (uint32_t j = count; j-- > 0 && item == NULL;) {
             AUTHView_ProgramItem* other = &g_view.programItems[j];
             const SCNCutscene_Node* last = &program->nodes[other->last];
-            if (!other->sound && last->character == node->character && last->node == node->node && last->field == node->field &&
+            if (other->kind == PROGRAM_NODE && last->character == node->character && last->node == node->node && last->field == node->field &&
                 last->add == node->add && node->frame <= other->lastFrame + 1)
                 item = other;
         }
         if (item == NULL) {
             item = &g_view.programItems[count++];
-            *item = (AUTHView_ProgramItem) { false, i, i, 0, node->frame, node->frame };
+            *item = (AUTHView_ProgramItem) { PROGRAM_NODE, i, i, 0, node->frame, node->frame };
         }
         item->last = i;
         item->lastFrame = node->frame;
         item->count++;
     }
+    for (uint32_t i = 0; i < program->placeCount; i++) {
+        const SCNCutscene_Place* place = &program->places[i];
+        AUTHView_ProgramItem* item = NULL;
+        for (uint32_t j = count; j-- > 0 && item == NULL;) {
+            AUTHView_ProgramItem* other = &g_view.programItems[j];
+            const SCNCutscene_Place* last = &program->places[other->last];
+            if (other->kind == PROGRAM_PLACE && last->character == place->character && last->angle == place->angle &&
+                last->flags == place->flags && place->frame <= other->lastFrame + 1)
+                item = other;
+        }
+        if (item == NULL) {
+            item = &g_view.programItems[count++];
+            *item = (AUTHView_ProgramItem) { PROGRAM_PLACE, i, i, 0, place->frame, place->frame };
+        }
+        item->last = i;
+        item->lastFrame = place->frame;
+        item->count++;
+    }
     for (uint32_t i = 0; i < program->soundCount; i++)
-        g_view.programItems[count++] = (AUTHView_ProgramItem) { true, i, i, 1, program->sounds[i].frame, program->sounds[i].frame };
+        g_view.programItems[count++] = (AUTHView_ProgramItem) { PROGRAM_SOUND, i, i, 1, program->sounds[i].frame,
+            program->sounds[i].frame };
     qsort(g_view.programItems, count, sizeof(AUTHView_ProgramItem), CompareProgramItems);
     g_view.programItemCount = count;
     for (uint32_t i = 0; i < count; i++) {
@@ -897,14 +947,93 @@ static bool CreateProgramItems(void) {
         char* label = g_view.programLabels[i];
         const char* frames = item->lastFrame != item->firstFrame ? TextFormat("%u-%u", item->firstFrame, item->lastFrame) :
             TextFormat("%u", item->firstFrame);
-        if (item->sound)
+        if (item->kind == PROGRAM_SOUND)
             snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  Sound 0x%08X", frames, program->sounds[item->first].command);
-        else {
+        else if (item->kind == PROGRAM_PLACE) {
+            const SCNCutscene_Place* place = &program->places[item->first];
+            snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  Place %s %s%s", frames, IDText(place->character),
+                (place->flags & SCNCUTSCENE_PLACE_ADD) ? "+" : "", place->angle ? "angle" : "position");
+        } else {
             const SCNCutscene_Node* node = &program->nodes[item->first];
             snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  Node %s %u %s%s", frames, IDText(node->character), node->node,
                 node->add ? "+" : "", g_programFields[node->field]);
         }
     }
+    return true;
+}
+
+static bool IsDeclared(uint32_t idValue) {
+    for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {
+        if (g_view.sequence.characters[i].idValue == idValue)
+            return true;
+    }
+    return false;
+}
+
+// The characters placed by the program that the AUTH file doesn't declare, with their model and the position and angle
+// of their script
+static bool LoadPlacedModels(void) {
+    const SCNCutscene* program = &g_view.program;
+    if (program->placeCount == 0)
+        return true;
+    g_view.placed = calloc(program->placeCount, sizeof(AUTHView_Placed));
+    if (g_view.placed == NULL)
+        return false;
+    for (uint32_t i = 0; i < program->placeCount; i++) {
+        uint32_t idValue = program->places[i].character;
+        bool known = IsDeclared(idValue);
+        for (uint32_t p = 0; p < g_view.placedCount && !known; p++)
+            known = g_view.placed[p].idValue == idValue;
+        if (!known) {
+            AUTHView_Placed* placed = &g_view.placed[g_view.placedCount++];
+            placed->idValue = idValue;
+            memcpy(placed->id, &idValue, 4);
+            placed->model = -1;
+        }
+    }
+    uint32_t capacity = g_view.sequence.characterCount + g_view.placedCount + 1;
+    AUTHView_Model* models = realloc(g_view.models, capacity * sizeof(AUTHView_Model));
+    if (models != NULL)
+        g_view.models = models;
+    MT5Render_Instance* instances = realloc(g_view.instances, capacity * sizeof(MT5Render_Instance));
+    if (instances != NULL)
+        g_view.instances = instances;
+    if (models == NULL || instances == NULL)
+        return false;
+    memset(g_view.models + g_view.modelCount, 0, (capacity - g_view.modelCount) * sizeof(AUTHView_Model));
+
+    char mapFolder[AUTHVIEW_PATH_SIZE];
+    snprintf(mapFolder, sizeof(mapFolder), "%s", GetDirectoryPath(g_view.mapinfoPath));
+    MAPINFO_File mapinfo;
+    CHRT_Script mapScript;
+    bool hasMapinfo = FileExists(g_view.mapinfoPath) && MAPINFO_Load(g_view.mapinfoPath, &mapinfo);
+    bool hasMapScript = hasMapinfo && mapinfo.characters != NULL &&
+        CHRT_LoadFromMemory(mapinfo.characters, mapinfo.charactersSize, g_view.mapinfoPath, &mapScript);
+    for (uint32_t i = 0; i < g_view.placedCount; i++) {
+        AUTHView_Placed* placed = &g_view.placed[i];
+        char path[AUTHVIEW_PATH_SIZE];
+        const IPAC_File* packed = NULL;
+        const IPAC_FileList* textures = NULL;
+        CHRT_Character info;
+        const char* source = FindCharacterModel(placed->id, hasMapScript ? &mapScript : NULL, mapFolder, &placed->files, path,
+            sizeof(path), &packed, &textures, &placed->human, &info);
+        if (source == NULL) {
+            printf("[AUTHView_Open]: No model for %s, placed by the program (not found)\n", placed->id);
+            continue;
+        }
+        char* copy = malloc(strlen(source) + 1);
+        if (copy != NULL)
+            strcpy(copy, source);
+        placed->source = copy;
+        memcpy(placed->position, info.position, sizeof(placed->position));
+        memcpy(placed->angle, info.angle, sizeof(placed->angle));
+        placed->model = LoadModelFile(path, packed, textures);
+        printf("  %s: %s (%s), placed by the program\n", placed->id, GetFileName(path), placed->source);
+    }
+    if (hasMapScript)
+        CHRT_Free(&mapScript);
+    if (hasMapinfo)
+        MAPINFO_Free(&mapinfo);
     return true;
 }
 
@@ -925,14 +1054,15 @@ static bool RunProgram(int cutscene, const char* file) {
         const SCNCutscene* program = &g_view.program;
         if (ok && program->found)
             printf("[AUTHView_Open]: program of the map: cutscene played at 0x%X (function 0x%X), %u threads, %u frames, %u node "
-                "calls, %u sound commands in %.2f s\n", program->address, program->function, program->run.threads,
-                program->run.frames, program->nodeCount, program->soundCount, GetTime() - start);
+                "calls, %u place calls, %u sound commands in %.2f s\n", program->address, program->function,
+                program->run.threads, program->run.frames, program->nodeCount, program->placeCount, program->soundCount,
+                GetTime() - start);
         else if (ok)
             printf("[AUTHView_Open]: the program of the map doesn't play the cutscene %d\n", cutscene);
         MapProgram_FreeBytecode(&bytecode);
     }
     MAPINFO_Free(&mapinfo);
-    return ok && CreateProgramItems();
+    return ok && CreateProgramItems() && LoadPlacedModels();
 }
 
 // Shows a loaded cutscene, of the AUTH file filepath or of the TRCK chunk cutscene of the SCEX chunk of the mapinfo.bin
@@ -1050,10 +1180,19 @@ static void OpenMap(void) {
         printf("[AUTHView_Open]: Failed to load the map %s\n", g_view.mapinfoPath);
 }
 
-// The characters of the map that are in the cutscene aren't drawn with the map: the cutscene places them
+static bool PlacedAt(const AUTHView_Placed* placed, uint32_t frame, float position[3], float angle[3]);
+
+// The characters of the map that are in the cutscene aren't drawn with the map: the cutscene places them; nor those that
+// the program of the map has placed at the current frame, drawn by the cutscene
 static bool IsCutsceneCharacter(const char* id) {
     for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {
         if (strcmp(g_view.sequence.characters[i].id, id) == 0)
+            return true;
+    }
+    float position[3], angle[3];
+    for (uint32_t i = 0; i < g_view.placedCount; i++) {
+        if (strcmp(g_view.placed[i].id, id) == 0 && g_view.placed[i].model >= 0 &&
+            PlacedAt(&g_view.placed[i], CurrentFrame(), position, angle))
             return true;
     }
     return false;
@@ -1360,7 +1499,27 @@ static float CharacterHeight(uint32_t index) {
     return model->top + (characterModel->human ? model->lift : 0.0f);
 }
 
-// With their model, or as cylinders with a line to the direction they face if it wasn't found
+// The position and the angles of a character placed by the program at a frame: those of its script, changed by the calls
+// up to the frame. Returns false if none places it yet
+static bool PlacedAt(const AUTHView_Placed* placed, uint32_t frame, float position[3], float angle[3]) {
+    memcpy(position, placed->position, sizeof(placed->position));
+    memcpy(angle, placed->angle, sizeof(placed->angle));
+    return SCNCutscene_PlaceAt(&g_view.program, placed->idValue, frame, position, angle);
+}
+
+// As the characters of the map: rotation around X, Y and Z, and translation. The models of the persons are raised to
+// stand at their position
+static Matrix PlacedTransform(const AUTHView_Placed* placed, const float position[3], const float angle[3]) {
+    const AUTHView_Model* model = &g_view.models[placed->model];
+    Matrix matrix = MatrixTranslate(0.0f, placed->human ? model->lift : 0.0f, 0.0f);
+    matrix = MatrixMultiply(matrix, MatrixRotateX(angle[0] * DEG2RAD));
+    matrix = MatrixMultiply(matrix, MatrixRotateY(angle[1] * DEG2RAD));
+    matrix = MatrixMultiply(matrix, MatrixRotateZ(angle[2] * DEG2RAD));
+    return MatrixMultiply(matrix, MatrixTranslate(position[0], position[1], position[2]));
+}
+
+// With their model, or as cylinders with a line to the direction they face if it wasn't found; then the characters placed
+// by the program, from the first call that places them
 static void DrawCharacters(Camera3D camera) {
     uint32_t count = 0;
     for (uint32_t i = 0; i < g_view.sequence.characterCount; i++) {
@@ -1370,6 +1529,15 @@ static void DrawCharacters(Camera3D camera) {
         PoseCharacter(i);
         Matrix transform = CharacterTransform(i);
         MT5Render_Model* instanced = &g_view.models[model].model;
+        g_view.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0 };
+    }
+    for (uint32_t i = 0; i < g_view.placedCount && g_options.charactersShown; i++) {
+        const AUTHView_Placed* placed = &g_view.placed[i];
+        float position[3], angle[3];
+        if (placed->model < 0 || !PlacedAt(placed, CurrentFrame(), position, angle))
+            continue;
+        Matrix transform = PlacedTransform(placed, position, angle);
+        MT5Render_Model* instanced = &g_view.models[placed->model].model;
         g_view.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0 };
     }
     MT5Render_DrawInstances(&g_view.render, g_view.instances, count, camera);
@@ -1533,8 +1701,9 @@ static void DrawTimeline(Rectangle area, Font font, float fontSize) {
         const AUTHView_ProgramItem* item = &g_view.programItems[i];
         float x = area.x + item->firstFrame / AUTH_FRAME_RATE * scale;
         float width = fmaxf((item->lastFrame - item->firstFrame) / AUTH_FRAME_RATE * scale, 2.0f);
-        float y = area.y + 3.0f * laneHeight + (item->sound ? 2.0f : laneHeight * 0.5f);
-        DrawRectangleRec((Rectangle) { x, y, width, laneHeight * 0.5f - 2.0f }, Fade(g_programColor, item->sound ? 1.0f : 0.6f));
+        bool sound = item->kind == PROGRAM_SOUND;
+        float y = area.y + 3.0f * laneHeight + (sound ? 2.0f : laneHeight * 0.5f);
+        DrawRectangleRec((Rectangle) { x, y, width, laneHeight * 0.5f - 2.0f }, Fade(g_programColor, sound ? 1.0f : 0.6f));
     }
     const AUTH_Curve* camera = &sequence->camera[AUTH_CAMERA_X];
     for (uint32_t k = 0; k + 1 < camera->count; k++) {
@@ -1718,6 +1887,22 @@ static const char* NodeValues(const SCNCutscene_Node* node) {
     return TextFormat("%s, %s, %s", values[0], values[1], values[2]);
 }
 
+// The values of a call that places a character: degrees for the angles, "-" for those not set
+static const char* PlaceValues(const SCNCutscene_Place* place) {
+    char values[3][24];
+    for (int v = 0; v < 3; v++) {
+        float value;
+        memcpy(&value, &place->values[v], sizeof(value));
+        if (!(place->known & (1 << v)))
+            snprintf(values[v], sizeof(values[v]), "-");
+        else if (place->angle)
+            snprintf(values[v], sizeof(values[v]), "%.1f", (int32_t)place->values[v] * 360.0f / 65536.0f);
+        else
+            snprintf(values[v], sizeof(values[v]), "%g", value);
+    }
+    return TextFormat("%s, %s, %s", values[0], values[1], values[2]);
+}
+
 // The frames, the calls and their values
 static void ProgramProperties(Properties* properties, uint32_t index) {
     const AUTHView_ProgramItem* item = &g_view.programItems[index];
@@ -1726,13 +1911,32 @@ static void ProgramProperties(Properties* properties, uint32_t index) {
         TextFormat("%u", item->firstFrame));
     Properties_Text(properties, "Time", FormatTime(item->firstFrame / AUTH_FRAME_RATE));
     Properties_Int(properties, "Calls", item->count);
-    if (item->sound) {
+    if (item->kind == PROGRAM_SOUND) {
         const SCNCutscene_Sound* sound = &program->sounds[item->first];
         Properties_Text(properties, "Function", TextFormat("SoundCommand (0x%03X)", SCNCUTSCENE_SOUND));
         Properties_Hex(properties, "Command", sound->command);
         Properties_Text(properties, "Sequence", TextFormat("group 0x%04X, sequence %u", sound->command & 0xFFFF, sound->command >> 16));
         Properties_Text(properties, "Audio", AUTHSounds_HasProgramSound(item->first) ? "found" : "not found");
         Properties_Hex(properties, "Address", sound->address);
+    } else if (item->kind == PROGRAM_PLACE) {
+        const SCNCutscene_Place* first = &program->places[item->first];
+        const SCNCutscene_Place* last = &program->places[item->last];
+        Properties_Text(properties, "Function", first->angle ? TextFormat("SetAngle (0x%03X)", SCNCUTSCENE_SET_ANGLE) :
+            TextFormat("SetPosition (0x%03X)", SCNCUTSCENE_SET_POSITION));
+        Properties_Text(properties, "Character", GameDB_CharacterDisplay(IDText(first->character)));
+        Properties_Text(properties, "Value", TextFormat("%s, %s", first->angle ? "angles" : "position",
+            (first->flags & SCNCUTSCENE_PLACE_ADD) ? "added" : "set"));
+        Properties_Hex(properties, "Flags", first->flags);
+        Properties_Text(properties, "First", PlaceValues(first));
+        if (item->count > 1)
+            Properties_Text(properties, "Last", PlaceValues(last));
+        const char* model = "declared by the cutscene";
+        for (uint32_t i = 0; i < g_view.placedCount; i++) {
+            if (g_view.placed[i].idValue == first->character)
+                model = g_view.placed[i].model >= 0 ? GetFileName(g_view.models[g_view.placed[i].model].path) : "not found";
+        }
+        Properties_Text(properties, "Model", model);
+        Properties_Hex(properties, "Address", first->address);
     } else {
         const SCNCutscene_Node* first = &program->nodes[item->first];
         const SCNCutscene_Node* last = &program->nodes[item->last];

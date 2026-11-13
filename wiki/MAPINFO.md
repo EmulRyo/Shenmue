@@ -159,7 +159,7 @@ The functions with a known meaning (*probably*: inferred from the values passed 
 | `0x018` | SetPosition    | 4,689  | 3 | Sets the position of the character of ID argument 0 (the word 0x08 of the character, as `Position` of the [CHRT](CHRT) scripts) from the vector of 3 floats pointed by argument 2. Argument 1 has flags: `0x20000000`, `0x10000000` and `0x08000000` select X, Y and Z (`0x38000000`: the three), `0x80000000` adds the vector to the position, and `0x40000000` uses another space |
 | `0x019` | GetPosition    | 6,892  | 4 | Copies to the vector pointed by argument 2 the position of the character of ID argument 0 (argument 1: -1) or of its node of argument 1. Argument 3 has flags, `0x40000000` as for SetPosition |
 | `0x01C` | GetAngle       | 2,878  | 3 | Copies to the vector pointed by argument 1 the angles of the character of ID argument 0 (the words 0x14 to 0x1C, as `Angle` of the CHRT scripts), each one masked with `0xFFFF` |
-| `0x01D` | SetAngle       | 3,519  | 4 | Sets the angles of the character of ID argument 0 from the vector pointed by argument 2, with the flags of SetPosition in argument 1 (`0x38000000`: the three angles, `0x10000000`: only Y, the direction it faces) |
+| `0x01D` | SetAngle       | 3,519  | 4 | Sets the angles of the character of ID argument 0 from the vector pointed by argument 2, with the flags of SetPosition in argument 1 (`0x38000000`: the three angles, `0x10000000`: only Y, the direction it faces). The angles are integers, `0x10000` = 360° (e.g. `0x2D92`, 64.08°, for the `Angle` 64.0833 of a CHRT script) |
 | `0x01E` | TurnTowards    | 58     | 4 | Computes the direction from the position of the character of ID argument 0 to the point pointed by argument 2, and sets it as SetAngle does, with the flags of argument 1 |
 | `0x01F` | CharacterDisplay | 8,123 | 2 | The display flag of the character of ID argument 0, the one that the flag `DISP` of the CHRT scripts sets: argument 1 equal to 1 sets it, 2 clears it, 0 returns it |
 | `0x028` | PlayMotion     | 4,627  | 7 | Plays a motion on the character of ID argument 0 through its motion module (ID `MOTM`): argument 1 is the motion ID (e.g. 724), arguments 2 to 4 floats (usually -1), argument 5 the speed (usually 1.0) |
@@ -244,6 +244,7 @@ Running the [bytecode](SCN#bytecode) of the 136 SCN files with the date known (G
 The function of a program that plays a cutscene of the table goes on while the cutscene plays: after `0x050` with the slot, it loops once per frame, calling `0x050` with -1 (1 while the cutscene plays, 0 at its end) and waiting a frame (the service 0 of `ctx[0x2C]` with 1), and counts the frames. The count is the frame of the cutscene (0 at the call that plays it, 30 per second, the frames of the commands of [AUTH](AUTH#aseq--commands)). At given frames, it does what the AUTH file doesn't:
 
 - it moves nodes of the models of the characters of the cutscene with `0x0C9` (NodeTransform), before the cutscene starts (the pose at its first frame) and during it;
+- it places characters with `0x018` (SetPosition) and `0x01D` (SetAngle), also characters that the AUTH file doesn't declare: objects of the [CHRT](CHRT) scripts of the map or of the package of the cutscene, which then appear, move or go away (to a position out of sight) at those frames;
 - it plays effect sequences of the bank of the cutscene with `0x06C` (SoundCommand), with the sound IDs of the sound commands of AUTH;
 - it starts threads with `0x002` (StartThread) that do the same every frame, until the cutscene ends or the function ends them with `0x003` (KillThread).
 
@@ -272,7 +273,18 @@ In `scene/01/d000` (Dobuita), the cutscenes 16 (`seqdata1.bin` or `seqdata4.bin`
 
 The same function of `scene/03/ma00` (cutscene 0) and `scene/03/msbs` (cutscene 1) moves the same nodes of `BUS_`.
 
-Running the [bytecode](SCN#bytecode) of the 136 SCN files frame after frame from the function that plays each slot (the slots played or loaded with known values: 290; the call that plays them is found in 251), with `0x050` (-1) returning 1 during 600 frames, the threads it starts and the waits of `ctx[0x2C]` (the service 0 waits the number of frames of its argument): 18 cutscenes move nodes (12,663 calls), and 51 play sound commands (134). Besides the bus: the nodes 8, 13 and 18 of `CAR_` in the cutscenes 0 and 1 of `scene/02/d000` (every frame), 8, 18 and 23 of `FORK` in the cutscene 0 of `scene/03/m3fb`, 7 and 12 of `DOOR` in the cutscenes 0 to 3 of `scene/02/gmct`, and one or two calls in `scene/01/toki` (`TEGS`), `scene/03/mend` (`SHIP`) and `scene/03/mfsy` (`KMEM`).
+In the cutscene 2 of `scene/01/d000` (`seqdata0.bin` of `AUTH`, Ryo looks for a number in the phone book of the tobacco shop), the AUTH file declares only `AKIR`; a thread started by the function places two phone books, with the flags `0x78000000`:
+
+| Character | Model | Script | Frame | Calls |
+|-----------|-------|--------|------:|-------|
+| `TBK1` | `DENS501G` (closed book) | `CHARA.chrt` of `omg.pkf`, at (38.1611, 1.002, 10.1892), angle Y 64.0833 | 0 | Position (38.1611, 0.972, 10.1892), angles (0, `0x2D92`, 0): the place of its script, 3 cm lower |
+| `TBK2` | `DENS502G` (open book) | `CHARA.chrt` of `auth.pkf`, at (6.3, -10, -3.645) | 0 | Position (0, -10, 100), out of sight |
+| `TBK1` | | | 120 | Position (0, -10, 100) |
+| `TBK2` | | | 120 | Position (38.2248, 0.9712, 10.056), angles (0, `0xACBC` (242.9°), 0): the open book on the counter, under the hand of Ryo |
+
+After the cutscene, the function places `TBK2` once more, with a vector of its data.
+
+Running the [bytecode](SCN#bytecode) of the 136 SCN files frame after frame from the function that plays each slot (the slots played or loaded with known values: 290; the call that plays them is found in 251), with `0x050` (-1) returning 1 during 600 frames, the threads it starts and the waits of `ctx[0x2C]` (the service 0 waits the number of frames of its argument): 18 cutscenes move nodes (12,663 calls), 15 place characters (683 calls of SetPosition and SetAngle with known values), and 51 play sound commands (134). The vectors that the programs read with `0x019` (GetPosition) and `0x01C` (GetAngle) aren't known without the game: e.g. the cutscene 51 of the `jomo` programs copies every frame the position and the angles of a character to nine others (`HBL1`…`HBL9` or `RBL1`…`RBL9`), each one the values of a frame before the previous one. Besides the bus: the nodes 8, 13 and 18 of `CAR_` in the cutscenes 0 and 1 of `scene/02/d000` (every frame), 8, 18 and 23 of `FORK` in the cutscene 0 of `scene/03/m3fb`, 7 and 12 of `DOOR` in the cutscenes 0 to 3 of `scene/02/gmct`, and one or two calls in `scene/01/toki` (`TEGS`), `scene/03/mend` (`SHIP`) and `scene/03/mfsy` (`KMEM`). The characters placed: the phone books of `scene/01/d000`, `AKIR` at the frame 216 of the cutscene 17 of the `d000` maps, the forklifts, boxes and other objects of the cutscene 0 of `scene/03/ma00` (`FORK`, `FOR2`, `BOX1`…`BOXG`, 28 characters), `HIK_` every frame in the cutscene 4 of `scene/01/op00`, and one or two characters in `scene/01/tatq` (`ITEM`), `scene/02/gmct` (`SLOT`), `scene/02/mfsy` (`AKIR`), `scene/02/ms08` (`SHIN`, `SARC`), `scene/03/mend` (`STR_`, `SHIP`) and `scene/03/mfsy` (`BTLD`).
 
 ### Strings of the code
 
