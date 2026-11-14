@@ -8,6 +8,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/archive/ipac.h"
 #include "formats/texture/pvr.h"
 #include "formats/model/mt5.h"
@@ -171,7 +172,7 @@ static bool LoadTextures(const MT5_Model* source, const char* filepath, const IP
     if (external && packedFiles == NULL)
         UnloadDirectoryFiles(files);
     if (model->loadedTextures < model->textureCount)
-        fprintf(stderr, "[MT5Render_LoadModel]: Loaded %u of %u textures of %s\n", model->loadedTextures, model->textureCount, GetFileName(filepath));
+        Log_Warning("[MT5Render_LoadModel]: Loaded %u of %u textures of %s\n", model->loadedTextures, model->textureCount, GetFileName(filepath));
     return true;
 }
 
@@ -180,7 +181,7 @@ static bool Build(MT5_Model* source, const char* filepath, const IPAC_FileList* 
     bool success = MT5Mesh_Build(source, &model->mesh) && LoadTextures(source, filepath, packedFiles, model);
     MT5_Free(source);
     if (!success) {
-        fputs("[MT5Render_LoadModel]: Memory error\n", stderr);
+        Log_Error("[MT5Render_LoadModel]: Memory error\n");
         MT5Render_FreeModel(model);
         return false;
     }

@@ -6,6 +6,7 @@
 #include <math.h>
 #include <raylib.h>
 #include "raygui.h"
+#include "core/log.h"
 #include "formats/font/fon.h"
 #include "ui/toolbar.h"
 #include "views/fonView.h"
@@ -97,7 +98,7 @@ bool FONView_Open(const char* filepath) {
     g_view.shown = malloc(sizeof(uint32_t) * font.count);
     g_view.atlas = LoadAtlas(&font);
     if (g_view.shown == NULL || g_view.atlas.id == 0) {
-        fputs("[FONView_Open]: Failed to create the texture of the glyphs\n", stderr);
+        Log_Error("[FONView_Open]: Failed to create the texture of the glyphs\n");
         FONView_Close();
         return false;
     }
@@ -107,7 +108,7 @@ bool FONView_Open(const char* filepath) {
     snprintf(g_view.path, sizeof(g_view.path), "%s", filepath);
     g_view.hovered = -1;
     g_view.open = true;
-    printf("%s: %u glyphs of %ux%u (%u with ink), %s\n", GetFileName(filepath), font.count, font.width, font.height, g_view.nonEmpty,
+    Log_Info("%s: %u glyphs of %ux%u (%u with ink), %s\n", GetFileName(filepath), font.count, font.width, font.height, g_view.nonEmpty,
         font.encoding == FON_ENCODING_BYTE ? "single-byte codes" : "JIS X 0208");
     return true;
 }

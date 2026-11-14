@@ -4,6 +4,7 @@
 #include <string.h>
 #include "core/dir.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/archive/ipac.h"
 #include "formats/archive/pkf.h"
 #include "formats/archive/pks.h"
@@ -18,7 +19,7 @@ typedef struct {
 } PKS_Header;
 
 void PKS_ExtractAllFiles(const char* filepath, const char* outputPath) {
-    printf("[PKS_ExtractAllFiles]: Extracting file: %s\n", filepath);
+    Log_Info("[PKS_ExtractAllFiles]: Extracting file: %s\n", filepath);
     size_t size = 0;
     uint8_t* buffer = File_LoadToMemoryDecompressed(filepath, &size);
     if (buffer == NULL)
@@ -26,7 +27,7 @@ void PKS_ExtractAllFiles(const char* filepath, const char* outputPath) {
 
     // Some files have the wrong extension
     if (size >= 4 && memcmp(buffer, "PAKF", 4) == 0) {
-        printf("[PKS_ExtractAllFiles]: The file is a PKF file\n");
+        Log_Info("[PKS_ExtractAllFiles]: The file is a PKF file\n");
         free(buffer);
         PKF_ExtractAllFiles(filepath, outputPath);
         return;
@@ -34,23 +35,23 @@ void PKS_ExtractAllFiles(const char* filepath, const char* outputPath) {
 
     const PKS_Header* header = (const PKS_Header*)buffer;
     if (size < sizeof(PKS_Header) || memcmp(header->id, "PAKS", 4) != 0 || header->ipacOffset > size) {
-        fprintf(stderr, "[PKS_ExtractAllFiles]: Invalid PKS file %s\n", filepath);
+        Log_Error("[PKS_ExtractAllFiles]: Invalid PKS file %s\n", filepath);
         free(buffer);
         return;
     }
-    printf("PKS Header:\n");
-    printf("  ID: %.4s\n", header->id);
-    printf("  IPAC Offset: 0x%04X\n", header->ipacOffset);
-    printf("  Unknown1: 0x%08X\n", header->unknown1);
-    printf("  Unknown2: 0x%08X\n", header->unknown2);
+    Log_Debug("PKS Header:\n");
+    Log_Debug("  ID: %.4s\n", header->id);
+    Log_Debug("  IPAC Offset: 0x%04X\n", header->ipacOffset);
+    Log_Debug("  Unknown1: 0x%08X\n", header->unknown1);
+    Log_Debug("  Unknown2: 0x%08X\n", header->unknown2);
 
     char outputFolder[PKS_PATH_SIZE];
     File_GetOutputFolder(filepath, outputPath, outputFolder, sizeof(outputFolder));
     MakeDirs(outputFolder);
-    printf("  Output folder: %s\n", outputFolder);
+    Log_Debug("  Output folder: %s\n", outputFolder);
 
     uint32_t extracted = IPAC_ExtractAllFiles(buffer + header->ipacOffset, size - header->ipacOffset, outputFolder);
-    printf("[PKS_ExtractAllFiles]: Extracted %u files to %s\n", extracted, outputFolder);
+    Log_Info("[PKS_ExtractAllFiles]: Extracted %u files to %s\n", extracted, outputFolder);
 
     free(buffer);
 }
@@ -62,7 +63,7 @@ bool PKS_LoadFilesFromMemory(const uint8_t* buffer, size_t size, const char* nam
 
     const PKS_Header* header = (const PKS_Header*)buffer;
     if (size < sizeof(PKS_Header) || memcmp(header->id, "PAKS", 4) != 0 || header->ipacOffset > size) {
-        fprintf(stderr, "[PKS_LoadFiles]: Invalid PKS file %s\n", name);
+        Log_Error("[PKS_LoadFiles]: Invalid PKS file %s\n", name);
         return false;
     }
     IPAC_LoadFiles(buffer + header->ipacOffset, size - header->ipacOffset, list);

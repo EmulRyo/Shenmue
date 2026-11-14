@@ -11,6 +11,7 @@
 #include <nfd.h>
 #include "raygui.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "core/path.h"
 #include "core/text.h"
 #include "formats/animation/motn.h"
@@ -179,17 +180,17 @@ static void LoadModelDialog(void) {
         snprintf(lastFolder, sizeof(lastFolder), "%s", GetDirectoryPath(outPath));
         int index = AddModel(outPath);
         if (index < 0)
-            fputs("[MOTNView_LoadModel]: Memory error\n", stderr);
+            Log_Error("[MOTNView_LoadModel]: Memory error\n");
         else {
             if (index != g_view.model)
                 OpenModel(index);
             if (!g_view.modelLoaded)
-                printf("Failed to load the model %s\n", outPath);
+                Log_Error("Failed to load the model %s\n", outPath);
         }
         NFD_FreePathU8(outPath);
     }
     else if (result == NFD_ERROR)
-        printf("Error: %s\n", NFD_GetError());
+        Log_Error("Error: %s\n", NFD_GetError());
 }
 
 static bool IsRyo(int model) {
@@ -302,7 +303,7 @@ bool MOTNView_Open(const char* filepath) {
     snprintf(g_view.path, sizeof(g_view.path), "%s", filepath);
     g_view.labels = malloc((bank.count + 1) * sizeof(*g_view.labels));
     if (g_view.labels == NULL || !FindModels()) {
-        fputs("[MOTNView_Open]: Memory error\n", stderr);
+        Log_Error("[MOTNView_Open]: Memory error\n");
         MOTNView_Close();
         return false;
     }
@@ -313,7 +314,7 @@ bool MOTNView_Open(const char* filepath) {
         if (valid)
             MOTN_FreeMotion(&motion);
     }
-    printf("%s: %u motions (IDs 0x%X-0x%X), %u models to show them\n", GetFileName(filepath), bank.count, bank.firstID + 1,
+    Log_Info("%s: %u motions (IDs 0x%X-0x%X), %u models to show them\n", GetFileName(filepath), bank.count, bank.firstID + 1,
         bank.firstID + bank.count, g_view.modelCount);
     MT5Render_Init(&g_view.render);
     g_view.open = true;
@@ -650,14 +651,14 @@ void MOTNView_ExportDialog(void) {
         MT5Export_Motions exportMotions = { &g_view.bank, &g_view.bodyNodes };
         if (MT5Export_Save(&g_view.render3D, 0, g_view.body ? &exportMotions : NULL, path)) {
             snprintf(lastFolder, sizeof(lastFolder), "%s", GetDirectoryPath(path));
-            printf("Exported the model to %s\n", path);
+            Log_Info("Exported the model to %s\n", path);
         }
         else
-            printf("Failed to export the model to %s\n", path);
+            Log_Error("Failed to export the model to %s\n", path);
         NFD_FreePathU8(outPath);
     }
     else if (result == NFD_ERROR)
-        printf("Error: %s\n", NFD_GetError());
+        Log_Error("Error: %s\n", NFD_GetError());
 }
 
 void MOTNView_Status(ViewStatus* status) {

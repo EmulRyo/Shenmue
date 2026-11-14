@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include "core/dir.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "core/text.h"
 #include "formats/archive/idx.h"
 #include "formats/archive/afs.h"
@@ -32,13 +33,13 @@ static void LoadEntryNames(const char* filepath, char (*names)[IDX_NAME_SIZE], u
 
     FILE* idxFile = fopen(idxPath, "rb");
     if (idxFile == NULL) {
-        printf("  No IDX file found, the files will be named by index\n");
+        Log_Debug("  No IDX file found, the files will be named by index\n");
         return;
     }
     fclose(idxFile);
 
     if (IDX_LoadEntryNames(idxPath, names, count))
-        printf("  Filenames loaded from: %s\n", idxPath);
+        Log_Debug("  Filenames loaded from: %s\n", idxPath);
 }
 
 // Without a name, a PKS takes the index of the unnamed PKF just before it (its textures), so both share a folder
@@ -72,7 +73,7 @@ static void GetEntryFilename(char (*filenames)[AFS_FILENAME_SIZE], char (*names)
 static bool SaveEntry(FILE* afsFile, AFS_Entry* entry, const char* outputFilename) {
     uint8_t* buffer = (uint8_t*)malloc(entry->size);
     if (buffer == NULL) {
-        fputs("[AFS_SaveEntry]: Memory error", stderr);
+        Log_Error("[AFS_SaveEntry]: Memory error\n");
         return false;
     }
     fseek(afsFile, entry->offset, SEEK_SET);
@@ -80,7 +81,7 @@ static bool SaveEntry(FILE* afsFile, AFS_Entry* entry, const char* outputFilenam
 
     FILE* file = fopen(outputFilename, "wb");
     if (file == NULL) {
-        fprintf(stderr, "[AFS_SaveEntry]: Error creating file %s\n", outputFilename);
+        Log_Error("[AFS_SaveEntry]: Error creating file %s\n", outputFilename);
         free(buffer);
         return false;
     }
@@ -99,10 +100,10 @@ static const char* GetEntryExtension(FILE* afsFile, AFS_Entry* entry) {
 }
 
 void AFS_ExtractAllFiles(const char* filepath, const char* outputPath) {
-    printf("[AFS_ExtractAllFiles]: Extracting file: %s\n", filepath);
+    Log_Info("[AFS_ExtractAllFiles]: Extracting file: %s\n", filepath);
     FILE* afsFile = fopen(filepath, "rb");
     if (afsFile == NULL) {
-        fprintf(stderr, "[AFS_ExtractAllFiles]: Error opening file %s\n", filepath);
+        Log_Error("[AFS_ExtractAllFiles]: Error opening file %s\n", filepath);
         return;
     }
     fseek(afsFile, 0, SEEK_END);
@@ -111,19 +112,19 @@ void AFS_ExtractAllFiles(const char* filepath, const char* outputPath) {
 
     AFS_Header header;
     if (fread(&header, sizeof(AFS_Header), 1, afsFile) != 1 || memcmp(header.id, "AFS\0", 4) != 0) {
-        fprintf(stderr, "[AFS_ExtractAllFiles]: Invalid AFS file %s\n", filepath);
+        Log_Error("[AFS_ExtractAllFiles]: Invalid AFS file %s\n", filepath);
         fclose(afsFile);
         return;
     }
-    printf("AFS Header:\n");
-    printf("  ID: %.4s\n", header.id);
-    printf("  File Count: %u\n", header.count);
+    Log_Debug("AFS Header:\n");
+    Log_Debug("  ID: %.4s\n", header.id);
+    Log_Debug("  File Count: %u\n", header.count);
 
     AFS_Entry* entries = (AFS_Entry*)malloc(sizeof(AFS_Entry) * header.count);
     char (*names)[IDX_NAME_SIZE] = calloc(header.count, IDX_NAME_SIZE);
     char (*filenames)[AFS_FILENAME_SIZE] = calloc(header.count, AFS_FILENAME_SIZE);
     if (entries == NULL || names == NULL || filenames == NULL) {
-        fputs("[AFS_ExtractAllFiles]: Memory error", stderr);
+        Log_Error("[AFS_ExtractAllFiles]: Memory error\n");
         free(entries);
         free(names);
         free(filenames);
@@ -137,30 +138,30 @@ void AFS_ExtractAllFiles(const char* filepath, const char* outputPath) {
     char outputFolder[AFS_PATH_SIZE];
     File_GetOutputFolder(filepath, outputPath, outputFolder, sizeof(outputFolder));
     MakeDirs(outputFolder);
-    printf("  Output folder: %s\n", outputFolder);
+    Log_Debug("  Output folder: %s\n", outputFolder);
 
     uint32_t extracted = 0;
     for (uint32_t i = 0; i < header.count; i++) {
         AFS_Entry* entry = &entries[i];
-        printf("  Entry %u: offset = 0x%04X, size = 0x%04X", i, entry->offset, entry->size);
+        Log_Debug("  Entry %u: offset = 0x%04X, size = 0x%04X", i, entry->offset, entry->size);
         if (entry->size == 0) {
-            printf(" (empty)\n");
+            Log_Debug(" (empty)\n");
             continue;
         }
         if ((uint64_t)entry->offset + entry->size > (uint64_t)fileSize) {
-            printf(" (out of bounds)\n");
+            Log_Debug(" (out of bounds)\n");
             continue;
         }
 
         GetEntryFilename(filenames, names, i, GetEntryExtension(afsFile, entry));
-        printf(" -> %s\n", filenames[i]);
+        Log_Debug(" -> %s\n", filenames[i]);
 
         char outputFilename[AFS_PATH_SIZE];
         snprintf(outputFilename, sizeof(outputFilename), "%s/%s", outputFolder, filenames[i]);
         if (SaveEntry(afsFile, entry, outputFilename))
             extracted++;
     }
-    printf("[AFS_ExtractAllFiles]: Extracted %u/%u files to %s\n", extracted, header.count, outputFolder);
+    Log_Info("[AFS_ExtractAllFiles]: Extracted %u/%u files to %s\n", extracted, header.count, outputFolder);
 
     free(entries);
     free(names);

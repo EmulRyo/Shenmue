@@ -4,6 +4,7 @@
 #include <string.h>
 #include "core/bytes.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/animation/motn.h"
 
 // Header: table offset (always 0x20), names offset, data offset, last ID, size, first ID, last ID again, 0.
@@ -77,7 +78,7 @@ static bool ReadTable(MOTN_Bank* bank) {
 // Reads the table of the data of the bank, which it owns. Frees it if it is not a valid MOTN file
 static bool ReadBank(MOTN_Bank* bank, const char* name) {
     if (!ReadTable(bank)) {
-        fprintf(stderr, "[MOTN_Load]: Invalid MOTN file %s\n", name);
+        Log_Error("[MOTN_Load]: Invalid MOTN file %s\n", name);
         MOTN_Free(bank);
         return false;
     }
@@ -332,7 +333,7 @@ bool MOTN_ReadMotion(const MOTN_Bank* bank, uint32_t index, MOTN_Motion* motion)
             ReadKeyframes(data, size, (word & MOTN_WIDE) != 0, motion);
     }
     if (!read) {
-        fprintf(stderr, "[MOTN_ReadMotion]: Invalid motion %u (%s)\n", index, bank->names[index]);
+        Log_Error("[MOTN_ReadMotion]: Invalid motion %u (%s)\n", index, bank->names[index]);
         MOTN_FreeMotion(motion);
         return false;
     }

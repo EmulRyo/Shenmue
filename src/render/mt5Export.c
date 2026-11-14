@@ -9,6 +9,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include <cJSON.h>
+#include "core/log.h"
 #include "formats/model/mt5.h"
 #include "formats/animation/motn.h"
 #include "render/mt5Mesh.h"
@@ -248,7 +249,7 @@ static bool BuildExport(const MT5Render_Model* model, uint32_t frame, MT5Export_
         if (texture < model->textureCount && model->textures[texture].id > 0 && exported->images[texture].data == NULL) {
             exported->images[texture] = TextureImage(model->textures[texture]);
             if (exported->images[texture].data == NULL)
-                fprintf(stderr, "[MT5Export_Save]: The texture %u can't be read\n", texture);
+                Log_Error("[MT5Export_Save]: The texture %u can't be read\n", texture);
         }
     }
     free(normalMatrix);
@@ -535,7 +536,7 @@ static bool AddAnimations(cJSON* root, cJSON* accessors, cJSON* views, MT5Export
         cJSON_AddItemToObject(root, "animations", animations);
     else
         cJSON_Delete(animations);
-    printf("[MT5Export_Save]: %u of %u motions exported as animations\n", exported, motions->bank->count);
+    Log_Info("[MT5Export_Save]: %u of %u motions exported as animations\n", exported, motions->bank->count);
     return success;
 }
 
@@ -796,7 +797,7 @@ static bool SaveGLB(const MT5Render_Model* model, const MT5Export_Model* exporte
     cJSON_Delete(root);
     if (json == NULL) {
         free(buffer.data);
-        fputs("[MT5Export_Save]: Memory error\n", stderr);
+        Log_Error("[MT5Export_Save]: Memory error\n");
         return false;
     }
 
@@ -807,7 +808,7 @@ static bool SaveGLB(const MT5Render_Model* model, const MT5Export_Model* exporte
     size_t total = 12 + 8 + jsonPadded + 8 + binPadded;
     FILE* file = fopen(filepath, "wb");
     if (file == NULL) {
-        fprintf(stderr, "[MT5Export_Save]: Error creating %s\n", filepath);
+        Log_Error("[MT5Export_Save]: Error creating %s\n", filepath);
         cJSON_free(json);
         free(buffer.data);
         return false;
@@ -830,7 +831,7 @@ static bool SaveGLB(const MT5Render_Model* model, const MT5Export_Model* exporte
     cJSON_free(json);
     free(buffer.data);
     if (!success)
-        fprintf(stderr, "[MT5Export_Save]: Error writing %s\n", filepath);
+        Log_Error("[MT5Export_Save]: Error writing %s\n", filepath);
     return success;
 }
 
@@ -857,14 +858,14 @@ static bool SaveMaterials(const MT5Render_Model* model, const MT5Export_Model* e
         char texturePath[1400];
         snprintf(texturePath, sizeof(texturePath), "%s/%s_%u.png", folder, name, i);
         if (exported->images[i].data != NULL && !ExportImage(exported->images[i], texturePath)) {
-            fprintf(stderr, "[MT5Export_Save]: Error saving the texture %u\n", i);
+            Log_Error("[MT5Export_Save]: Error saving the texture %u\n", i);
             success = false;
         }
     }
 
     FILE* file = fopen(mtlPath, "w");
     if (file == NULL) {
-        fprintf(stderr, "[MT5Export_Save]: Error creating %s\n", mtlPath);
+        Log_Error("[MT5Export_Save]: Error creating %s\n", mtlPath);
         return false;
     }
     for (uint32_t i = 0; i < exported->count; i++) {
@@ -892,7 +893,7 @@ static bool SaveOBJ(const MT5Render_Model* model, const MT5Export_Model* exporte
 
     FILE* file = fopen(filepath, "w");
     if (file == NULL) {
-        fprintf(stderr, "[MT5Export_Save]: Error creating %s\n", filepath);
+        Log_Error("[MT5Export_Save]: Error creating %s\n", filepath);
         return false;
     }
     fprintf(file, "mtllib %s\n", GetFileName(mtlPath));
@@ -927,7 +928,7 @@ static bool SaveOBJ(const MT5Render_Model* model, const MT5Export_Model* exporte
     success = ferror(file) == 0 && success;
     success = fclose(file) == 0 && success;
     if (!success)
-        fprintf(stderr, "[MT5Export_Save]: Error writing %s\n", filepath);
+        Log_Error("[MT5Export_Save]: Error writing %s\n", filepath);
     return success;
 }
 
@@ -935,17 +936,17 @@ bool MT5Export_Save(const MT5Render_Model* model, uint32_t frame, const MT5Expor
     bool glb = IsFileExtension(filepath, ".glb");
     bool obj = IsFileExtension(filepath, ".obj");
     if (!glb && !obj) {
-        fprintf(stderr, "[MT5Export_Save]: Unknown format of %s, it has to be glb or obj\n", filepath);
+        Log_Error("[MT5Export_Save]: Unknown format of %s, it has to be glb or obj\n", filepath);
         return false;
     }
     MT5Export_Model exported;
     if (!BuildExport(model, frame, &exported)) {
-        fputs("[MT5Export_Save]: Memory error\n", stderr);
+        Log_Error("[MT5Export_Save]: Memory error\n");
         FreeExport(&exported, model->textureCount);
         return false;
     }
     if (exported.count == 0) {
-        fputs("[MT5Export_Save]: The model has no triangles to export\n", stderr);
+        Log_Error("[MT5Export_Save]: The model has no triangles to export\n");
         FreeExport(&exported, model->textureCount);
         return false;
     }

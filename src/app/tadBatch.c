@@ -8,6 +8,7 @@
 #include "core/dir.h"
 #include "core/file.h"
 #include "core/hashTable.h"
+#include "core/log.h"
 #include "core/stringBuilder.h"
 #include "core/thread.h"
 #include "formats/archive/tac.h"
@@ -75,7 +76,7 @@ static void Worker(void* arg) {
                 fclose(tacFile);
             tacFile = fopen(tad->tacPath, "rb");
             if (tacFile == NULL)
-                fprintf(stderr, "Error: can't open %s\n", tad->tacPath);
+                Log_Error("Error: can't open %s\n", tad->tacPath);
             tacID = job->tad;
         }
         TADFileEntry* first = TAD_GetEntry(tad->buffer, g_entries[job->first].entry);
@@ -93,7 +94,7 @@ static void Worker(void* arg) {
                 }
             }
             else
-                fprintf(stderr, "Error: can't read entry %u of %s\n", g_entries[job->first].entry, tad->tacPath);
+                Log_Error("Error: can't read entry %u of %s\n", g_entries[job->first].entry, tad->tacPath);
         }
         Atomic_FetchAdd(&g_done, (long)job->count);
     }
@@ -145,7 +146,7 @@ static size_t LoadTAD(BatchTAD* tad, const char* path, StringBuilder sb) {
         return 0;
     size_t entryCount = (size_t)TAD_GetFileCount(tad->buffer);
     if (0x3C + entryCount * 0x20 > size) {
-        fprintf(stderr, "Error: %s is too small for its %zu entries\n", path, entryCount);
+        Log_Error("Error: %s is too small for its %zu entries\n", path, entryCount);
         return 0;
     }
     size_t tacOffset = TAD_GetTACFilename(path, sb);
@@ -207,7 +208,7 @@ void TADBatch_Start(const char* const* files, unsigned int count, const char* ou
     }
     free(entryCounts);
 
-    printf("Extracting %zu files (%zu different) from %u TAD files to %s\n", g_entryCount, g_jobCount, count, g_outputPath);
+    Log_Info("Extracting %zu files (%zu different) from %u TAD files to %s\n", g_entryCount, g_jobCount, count, g_outputPath);
     Atomic_Store(&g_nextJob, 0);
     Atomic_Store(&g_done, 0);
     Atomic_Store(&g_cancel, 0);
@@ -244,7 +245,7 @@ void TADBatch_Dialog(HashTable filenameDB) {
             NFD_FreePathU8(outputPath);
         }
         else if (result == NFD_ERROR) {
-            printf("Error: %s\n", NFD_GetError());
+            Log_Error("Error: %s\n", NFD_GetError());
         }
         for (unsigned int i = 0; i < valid; i++)
             NFD_PathSet_FreePathU8(paths[i]);
@@ -252,7 +253,7 @@ void TADBatch_Dialog(HashTable filenameDB) {
         NFD_PathSet_Free(pathSet);
     }
     else if (result == NFD_ERROR) {
-        printf("Error: %s\n", NFD_GetError());
+        Log_Error("Error: %s\n", NFD_GetError());
     }
 }
 
@@ -264,7 +265,7 @@ void TADBatch_Update(void) {
     g_finished = true;
     g_extracted = g_entryCount;
     g_seconds = GetTime() - g_startTime;
-    printf("Extracted %zu files from %u TAD files in %.1f s to %s\n", g_extracted, g_tadCount, g_seconds, g_outputPath);
+    Log_Info("Extracted %zu files from %u TAD files in %.1f s to %s\n", g_extracted, g_tadCount, g_seconds, g_outputPath);
     FreeTADs();
 }
 
@@ -274,7 +275,7 @@ void TADBatch_Stop(void) {
     Atomic_Store(&g_cancel, 1);
     JoinWorkers();
     g_running = false;
-    printf("TAD extraction cancelled after %ld files\n", Atomic_Load(&g_done));
+    Log_Info("TAD extraction cancelled after %ld files\n", Atomic_Load(&g_done));
     FreeTADs();
 }
 
@@ -302,7 +303,7 @@ TADBatch_Progress TADBatch_GetProgress(void) {
 
 void TADBatch_OpenOutput(void) {
     if (g_outputPath != NULL && OpenDir(g_outputPath) != 0)
-        printf("Error: can't open %s\n", g_outputPath);
+        Log_Error("Error: can't open %s\n", g_outputPath);
 }
 
 void TADBatch_Dismiss(void) {

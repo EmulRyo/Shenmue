@@ -5,6 +5,7 @@
 #include <math.h>
 #include "core/bytes.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/animation/auth.h"
 
 // The file is a TRCK chunk with the chunks ASEQ (commands), ACAM (camera), AMOV (movement of the characters) and ASTR
@@ -166,7 +167,7 @@ static bool ReadSequence(AUTH_Sequence* sequence, const char* name) {
             (!FindChunk(sequence, "ASTR", &sounds) || ReadSounds(sequence, sounds));
     }
     if (!valid) {
-        fprintf(stderr, "[AUTH_Load]: Invalid AUTH file %s\n", name);
+        Log_Error("[AUTH_Load]: Invalid AUTH file %s\n", name);
         AUTH_Free(sequence);
         return false;
     }

@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <raylib.h>
+#include "core/log.h"
 #include "core/path.h"
 #include "formats/archive/afs.h"
 #include "formats/map/mapinfo.h"
@@ -174,7 +175,7 @@ static void LoadVoices(const AUTH_Sequence* sequence, const char* sceneFolder) {
             XWM_Info info;
             int16_t* pcm = DecodeVoice(&roots, scene, afs, clip, &info);
             if (pcm == NULL) {
-                printf("[AUTHSounds_Load]: Voice clip %s not found in %s.afs\n", clip, afs);
+                Log_Warning("[AUTHSounds_Load]: Voice clip %s not found in %s.afs\n", clip, afs);
                 continue;
             }
             sound = AddSound(clip, pcm, info.frameCount, info.sampleRate);
@@ -291,7 +292,7 @@ static bool LoadBestBank(const AUTH_Sequence* sequence, const char* sceneFolder,
             SND_Free(&candidate);
         }
     }
-    printf("[AUTHSounds_Load]: %u banks loaded by %s: %s, %d commands with a sequence (%d in the next bank)\n",
+    Log_Info("[AUTHSounds_Load]: %u banks loaded by %s: %s, %d commands with a sequence (%d in the next bank)\n",
         nameCount, source, found ? name : "none", bestScore, secondScore);
     if (found && bestScore <= secondScore) {
         SND_Free(bank);
@@ -314,7 +315,7 @@ static bool LoadProgramBank(const AUTH_Sequence* sequence, const char* sceneFold
         keyPointers[k] = keys[k];
     MAPINFO_File map;
     if (!FileExists(mapinfo) || !MAPINFO_Load(mapinfo, &map)) {
-        printf("[AUTHSounds_Load]: The bank of the sounds isn't known: no mapinfo.bin of the map\n");
+        Log_Warning("[AUTHSounds_Load]: The bank of the sounds isn't known: no mapinfo.bin of the map\n");
         return false;
     }
     const char* names[AUTHSOUNDS_ALL_BANKS];
@@ -465,7 +466,7 @@ void AUTHSounds_Load(const char* sceneFolder, const char* mapinfo, const char* n
     // The events of a sequence can come after the next commands
     if (g_sounds.cues != NULL)
         qsort(g_sounds.cues, g_sounds.cueCount, sizeof(AUTHCue), CompareCues);
-    printf("[AUTHSounds_Load]: %u/%u voices, %u/%u sound effects, %u/%u of the program in %.2f s\n", g_sounds.info.voices,
+    Log_Info("[AUTHSounds_Load]: %u/%u voices, %u/%u sound effects, %u/%u of the program in %.2f s\n", g_sounds.info.voices,
         g_sounds.info.voiceCommands, g_sounds.info.effects, g_sounds.info.effectCommands, g_sounds.info.programEffects,
         g_sounds.info.programCommands, GetTime() - start);
 }

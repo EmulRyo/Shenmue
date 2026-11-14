@@ -8,6 +8,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "raygui.h"
+#include "core/log.h"
 #include "app/gameDB.h"
 #include "core/text.h"
 #include "formats/script/chrt.h"
@@ -138,7 +139,7 @@ static void LoadCharacter(uint32_t index, const char* folder) {
     else if ((character->model = LoadCharacterModel(path)) < 0)
         character->error = "invalid model file";
     if (character->model < 0) {
-        printf("[CHRTView_Open]: No model for %s (%s, %s)\n", character->info.id, character->info.image != NULL ? character->info.image : "no image",
+        Log_Warning("[CHRTView_Open]: No model for %s (%s, %s)\n", character->info.id, character->info.image != NULL ? character->info.image : "no image",
             character->error);
         return;
     }
@@ -278,7 +279,7 @@ bool CHRTView_Open(const char* filepath) {
     g_view.models = calloc(count + 1, sizeof(CHRTView_Model));
     g_view.visible = calloc(count + 1, sizeof(MT5Render_Instance));
     if (g_view.characters == NULL || g_view.models == NULL || g_view.visible == NULL) {
-        fputs("[CHRTView_Open]: Memory error\n", stderr);
+        Log_Error("[CHRTView_Open]: Memory error\n");
         CHRTView_Close();
         return false;
     }
@@ -290,10 +291,10 @@ bool CHRTView_Open(const char* filepath) {
         if (script.commands[c].parent == -1 && CHRT_IsCommand(&script.commands[c], "Character"))
             LoadCharacter(c, folder);
     }
-    printf("[CHRTView_Open]: %u of %u characters with a model (%u without a position), %u models\n", g_view.modelledCount,
+    Log_Info("[CHRTView_Open]: %u of %u characters with a model (%u without a position), %u models\n", g_view.modelledCount,
         g_view.characterCount, g_view.unpositionedCount, g_view.modelCount);
     if (!CreateLabels()) {
-        fputs("[CHRTView_Open]: Memory error\n", stderr);
+        Log_Error("[CHRTView_Open]: Memory error\n");
         CHRTView_Close();
         return false;
     }

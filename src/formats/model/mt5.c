@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include "core/bytes.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/model/mt5.h"
 
 // An MT5 file is a header, the data of the meshes (faces, vertices and mesh header of each one), the node
@@ -210,7 +211,7 @@ static bool ReadFaces(const uint8_t* buffer, size_t size, size_t pos, MT5_Node* 
             pos += 4 + value;
             break;
         default:
-            fprintf(stderr, "[MT5_Load]: Unknown face chunk 0x%04X at 0x%04zX\n", type, pos);
+            Log_Error("[MT5_Load]: Unknown face chunk 0x%04X at 0x%04zX\n", type, pos);
             return false;
         }
     }
@@ -238,7 +239,7 @@ static bool ReadMesh(const uint8_t* buffer, size_t size, uint32_t offset, MT5_No
     }
 
     if (!ReadFaces(buffer, size, mesh.facesOffset, node)) {
-        fprintf(stderr, "[MT5_Load]: Invalid faces of the mesh at 0x%04X\n", offset);
+        Log_Error("[MT5_Load]: Invalid faces of the mesh at 0x%04X\n", offset);
         return false;
     }
     return true;
@@ -249,7 +250,7 @@ static bool ReadNodes(MT5_Model* model, uint32_t offset, int32_t parent, uint32_
     while (offset != 0) {
         // A file can't have more nodes than this, the limit also stops loops in the hierarchy
         if (model->nodeCount >= model->size / sizeof(MT5_NodeData) || !InBounds(model->size, offset, sizeof(MT5_NodeData))) {
-            fprintf(stderr, "[MT5_Load]: Invalid node at 0x%04X\n", offset);
+            Log_Error("[MT5_Load]: Invalid node at 0x%04X\n", offset);
             return false;
         }
         MT5_NodeData data;
@@ -325,7 +326,7 @@ static bool ReadTextures(MT5_Model* model, uint32_t offset) {
     }
 
     if (found != model->textureCount)
-        fprintf(stderr, "[MT5_Load]: Found %u of %u textures\n", found, model->textureCount);
+        Log_Warning("[MT5_Load]: Found %u of %u textures\n", found, model->textureCount);
     return true;
 }
 
@@ -344,7 +345,7 @@ void MT5_Free(MT5_Model* model) {
 static bool Parse(MT5_Model* model, const char* name) {
     MT5_Header header;
     if (model->size < sizeof(MT5_Header) || memcmp(model->buffer, "HRCM", 4) != 0) {
-        fprintf(stderr, "[MT5_Load]: Invalid MT5 file %s\n", name);
+        Log_Error("[MT5_Load]: Invalid MT5 file %s\n", name);
         MT5_Free(model);
         return false;
     }
@@ -352,7 +353,7 @@ static bool Parse(MT5_Model* model, const char* name) {
 
     uint32_t capacity = 0;
     if (!ReadNodes(model, header.firstNodeOffset, -1, &capacity) || !ReadTextures(model, header.texturesOffset)) {
-        fprintf(stderr, "[MT5_Load]: Invalid MT5 file %s\n", name);
+        Log_Error("[MT5_Load]: Invalid MT5 file %s\n", name);
         MT5_Free(model);
         return false;
     }

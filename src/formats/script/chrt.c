@@ -6,6 +6,7 @@
 #include <math.h>
 #include <raylib.h>
 #include "core/file.h"
+#include "core/log.h"
 #include "core/text.h"
 #include "formats/script/chrt.h"
 
@@ -186,7 +187,7 @@ static bool ReadCommand(const CHRT_Script* script, size_t end, size_t* pos, CHRT
 static bool Parse(CHRT_Script* script, const char* filepath) {
     const CHRT_Header* header = (const CHRT_Header*)script->buffer;
     if (script->size < sizeof(CHRT_Header) || memcmp(header->id, "CHRS", 4) != 0 || header->size > script->size) {
-        fprintf(stderr, "[CHRT_Load]: Invalid CHRT file %s\n", filepath);
+        Log_Error("[CHRT_Load]: Invalid CHRT file %s\n", filepath);
         CHRT_Free(script);
         return false;
     }
@@ -194,7 +195,7 @@ static bool Parse(CHRT_Script* script, const char* filepath) {
     // Each command takes 8 bytes at least
     script->commands = malloc((header->size / 8 + 1) * sizeof(CHRT_Command));
     if (script->commands == NULL) {
-        fputs("[CHRT_Load]: Memory error\n", stderr);
+        Log_Error("[CHRT_Load]: Memory error\n");
         CHRT_Free(script);
         return false;
     }
@@ -209,7 +210,7 @@ static bool Parse(CHRT_Script* script, const char* filepath) {
 
         CHRT_Command* command = &script->commands[script->commandCount];
         if (!ReadCommand(script, header->size, &pos, command)) {
-            fprintf(stderr, "[CHRT_Load]: Invalid command at 0x%04zX in %s\n", pos, filepath);
+            Log_Error("[CHRT_Load]: Invalid command at 0x%04zX in %s\n", pos, filepath);
             CHRT_Free(script);
             return false;
         }
@@ -224,7 +225,7 @@ static bool Parse(CHRT_Script* script, const char* filepath) {
     }
 
     if (pos != header->size) {
-        fprintf(stderr, "[CHRT_Load]: Invalid command data at 0x%04zX in %s\n", pos, filepath);
+        Log_Error("[CHRT_Load]: Invalid command data at 0x%04zX in %s\n", pos, filepath);
         CHRT_Free(script);
         return false;
     }

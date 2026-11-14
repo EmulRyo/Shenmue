@@ -9,6 +9,7 @@
 #include <raymath.h>
 #include <rlgl.h>
 #include "raygui.h"
+#include "core/log.h"
 #include "app/gameDB.h"
 #include "core/text.h"
 #include "formats/map/mapinfo.h"
@@ -268,7 +269,7 @@ bool MAPINFOView_Open(const char* filepath) {
     MAPINFODate_Init();
     // After the models, for the doors whose model couldn't be loaded
     if (!MAPINFOItems_FindSequences() || !MAPINFOItems_FindFlags() || g_map.originalDoors == NULL || g_map.originalLights == NULL || !MAPINFOItems_ReadCutscenes() || !MAPINFOItems_Create()) {
-        fputs("[MAPINFOView_Open]: Memory error\n", stderr);
+        Log_Error("[MAPINFOView_Open]: Memory error\n");
         MAPINFOView_Close();
         return false;
     }
@@ -278,7 +279,7 @@ bool MAPINFOView_Open(const char* filepath) {
     g_map.selected = -1;
     g_map.mapExpanded = true;
 
-    printf("[MAPINFOView_Open]: %u chunks, %u cameras, %u lights, %u shapes, %u characters (%u shown with their model), %u map models, %u of %u doors\n",
+    Log_Info("[MAPINFOView_Open]: %u chunks, %u cameras, %u lights, %u shapes, %u characters (%u shown with their model), %u map models, %u of %u doors\n",
         file.chunkCount, file.cameraCount, file.lightCount, file.shapeCount, g_map.characterCount, g_map.modelledCharacters,
         g_map.mapModelCount, g_map.loadedDoors, file.doorCount);
     g_map.open = true;
@@ -446,15 +447,15 @@ void MAPINFOView_Toolbar(void) {
         GuiDisable();
     if (Toolbar_Button(ICON_PLAYER_PLAY, "Play", "Play the selected cutscene", KEY_ENTER)) {
         if (sequence != NULL && !AUTHView_OpenMapSequence(g_map.filename, sequence))
-            printf("[MAPINFOView]: Failed to load the cutscene %s of %s\n", sequence->name, sequence->folder);
+            Log_Error("[MAPINFOView]: Failed to load the cutscene %s of %s\n", sequence->name, sequence->folder);
         else if (sequence == NULL && !AUTHView_OpenMapCutscene(g_map.filename, (uint32_t)cutscene))
-            printf("[MAPINFOView]: Failed to load the cutscene %d\n", cutscene);
+            Log_Error("[MAPINFOView]: Failed to load the cutscene %d\n", cutscene);
     }
     GuiEnable();
     // The view of the program of the map too
     if (Toolbar_Button(ICON_CPU, "Program", "Show the program of the map (SCN3 chunk)", KEY_P) &&
         !ProgramView_OpenMap(g_map.filename))
-        printf("[MAPINFOView]: Failed to load the program of the map\n");
+        Log_Error("[MAPINFOView]: Failed to load the program of the map\n");
 }
 
 static void UpdateInput(Rectangle scene) {

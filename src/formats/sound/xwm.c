@@ -14,6 +14,7 @@
 #endif
 #include "core/bytes.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/sound/xwm.h"
 
 typedef struct {
@@ -236,7 +237,7 @@ static int16_t* Decode(const XWM_Chunks* chunks, const XWM_Info* info) {
 #else
 
 static int16_t* Decode(const XWM_Chunks* chunks, const XWM_Info* info) {
-    fputs("[XWM_Decode]: WMA decoding is only available on Windows\n", stderr);
+    Log_Error("[XWM_Decode]: WMA decoding is only available on Windows\n");
     return NULL;
 }
 
@@ -246,11 +247,11 @@ int16_t* XWM_DecodeMemory(const uint8_t* data, size_t size, const char* name, XW
     XWM_Chunks chunks;
     int16_t* pcm = NULL;
     if (!ReadChunks(data, size, &chunks, info))
-        fprintf(stderr, "[XWM_Decode]: Not a valid xWMA file: %s\n", name);
+        Log_Error("[XWM_Decode]: Not a valid xWMA file: %s\n", name);
     else if (info->formatTag != 0x161)
-        fprintf(stderr, "[XWM_Decode]: Unsupported format 0x%X: %s\n", info->formatTag, name);
+        Log_Error("[XWM_Decode]: Unsupported format 0x%X: %s\n", info->formatTag, name);
     else if ((pcm = Decode(&chunks, info)) == NULL)
-        fprintf(stderr, "[XWM_Decode]: Failed to decode %s\n", name);
+        Log_Error("[XWM_Decode]: Failed to decode %s\n", name);
     return pcm;
 }
 

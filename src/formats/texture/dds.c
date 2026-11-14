@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "core/bytes.h"
+#include "core/log.h"
 #include "formats/texture/dds.h"
 
 // Flags of the header
@@ -87,7 +88,7 @@ bool DDS_ReadInfo(const uint8_t* data, size_t size, DDS_Info* info) {
     info->caps[1] = Bytes_ReadU32(data + 0x70);
     info->dataOffset = DDS_HEADER_SIZE;
     if (info->width == 0 || info->height == 0 || info->width > 16384 || info->height > 16384 || info->mipmaps > 32) {
-        fprintf(stderr, "[DDS_ReadInfo]: Invalid size %ux%u, %u mipmaps\n", info->width, info->height, info->mipmaps);
+        Log_Error("[DDS_ReadInfo]: Invalid size %ux%u, %u mipmaps\n", info->width, info->height, info->mipmaps);
         return false;
     }
 
@@ -125,7 +126,7 @@ bool DDS_ReadInfo(const uint8_t* data, size_t size, DDS_Info* info) {
             info->format = DDS_FORMAT_UNKNOWN;
     }
     if (info->format == DDS_FORMAT_UNKNOWN) {
-        fprintf(stderr, "[DDS_ReadInfo]: Unsupported pixel format: flags 0x%X, FourCC %.4s, DXGI %u\n", pfFlags,
+        Log_Error("[DDS_ReadInfo]: Unsupported pixel format: flags 0x%X, FourCC %.4s, DXGI %u\n", pfFlags,
             data + 0x54, info->dxgiFormat);
         return false;
     }
@@ -144,7 +145,7 @@ bool DDS_ReadInfo(const uint8_t* data, size_t size, DDS_Info* info) {
     }
     info->dataSize = DDS_ChainSize(info, info->width, info->height, info->mipmaps) * info->faces * arraySize;
     if (info->dataOffset + DDS_LevelSize(info, info->width, info->height) > size) {
-        fprintf(stderr, "[DDS_ReadInfo]: The data of the first level is missing\n");
+        Log_Error("[DDS_ReadInfo]: The data of the first level is missing\n");
         return false;
     }
     return true;
@@ -295,7 +296,7 @@ bool DDS_Decode(const uint8_t* data, size_t size, const DDS_Info* info, uint32_t
         if (!((info->cubeFaces >> i) & 1))
             continue;
         if (offset + levelSize > size) {
-            fprintf(stderr, "[DDS_Decode]: The data of the face %d is missing\n", i);
+            Log_Error("[DDS_Decode]: The data of the face %d is missing\n", i);
             break;
         }
         DecodeLevel(data + offset, info, w, h, face);

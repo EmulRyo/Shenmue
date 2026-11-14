@@ -5,11 +5,12 @@
 #include <raylib.h>
 #include "core/bytes.h"
 #include "core/file.h"
+#include "core/log.h"
 
 uint8_t* File_LoadToMemoryEx(const char* filepath, size_t* outSize) {
     FILE* file = fopen(filepath, "rb");
     if (file == NULL) {
-        fprintf(stderr, "[File_LoadToMemory] Error: Open file %s\n", filepath);
+        Log_Error("[File_LoadToMemory] Error: Open file %s\n", filepath);
         return NULL;
     }
 
@@ -21,7 +22,7 @@ uint8_t* File_LoadToMemoryEx(const char* filepath, size_t* outSize) {
     // allocate memory to contain the whole file:
     uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * size);
     if (buffer == NULL) {
-        fprintf(stderr, "[File_LoadToMemory] Error: Memory allocation\n");
+        Log_Error("[File_LoadToMemory] Error: Memory allocation\n");
         fclose(file);
         return NULL;
     }
@@ -94,7 +95,7 @@ uint8_t* File_GzipDecompress(const uint8_t* buffer, size_t size, size_t* outSize
     if (flags & 0x02) // FHCRC
         pos += 2;
     if (pos + 8 > size) {
-        fprintf(stderr, "[File_GzipDecompress] Error: Invalid gzip header\n");
+        Log_Error("[File_GzipDecompress] Error: Invalid gzip header\n");
         return NULL;
     }
 
@@ -105,7 +106,7 @@ uint8_t* File_GzipDecompress(const uint8_t* buffer, size_t size, size_t* outSize
     int decompressedSize = 0;
     uint8_t* data = DecompressData(buffer + pos, (int)(size - 8 - pos), &decompressedSize);
     if (data == NULL || decompressedSize <= 0 || (uint32_t)decompressedSize != expectedSize) {
-        fprintf(stderr, "[File_GzipDecompress] Error: Decompressed %d bytes, expected %u\n",decompressedSize, expectedSize);
+        Log_Error("[File_GzipDecompress] Error: Decompressed %d bytes, expected %u\n",decompressedSize, expectedSize);
         MemFree(data);
         return NULL;
     }
@@ -132,7 +133,7 @@ uint8_t* File_LoadToMemoryDecompressed(const char* filepath, size_t* outSize) {
 bool File_Save(const char* filepath, const uint8_t* buffer, size_t size) {
     FILE* file = fopen(filepath, "wb");
     if (file == NULL) {
-        fprintf(stderr, "[File_Save] Error: Creating file %s\n",filepath);
+        Log_Error("[File_Save] Error: Creating file %s\n",filepath);
         return false;
     }
     size_t written = fwrite(buffer, 1, size, file);

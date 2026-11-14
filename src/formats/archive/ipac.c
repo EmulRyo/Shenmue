@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <raylib.h>
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/archive/ipac.h"
 
 #define IPAC_PATH_SIZE 1024
@@ -68,20 +69,20 @@ typedef bool (*IPAC_FileCallback)(const char* filename, const char* type, const 
 // handled by the callback
 static uint32_t ReadFiles(const uint8_t* buffer, size_t size, bool verbose, IPAC_FileCallback callback, void* context) {
     if (size < sizeof(IPAC_Header) || memcmp(buffer, "IPAC", 4) != 0) {
-        fprintf(stderr, "[IPAC_ReadFiles]: Invalid IPAC block\n");
+        Log_Error("[IPAC_ReadFiles]: Invalid IPAC block\n");
         return 0;
     }
 
     const IPAC_Header* header = (const IPAC_Header*)buffer;
     if (verbose) {
-        printf("IPAC Header:\n");
-        printf("  Dictionary Offset: 0x%04X\n", header->dictionaryOffset);
-        printf("  File Count: %u\n", header->count);
-        printf("  Size: 0x%04X\n", header->size);
+        Log_Debug("IPAC Header:\n");
+        Log_Debug("  Dictionary Offset: 0x%04X\n", header->dictionaryOffset);
+        Log_Debug("  File Count: %u\n", header->count);
+        Log_Debug("  Size: 0x%04X\n", header->size);
     }
 
     if ((uint64_t)header->dictionaryOffset + (uint64_t)header->count * sizeof(IPAC_Entry) > size) {
-        fprintf(stderr, "[IPAC_ReadFiles]: Dictionary out of bounds\n");
+        Log_Error("[IPAC_ReadFiles]: Dictionary out of bounds\n");
         return 0;
     }
     if (header->count == 0)
@@ -89,7 +90,7 @@ static uint32_t ReadFiles(const uint8_t* buffer, size_t size, bool verbose, IPAC
 
     char (*filenames)[IPAC_FILENAME_SIZE] = calloc(header->count, IPAC_FILENAME_SIZE);
     if (filenames == NULL) {
-        fputs("[IPAC_ReadFiles]: Memory error", stderr);
+        Log_Error("[IPAC_ReadFiles]: Memory error\n");
         return 0;
     }
 
@@ -99,7 +100,7 @@ static uint32_t ReadFiles(const uint8_t* buffer, size_t size, bool verbose, IPAC
         const IPAC_Entry* entry = &entries[i];
         if ((uint64_t)entry->offset + entry->size > size) {
             if (verbose)
-                printf("  Entry %u: %.8s.%.4s, offset = 0x%04X, size = 0x%04X (out of bounds)\n", i, entry->filename, entry->extension, entry->offset, entry->size);
+                Log_Debug("  Entry %u: %.8s.%.4s, offset = 0x%04X, size = 0x%04X (out of bounds)\n", i, entry->filename, entry->extension, entry->offset, entry->size);
             continue;
         }
 
@@ -111,7 +112,7 @@ static uint32_t ReadFiles(const uint8_t* buffer, size_t size, bool verbose, IPAC
             decompressed = File_GzipDecompress(data, dataSize, &dataSize);
             if (decompressed == NULL) {
                 if (verbose)
-                    printf("  Entry %u: %.8s.%.4s, offset = 0x%04X, size = 0x%04X (decompression error)\n", i, entry->filename, entry->extension, entry->offset, entry->size);
+                    Log_Debug("  Entry %u: %.8s.%.4s, offset = 0x%04X, size = 0x%04X (decompression error)\n", i, entry->filename, entry->extension, entry->offset, entry->size);
                 continue;
             }
             data = decompressed;
@@ -119,10 +120,10 @@ static uint32_t ReadFiles(const uint8_t* buffer, size_t size, bool verbose, IPAC
 
         GetEntryFilename(filenames, i, entry, data, dataSize);
         if (verbose) {
-            printf("  Entry %u: %.8s.%.4s, offset = 0x%04X, size = 0x%04X", i, entry->filename, entry->extension, entry->offset, entry->size);
+            Log_Debug("  Entry %u: %.8s.%.4s, offset = 0x%04X, size = 0x%04X", i, entry->filename, entry->extension, entry->offset, entry->size);
             if (decompressed != NULL)
-                printf(" (gzip, 0x%04zX bytes)", dataSize);
-            printf(" -> %s\n", filenames[i]);
+                Log_Debug(" (gzip, 0x%04zX bytes)", dataSize);
+            Log_Debug(" -> %s\n", filenames[i]);
         }
         char type[IPAC_TYPE_SIZE];
         CopyTrimmed(type, entry->extension, sizeof(entry->extension), false);

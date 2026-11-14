@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <raylib.h>
+#include "core/log.h"
 #include "core/thread.h"
 #include "game/mapDate.h"
 #include "game/mapProgram.h"
@@ -42,7 +43,7 @@ static void LoadWeather(const char* content) {
         snprintf(path, sizeof(path), "%s/%s", content, g_weatherFiles[i]);
         if (FileExists(path) && WEATHER_Load(path, &g_date.weather)) {
             g_date.hasWeather = true;
-            printf("[MapDate]: weather of %s\n", path);
+            Log_Info("[MapDate]: weather of %s\n", path);
         }
     }
 }

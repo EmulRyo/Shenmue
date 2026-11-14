@@ -5,6 +5,7 @@
 #include <math.h>
 #include <raylib.h>
 #include "raygui.h"
+#include "core/log.h"
 #include "core/text.h"
 #include "formats/sound/xwm.h"
 #include "ui/toolbar.h"
@@ -69,14 +70,14 @@ bool XWMView_Open(const char* filepath) {
 
     g_player.stream = LoadAudioStream(info.sampleRate, 16, info.channels);
     if (!IsAudioStreamValid(g_player.stream)) {
-        fputs("[XWMView_Open]: Failed to create the audio stream\n", stderr);
+        Log_Error("[XWMView_Open]: Failed to create the audio stream\n");
         XWMView_Close();
         return false;
     }
     SetAudioStreamCallback(g_player.stream, StreamCallback);
     PlayAudioStream(g_player.stream);
 
-    printf("%s: %u Hz, %u channel(s), %u packets of %u bytes, %.2f s\n", GetFileName(g_player.path), info.sampleRate, info.channels,
+    Log_Info("%s: %u Hz, %u channel(s), %u packets of %u bytes, %.2f s\n", GetFileName(g_player.path), info.sampleRate, info.channels,
         info.packetCount, info.blockAlign, (float)info.frameCount / info.sampleRate);
     g_player.playing = true;
     g_player.open = true;

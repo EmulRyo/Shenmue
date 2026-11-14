@@ -9,6 +9,7 @@
 
 #include "core/dir.h"
 #include "core/hashTable.h"
+#include "core/log.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -95,7 +96,7 @@ int MakeDirs(const char *path) {
                 return -1;
             }
         } else if (!S_ISDIR(st.st_mode)) {
-            fprintf(stderr, "Error: %s exists but is not a directory\n", subpath);
+            Log_Error("Error: %s exists but is not a directory\n", subpath);
             return -2;
         }
 

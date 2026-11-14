@@ -1,6 +1,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include "core/log.h"
 #include "corpus.h"
 #include "test.h"
 
@@ -85,6 +86,8 @@ static bool RunTest(const Test* test, const TestContext* context) {
 }
 
 int main(int argc, char** argv) {
+    // The formats write only their errors and warnings: the output of the tests is theirs
+    Log_SetLevel(LOGLEVEL_WARNING);
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <content folder> [test...]\nTests:", argv[0]);
         for (size_t i = 0; i < sizeof(s_tests) / sizeof(s_tests[0]); i++)

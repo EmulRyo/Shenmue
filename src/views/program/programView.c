@@ -11,6 +11,7 @@
 #include "core/bytes.h"
 #include "app/gameDB.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "core/path.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
@@ -416,7 +417,7 @@ static void LoadPair(const char* filepath) {
         return;
     }
     g_view.paired = true;
-    printf("[ProgramView]: Paired with %s: %u of %u functions with the same calls\n", path, g_view.pair.sameFunctions,
+    Log_Info("[ProgramView]: Paired with %s: %u of %u functions with the same calls\n", path, g_view.pair.sameFunctions,
         g_view.pair.pairedFunctions);
 }
 
@@ -472,7 +473,7 @@ static bool Load(const char* filepath) {
     }
     if (!CreateLists())
         return false;
-    printf("[ProgramView]: %s, %u functions, %u calls, %u game functions, %u strings\n", g_view.sh4 ? "SH-4" : "bytecode",
+    Log_Info("[ProgramView]: %s, %u functions, %u calls, %u game functions, %u strings\n", g_view.sh4 ? "SH-4" : "bytecode",
         FunctionCount(), CallCount(), g_view.gameCount, g_view.stringCount);
     if (!CreateRelocationLabels() || !CreateDataLabels())
         return false;
@@ -485,7 +486,7 @@ bool ProgramView_Open(const char* filepath) {
     size_t size = 0;
     g_view.fileData = File_LoadToMemoryDecompressed(filepath, &size);
     if (g_view.fileData == NULL || !SCN_Read(g_view.fileData, size, &g_view.scn) || !Load(filepath)) {
-        printf("[ProgramView_Open]: Invalid scene program %s\n", filepath);
+        Log_Error("[ProgramView_Open]: Invalid scene program %s\n", filepath);
         ProgramView_Close();
         return false;
     }
@@ -500,7 +501,7 @@ bool ProgramView_OpenMap(const char* filepath) {
     }
     const MAPINFO_Chunk* chunk = MAPINFO_FindChunk(&g_view.mapinfo, "SCN3");
     if (chunk == NULL || !SCN_Read(g_view.mapinfo.data + chunk->offset, chunk->size, &g_view.scn) || !Load(filepath)) {
-        printf("[ProgramView_OpenMap]: No valid scene program in %s\n", filepath);
+        Log_Error("[ProgramView_OpenMap]: No valid scene program in %s\n", filepath);
         ProgramView_Close();
         return false;
     }
@@ -532,7 +533,7 @@ static void UpdatePseudo(void) {
     uint32_t index;
     const BC_Program* source = PseudoSource(g_view.function, &index);
     if (source != NULL && !DC_DecompileFunction(source, index, &g_view.pseudo))
-        printf("[ProgramView]: Failed to decompile the function 0x%X\n", source->functions[index]);
+        Log_Error("[ProgramView]: Failed to decompile the function 0x%X\n", source->functions[index]);
 }
 
 static bool ShowFunction(int32_t function) {
@@ -1118,12 +1119,12 @@ void ProgramView_ExportDialog(void) {
             else
                 BC_WriteListing(&g_view.bc, file);
             fclose(file);
-            printf("Exported the program to %s\n", outPath);
+            Log_Info("Exported the program to %s\n", outPath);
         }
         else
-            printf("Failed to export the program to %s\n", outPath);
+            Log_Error("Failed to export the program to %s\n", outPath);
         NFD_FreePathU8(outPath);
     }
     else if (result == NFD_ERROR)
-        printf("Error: %s\n", NFD_GetError());
+        Log_Error("Error: %s\n", NFD_GetError());
 }

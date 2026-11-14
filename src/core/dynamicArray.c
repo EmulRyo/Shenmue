@@ -5,6 +5,7 @@
 #include <string.h>
 #include <time.h>
 #include "core/dynamicArray.h"
+#include "core/log.h"
 
 typedef struct DynamicArrayInstance {
     size_t count;
@@ -35,7 +36,7 @@ static void ResizeIfNeeded(DynamicArray da, size_t newSize) {
         }
         void* newPtr = realloc(da->data, newCapacity * da->elemSize);
         if (newPtr == NULL) {
-            printf("Error: unable to allocate memory. Aborting\n");
+            Log_Error("Error: unable to allocate memory. Aborting\n");
             free(da->data);
             abort();
         }
@@ -369,7 +370,7 @@ void DA_TrimExcess(DynamicArray da) {
     if (da->count < da->capacity * 0.9) {
         void* newPtr = realloc(da->data, da->count * da->elemSize);
         if (newPtr == NULL) {
-            printf("Error: unable to allocate memory. Aborting\n");
+            Log_Error("Error: unable to allocate memory. Aborting\n");
             free(da->data);
             abort();
         }

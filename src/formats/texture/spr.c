@@ -4,6 +4,7 @@
 #include <string.h>
 #include "core/bytes.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/texture/pvr.h"
 #include "formats/texture/spr.h"
 
@@ -27,7 +28,7 @@ static void ReadPVRInfo(const uint8_t* data, size_t size, SPR_Texture* texture) 
 
 bool SPR_Open(const char* filepath, SPR_File* file) {
     *file = (SPR_File) { 0 };
-    printf("[SPR_Open]: Loading SPR file: %s\n", filepath);
+    Log_Debug("[SPR_Open]: Loading SPR file: %s\n", filepath);
     // The .gz files of the game are gzipped SPR files
     file->data = File_LoadToMemoryDecompressed(filepath, &file->size);
     if (file->data == NULL)
@@ -47,7 +48,7 @@ bool SPR_Open(const char* filepath, SPR_File* file) {
             break;
         uint32_t size = Bytes_ReadU32(file->data + pos + 4);
         if (size < SPR_HEADER_SIZE || size > file->size - pos) {
-            fprintf(stderr, "[SPR_Open]: Block %u at 0x%zX has an invalid size 0x%X\n", file->count, pos, size);
+            Log_Error("[SPR_Open]: Block %u at 0x%zX has an invalid size 0x%X\n", file->count, pos, size);
             break;
         }
         if (file->count == capacity) {
@@ -74,11 +75,11 @@ bool SPR_Open(const char* filepath, SPR_File* file) {
     }
 
     if (file->count == 0) {
-        fprintf(stderr, "[SPR_Open]: No TEXN block in %s\n", filepath);
+        Log_Error("[SPR_Open]: No TEXN block in %s\n", filepath);
         SPR_Close(file);
         return false;
     }
-    printf("[SPR_Open]: %u textures, 0x%zX bytes after the last one\n", file->count, file->size - pos);
+    Log_Debug("[SPR_Open]: %u textures, 0x%zX bytes after the last one\n", file->count, file->size - pos);
     return true;
 }
 
@@ -86,7 +87,7 @@ bool SPR_Decode(const SPR_File* file, uint32_t index, uint16_t* width, uint16_t*
     if (index >= file->count || !file->textures[index].pvr)
         return false;
     const SPR_Texture* texture = &file->textures[index];
-    printf("[SPR_Decode]: Texture %u: %s, offset 0x%X, size 0x%X\n", index, texture->name, texture->offset, texture->size);
+    Log_Debug("[SPR_Decode]: Texture %u: %s, offset 0x%X, size 0x%X\n", index, texture->name, texture->offset, texture->size);
     return PVR_LoadFromMemory(file->data + texture->offset + SPR_HEADER_SIZE, width, height, pixels);
 }
 

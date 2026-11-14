@@ -8,6 +8,7 @@
 #include "core/stringBuilder.h"
 #include "formats/archive/tac.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/archive/tad.h"
 
 #define TAD_HASH_SEED 0x066EE5D0u
@@ -73,11 +74,11 @@ TADFileEntry* TAD_GetEntry(uint8_t* buffer, size_t entryID) {
 }
 
 void TAD_PrintEntry(TADFileEntry* entry, size_t entryID, size_t totalEntries, const char* startBuffer) {
-    printf("  File %llu (%.2f%%) (0x%04X):\n", entryID, (float)(entryID + 1) / totalEntries * 100.0f, (int)((char*)entry - startBuffer));
-    printf("    Hash1: %lu (0x%08X)\n", entry->hash[0], entry->hash[0]);
+    Log_Debug("  File %llu (%.2f%%) (0x%04X):\n", entryID, (float)(entryID + 1) / totalEntries * 100.0f, (int)((char*)entry - startBuffer));
+    Log_Debug("    Hash1: %lu (0x%08X)\n", entry->hash[0], entry->hash[0]);
     //printf("    Hash2: %lu (0x%08X)\n", entry->hash[1], entry->hash[1]);
     //printf("    Hash3: %lu (0x%08X)\n", entry->hash[2], entry->hash[2]);
-    printf("    Offset: %u\n", entry->offset);
+    Log_Debug("    Offset: %u\n", entry->offset);
     uint32_t bytes = entry->size;
     float size = (float)bytes;
     const char* units[] = { "bytes", "KB", "MB", "GB" };
@@ -87,9 +88,9 @@ void TAD_PrintEntry(TADFileEntry* entry, size_t entryID, size_t totalEntries, co
         unitID++;
     }
     if (bytes > 1024)
-        printf("    Size: %.2f %s (%u bytes)\n", size, units[unitID], bytes);
+        Log_Debug("    Size: %.2f %s (%u bytes)\n", size, units[unitID], bytes);
     else
-        printf("    Size: %u bytes\n", bytes);
+        Log_Debug("    Size: %u bytes\n", bytes);
 }
 
 size_t TAD_GetTACFilename(const char* tadFilename, StringBuilder sb) {
@@ -296,11 +297,11 @@ void TAD_PrintHeader(TADHeader* header) {
     localtime_safe(&header->timestamp, &localTime);
     char timeBuffer[32];
     asctime_safe(timeBuffer, sizeof(timeBuffer), &localTime);
-    printf("TAD Header:\n");
-    printf("  Identifier: %u.%u.%u.%u\n", header->identifier[0], header->identifier[1], header->identifier[2], header->identifier[3]);
-    printf("  DateTime: %s", timeBuffer);
-    printf("  Graphics API: %s\n", header->graphicsAPI);
-    printf("  Checksum: 0x%08X\n", header->checksum);
-    printf("  TAC File Size: %llu MB (%llu bytes)\n", header->tacFileSize / (1024 * 1024), header->tacFileSize);
-    printf("  File Count: %llu\n", header->fileCount);
+    Log_Debug("TAD Header:\n");
+    Log_Debug("  Identifier: %u.%u.%u.%u\n", header->identifier[0], header->identifier[1], header->identifier[2], header->identifier[3]);
+    Log_Debug("  DateTime: %s", timeBuffer);
+    Log_Debug("  Graphics API: %s\n", header->graphicsAPI);
+    Log_Debug("  Checksum: 0x%08X\n", header->checksum);
+    Log_Debug("  TAC File Size: %llu MB (%llu bytes)\n", header->tacFileSize / (1024 * 1024), header->tacFileSize);
+    Log_Debug("  File Count: %llu\n", header->fileCount);
 }

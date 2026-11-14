@@ -7,6 +7,7 @@
 #include <windows.h>
 #endif
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/script/scnf.h"
 
 // A SCNF file is a header followed by blocks, one per character (or group of lines).
@@ -283,7 +284,7 @@ static bool PrintBlock(const uint8_t* block, size_t size) {
         (uint64_t)header->charactersOffset + header->characterCount * 4ull > size ||
         (uint64_t)header->positionsOffset + header->positionCount * 12ull > size ||
         header->scriptOffset > header->linesOffset || header->linesOffset > size) {
-        fprintf(stderr, "[SCNF_Print]: Invalid block header\n");
+        Log_Error("[SCNF_Print]: Invalid block header\n");
         return false;
     }
 
@@ -301,7 +302,7 @@ static bool PrintBlock(const uint8_t* block, size_t size) {
     // The table has no count: it ends at the first string
     uint32_t* lines = malloc((size - header->linesOffset) / sizeof(SCNF_Line) * sizeof(uint32_t) + sizeof(uint32_t));
     if (lines == NULL) {
-        fputs("[SCNF_Print]: Memory error", stderr);
+        Log_Error("[SCNF_Print]: Memory error\n");
         return false;
     }
     size_t stringsOffset = size;
@@ -311,7 +312,7 @@ static bool PrintBlock(const uint8_t* block, size_t size) {
         const char* voice = GetString(block, size, line->voiceOffset);
         const char* text = GetString(block, size, line->textOffset);
         if (voice == NULL || text == NULL) {
-            fprintf(stderr, "[SCNF_Print]: Invalid line at 0x%04zX\n", pos);
+            Log_Error("[SCNF_Print]: Invalid line at 0x%04zX\n", pos);
             free(lines);
             return false;
         }
@@ -343,7 +344,7 @@ bool SCNF_Print(const char* filepath) {
 
     const SCNF_Header* header = (const SCNF_Header*)buffer;
     if (size < sizeof(SCNF_Header) || memcmp(header->id, "SCNF", 4) != 0 || header->size > size) {
-        fprintf(stderr, "[SCNF_Print]: Invalid SCNF file %s\n", filepath);
+        Log_Error("[SCNF_Print]: Invalid SCNF file %s\n", filepath);
         free(buffer);
         return false;
     }
@@ -360,7 +361,7 @@ bool SCNF_Print(const char* filepath) {
     for (uint32_t i = 0; valid && i < header->blockCount; i++) {
         const SCNF_Block* block = (const SCNF_Block*)(buffer + pos);
         if (pos + sizeof(SCNF_Block) > header->size || block->size < sizeof(SCNF_Block) || pos + block->size > header->size) {
-            fprintf(stderr, "[SCNF_Print]: Block %u out of bounds\n", i);
+            Log_Error("[SCNF_Print]: Block %u out of bounds\n", i);
             valid = false;
             break;
         }

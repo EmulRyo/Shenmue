@@ -5,6 +5,7 @@
 #include <raylib.h>
 #include "app/gameDB.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/archive/pks.h"
 #include "formats/script/scn.h"
 #include "scenario/scnBytecode.h"
@@ -51,7 +52,7 @@ bool MapProgram_Emulate(SD_Data* data, const SH4_Program* sh4, const BC_Program*
     VM_Result emulation;
     if (!VM_Run(bytecode, &emulation))
         return false;
-    printf("[MapProgram]: emulation: %u threads (%u not run), %llu instructions, %u calls\n", emulation.threads,
+    Log_Info("[MapProgram]: emulation: %u threads (%u not run), %llu instructions, %u calls\n", emulation.threads,
         emulation.skipped, (unsigned long long)emulation.steps, emulation.callCount);
     bool ok = SD_ReadEmulation(data, sh4, bytecode, pair, &emulation);
     VM_Free(&emulation);

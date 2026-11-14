@@ -1,5 +1,6 @@
 // The models of the characters of a cutscene, found in the CHRT scripts of its package, of its scene, of its map and of
 // the packages that the program of the map loads
+#include "core/log.h"
 #include "views/auth/authViewInternal.h"
 
 #define AUTHVIEW_HUMANS         "stream/humans" // Folder (or PKF/PKS pair) of each character of the scene, with its script and models
@@ -318,9 +319,9 @@ bool AUTHModels_LoadCharacters(void) {
             characterModel->model = LoadModelFile(path, packed, textures);
         }
         if (characterModel->model < 0)
-            printf("[AUTHView_Open]: No model for %s (%s)\n", character->id, characterModel->source != NULL ? "invalid model file" : "not found");
+            Log_Warning("[AUTHView_Open]: No model for %s (%s)\n", character->id, characterModel->source != NULL ? "invalid model file" : "not found");
         else
-            printf("  %s: %s (%s)\n", character->id, GetFileName(path), characterModel->source);
+            Log_Debug("  %s: %s (%s)\n", character->id, GetFileName(path), characterModel->source);
     }
     if (hasMapScript)
         CHRT_Free(&mapScript);
@@ -388,7 +389,7 @@ bool AUTHModels_LoadPlaced(void) {
             source = FindCharacterModel(placed->id, hasMapScript ? &mapScript : NULL, mapFolder, &placed->files, path,
                 sizeof(path), &packed, &textures, &placed->human, &info);
         if (source == NULL) {
-            printf("[AUTHView_Open]: No model for %s, placed by the program (not found)\n", placed->id);
+            Log_Warning("[AUTHView_Open]: No model for %s, placed by the program (not found)\n", placed->id);
             continue;
         }
         char* copy = malloc(strlen(source) + 1);
@@ -398,7 +399,7 @@ bool AUTHModels_LoadPlaced(void) {
         memcpy(placed->position, info.position, sizeof(placed->position));
         memcpy(placed->angle, info.angle, sizeof(placed->angle));
         placed->model = LoadModelFile(path, packed, textures);
-        printf("  %s: %s (%s), placed by the program\n", placed->id, GetFileName(path), placed->source);
+        Log_Debug("  %s: %s (%s), placed by the program\n", placed->id, GetFileName(path), placed->source);
     }
     if (hasMapScript)
         CHRT_Free(&mapScript);

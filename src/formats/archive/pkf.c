@@ -4,6 +4,7 @@
 #include <string.h>
 #include "core/dir.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/archive/ipac.h"
 #include "formats/archive/pkf.h"
 #include "formats/archive/pks.h"
@@ -37,7 +38,7 @@ typedef bool (*PKF_TextureCallback)(const char* filename, const uint8_t* data, s
 static bool SaveTexture(const char* filename, const uint8_t* data, size_t size, void* context) {
     char outputFilename[PKF_PATH_SIZE];
     snprintf(outputFilename, sizeof(outputFilename), "%s/%s", (const char*)context, filename);
-    printf(" -> %s\n", filename);
+    Log_Debug(" -> %s\n", filename);
     return File_Save(outputFilename, data, size);
 }
 
@@ -68,13 +69,13 @@ static uint32_t ReadTextures(const uint8_t* buffer, size_t size, bool verbose, P
             snprintf(filename + length, sizeof(filename) - length, ".%s", ext != NULL ? ext : "bin");
 
             if (verbose)
-                printf("  Texture %u: offset = 0x%04zX, size = 0x%04X", textureID, pos, block->size);
+                Log_Debug("  Texture %u: offset = 0x%04zX, size = 0x%04X", textureID, pos, block->size);
             if (callback(filename, texture->data, dataSize, context))
                 handled++;
             textureID++;
         }
         else if (verbose)
-            printf("  Block %.4s: offset = 0x%04zX, size = 0x%04X\n", block->id, pos, block->size);
+            Log_Debug("  Block %.4s: offset = 0x%04zX, size = 0x%04X\n", block->id, pos, block->size);
 
         pos += block->size;
     }
@@ -82,7 +83,7 @@ static uint32_t ReadTextures(const uint8_t* buffer, size_t size, bool verbose, P
 }
 
 void PKF_ExtractAllFiles(const char* filepath, const char* outputPath) {
-    printf("[PKF_ExtractAllFiles]: Extracting file: %s\n", filepath);
+    Log_Info("[PKF_ExtractAllFiles]: Extracting file: %s\n", filepath);
     size_t size = 0;
     uint8_t* buffer = File_LoadToMemoryDecompressed(filepath, &size);
     if (buffer == NULL)
@@ -90,7 +91,7 @@ void PKF_ExtractAllFiles(const char* filepath, const char* outputPath) {
 
     // Some files have the wrong extension
     if (size >= 4 && memcmp(buffer, "PAKS", 4) == 0) {
-        printf("[PKF_ExtractAllFiles]: The file is a PKS file\n");
+        Log_Info("[PKF_ExtractAllFiles]: The file is a PKS file\n");
         free(buffer);
         PKS_ExtractAllFiles(filepath, outputPath);
         return;
@@ -98,26 +99,26 @@ void PKF_ExtractAllFiles(const char* filepath, const char* outputPath) {
 
     const PKF_Header* header = (const PKF_Header*)buffer;
     if (size < sizeof(PKF_Header) || memcmp(header->id, "PAKF", 4) != 0) {
-        fprintf(stderr, "[PKF_ExtractAllFiles]: Invalid PKF file %s\n", filepath);
+        Log_Error("[PKF_ExtractAllFiles]: Invalid PKF file %s\n", filepath);
         free(buffer);
         return;
     }
-    printf("PKF Header:\n");
-    printf("  ID: %.4s\n", header->id);
-    printf("  IPAC Offset: 0x%04X\n", header->ipacOffset);
-    printf("  Unknown: 0x%08X\n", header->unknown);
-    printf("  Texture Count: %u\n", header->textureCount);
+    Log_Debug("PKF Header:\n");
+    Log_Debug("  ID: %.4s\n", header->id);
+    Log_Debug("  IPAC Offset: 0x%04X\n", header->ipacOffset);
+    Log_Debug("  Unknown: 0x%08X\n", header->unknown);
+    Log_Debug("  Texture Count: %u\n", header->textureCount);
 
     char outputFolder[PKF_PATH_SIZE];
     File_GetOutputFolder(filepath, outputPath, outputFolder, sizeof(outputFolder));
     MakeDirs(outputFolder);
-    printf("  Output folder: %s\n", outputFolder);
+    Log_Debug("  Output folder: %s\n", outputFolder);
 
     size_t texturesEnd = header->ipacOffset < size ? header->ipacOffset : size;
     uint32_t extracted = ReadTextures(buffer, texturesEnd, true, SaveTexture, outputFolder);
     if (header->ipacOffset < size)
         extracted += IPAC_ExtractAllFiles(buffer + header->ipacOffset, size - header->ipacOffset, outputFolder);
-    printf("[PKF_ExtractAllFiles]: Extracted %u files to %s\n", extracted, outputFolder);
+    Log_Info("[PKF_ExtractAllFiles]: Extracted %u files to %s\n", extracted, outputFolder);
 
     free(buffer);
 }
@@ -129,7 +130,7 @@ bool PKF_LoadFilesFromMemory(const uint8_t* buffer, size_t size, const char* nam
 
     const PKF_Header* header = (const PKF_Header*)buffer;
     if (size < sizeof(PKF_Header) || memcmp(header->id, "PAKF", 4) != 0) {
-        fprintf(stderr, "[PKF_LoadFiles]: Invalid PKF file %s\n", name);
+        Log_Error("[PKF_LoadFiles]: Invalid PKF file %s\n", name);
         return false;
     }
     size_t texturesEnd = header->ipacOffset < size ? header->ipacOffset : size;

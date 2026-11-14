@@ -9,6 +9,8 @@ set(SRC_CORE
     src/core/file.h
     src/core/hashTable.c
     src/core/hashTable.h
+    src/core/log.c
+    src/core/log.h
     src/core/path.c
     src/core/path.h
     src/core/stringBuilder.c

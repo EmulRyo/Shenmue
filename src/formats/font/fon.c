@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/font/fon.h"
 
 #define FON_JIS_CELLS 94
@@ -40,7 +41,7 @@ bool FON_Load(const char* filepath, FON_Font* font) {
         font->data = data;
         return true;
     }
-    fprintf(stderr, "[FON_Load]: The size of the file (%zu bytes) isn't one of a font: %s\n", size, filepath);
+    Log_Error("[FON_Load]: The size of the file (%zu bytes) isn't one of a font: %s\n", size, filepath);
     free(data);
     return false;
 }

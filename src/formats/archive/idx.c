@@ -4,6 +4,7 @@
 #include <string.h>
 #include <assert.h>
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/archive/afs.h"
 #include "formats/archive/idx.h"
 
@@ -49,21 +50,21 @@ static bool IsIDXHumans(const uint8_t* idx, size_t size) {
 static void PrintIDX0Header(IDX0_Header* header) {
     assert(strncmp(header->id, "IDX0", 4) == 0);
 
-    printf("IDX0 Header:\n");
-    printf("  ID: %.4s\n", header->id);
-    printf("  Count1: %u\n", header->count1);
-    printf("  Count: %u\n", header->count);
+    Log_Debug("IDX0 Header:\n");
+    Log_Debug("  ID: %.4s\n", header->id);
+    Log_Debug("  Count1: %u\n", header->count1);
+    Log_Debug("  Count: %u\n", header->count);
     for (uint32_t i = 0; i < header->count; i++) {
         IDX0_Entry* entry = &(header->entries[i]);
-        printf("  Entry %03u: %.12s, AFS Index: %03u, AFS Last Index: %u, Unknown: %u\n", i, entry->filename, entry->afsIndex, entry->afsLastIndex, entry->unknown);
+        Log_Debug("  Entry %03u: %.12s, AFS Index: %03u, AFS Last Index: %u, Unknown: %u\n", i, entry->filename, entry->afsIndex, entry->afsLastIndex, entry->unknown);
     }
 }
 
 static void PrintIDXHumansHeader(IDX_HeaderHumans* header) {
-    printf("IDX Humans Header:\n");
-    printf("  Count: %u\n", header->count);
+    Log_Debug("IDX Humans Header:\n");
+    Log_Debug("  Count: %u\n", header->count);
     for (uint32_t i = 0; i < header->count; i++)
-        printf("  Entry %03u: %.4s\n", i, header->entries[i].filename);
+        Log_Debug("  Entry %03u: %.4s\n", i, header->entries[i].filename);
 }
 
 bool IDX_LoadEntryNames(const char* idxPath, char (*names)[IDX_NAME_SIZE], uint32_t afsCount) {
@@ -91,14 +92,14 @@ bool IDX_LoadEntryNames(const char* idxPath, char (*names)[IDX_NAME_SIZE], uint3
         loaded = true;
     }
     else
-        fprintf(stderr, "[IDX_LoadEntryNames]: Unknown IDX file format: %s\n", idxPath);
+        Log_Error("[IDX_LoadEntryNames]: Unknown IDX file format: %s\n", idxPath);
 
     free(idx);
     return loaded;
 }
 
 void IDX_ExtractAllFiles(const char* filepath, const char* outputPath) {
-    printf("[IDX_ExtractAllFiles]: Extracting file: %s\n", filepath);
+    Log_Info("[IDX_ExtractAllFiles]: Extracting file: %s\n", filepath);
     size_t size = 0;
     uint8_t* idx = File_LoadToMemoryEx(filepath, &size);
     if (idx == NULL)
@@ -109,7 +110,7 @@ void IDX_ExtractAllFiles(const char* filepath, const char* outputPath) {
     else if (IsIDXHumans(idx, size))
         PrintIDXHumansHeader((IDX_HeaderHumans*)idx);
     else
-        fprintf(stderr, "Unknown IDX file format: %.4s\n", (char*)idx);
+        Log_Error("Unknown IDX file format: %.4s\n", (char*)idx);
     free(idx);
 
     // The files are stored in the AFS container with the same name
@@ -117,7 +118,7 @@ void IDX_ExtractAllFiles(const char* filepath, const char* outputPath) {
     size_t baseLength = lastDot != NULL ? (size_t)(lastDot - filepath) : strlen(filepath);
     char* afsPath = (char*)malloc(baseLength + 5);
     if (afsPath == NULL) {
-        fputs("[IDX_ExtractAllFiles]: Memory error", stderr);
+        Log_Error("[IDX_ExtractAllFiles]: Memory error\n");
         return;
     }
     memcpy(afsPath, filepath, baseLength);

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <raylib.h>
 #include "raygui.h"
+#include "core/log.h"
 #include "ui/input.h"
 #include "ui/toolbar.h"
 #include "ui/tooltip.h"
@@ -66,7 +67,7 @@ static void Warn(int key, const char* reason) {
     }
     if (g_toolbar.warnedCount < TOOLBAR_MAX_KEYS)
         g_toolbar.warned[g_toolbar.warnedCount++] = key;
-    printf("[Toolbar]: The key %s %s\n", KeyName(key), reason);
+    Log_Warning("[Toolbar]: The key %s %s\n", KeyName(key), reason);
 }
 
 static void AddKey(int key) {

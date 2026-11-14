@@ -9,6 +9,7 @@
 #include <nfd.h>
 #include "raygui.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "render/mt5Export.h"
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
@@ -74,9 +75,9 @@ bool MT5View_Open(const char* filepath) {
     g_view.model = model;
     MT5Render_Init(&g_view.render);
     if (model.mesh.hiddenNodes > 0)
-        printf("[MT5View_Open]: %u alternative meshes, CLOSE signs and invisible meshes are not shown\n", model.mesh.hiddenNodes);
+        Log_Info("[MT5View_Open]: %u alternative meshes, CLOSE signs and invisible meshes are not shown\n", model.mesh.hiddenNodes);
     if (model.mesh.skippedTriangles > 0)
-        printf("[MT5View_Open]: %u triangles with unresolved vertex indices are not shown\n", model.mesh.skippedTriangles);
+        Log_Info("[MT5View_Open]: %u triangles with unresolved vertex indices are not shown\n", model.mesh.skippedTriangles);
 
     ResetCamera();
     FreeCamera_SetFly(&g_view.camera, g_options.fly);
@@ -186,14 +187,14 @@ void MT5View_ExportDialog(void) {
         if (MT5Export_Save(&g_view.model, g_view.frame, NULL, path)) {
             snprintf(lastFolder, sizeof(lastFolder), "%s", GetDirectoryPath(path));
             lastOBJ = IsFileExtension(path, ".obj");
-            printf("Exported the model to %s\n", path);
+            Log_Info("Exported the model to %s\n", path);
         }
         else
-            printf("Failed to export the model to %s\n", path);
+            Log_Error("Failed to export the model to %s\n", path);
         NFD_FreePathU8(outPath);
     }
     else if (result == NFD_ERROR)
-        printf("Error: %s\n", NFD_GetError());
+        Log_Error("Error: %s\n", NFD_GetError());
 }
 
 void MT5View_Status(ViewStatus* status) {

@@ -6,6 +6,7 @@
 #include <nfd.h>
 #include <raylib.h>
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/archive/afs.h"
 #include "formats/archive/idx.h"
 #include "formats/archive/pkf.h"
@@ -119,7 +120,7 @@ static const Format* FindFormat(const char* filepath) {
 void FileOpen_Open(const char* filepath) {
     const Format* format = FindFormat(filepath);
     if (format == NULL) {
-        printf("File not implemented yet: %s\n", filepath);
+        Log_Warning("File not implemented yet: %s\n", filepath);
         return;
     }
     bool opened = format->open(filepath);
@@ -128,7 +129,7 @@ void FileOpen_Open(const char* filepath) {
     if (opened)
         Views_CloseOthers(format->view);
     else
-        printf("Failed to load %s file: %s\n", format->name, filepath);
+        Log_Error("Failed to load %s file: %s\n", format->name, filepath);
 }
 
 void FileOpen_Dialog(void) {
@@ -141,7 +142,7 @@ void FileOpen_Dialog(void) {
     if (result == NFD_OKAY)
         FileOpen_Open(outPath);
     else if (result == NFD_ERROR)
-        printf("Error: %s\n", NFD_GetError());
+        Log_Error("Error: %s\n", NFD_GetError());
 
     if (outPath != NULL)
         NFD_FreePathU8(outPath);

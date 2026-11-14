@@ -5,13 +5,14 @@
 #include "core/hashTable.h"
 #include "core/stringBuilder.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/archive/tad.h"
 #include "formats/archive/tac.h"
 
 FILE* TAC_Open(const char* filepath) {
     FILE* tacFile = fopen(filepath, "rb");
     if (tacFile == NULL) {
-        fputs("File error", stderr);
+        Log_Error("File error\n");
         exit(1);
     }
 
@@ -41,7 +42,7 @@ uint8_t* TAC_GetFile(FILE* tacFile, TADFileEntry* entry) {
     }
     uint8_t* buffer = (uint8_t*)malloc(sizeof(uint8_t) * entry->size);
     if (buffer == NULL) {
-        fputs("[SaveTADFileEntry]: Memory error", stderr);
+        Log_Error("[SaveTADFileEntry]: Memory error\n");
         exit(2);
     }
     TAC_ReadFile(tacFile, entry, buffer);

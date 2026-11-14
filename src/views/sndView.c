@@ -5,6 +5,7 @@
 #include <math.h>
 #include <raylib.h>
 #include "raygui.h"
+#include "core/log.h"
 #include "formats/sound/snd.h"
 #include "audio/sndSynth.h"
 #include "ui/properties.h"
@@ -217,14 +218,14 @@ bool SNDView_Open(const char* filepath) {
     }
     g_player.mode = g_player.listedSequences > 0 ? MODE_SEQUENCES : MODE_SAMPLES;
     if (ItemCount(g_player.mode) == 0) {
-        printf("%s: the bank has nothing to play\n", GetFileName(g_player.path));
+        Log_Warning("%s: the bank has nothing to play\n", GetFileName(g_player.path));
         SNDView_Close();
         return false;
     }
 
     g_player.stream = LoadAudioStream(SND_SYNTH_RATE, 16, 2);
     if (!IsAudioStreamValid(g_player.stream)) {
-        fputs("[SNDView_Open]: Failed to create the audio stream\n", stderr);
+        Log_Error("[SNDView_Open]: Failed to create the audio stream\n");
         SNDView_Close();
         return false;
     }
@@ -232,7 +233,7 @@ bool SNDView_Open(const char* filepath) {
     Select(0);
     PlayAudioStream(g_player.stream);
 
-    printf("%s: DTPK sound bank, %u sequences (%u not empty), %u programs, %u parts, %u samples%s\n", GetFileName(g_player.path),
+    Log_Info("%s: DTPK sound bank, %u sequences (%u not empty), %u programs, %u parts, %u samples%s\n", GetFileName(g_player.path),
         bank.sequenceCount, g_player.listedSequences, bank.programCount, bank.partCount, bank.sampleCount,
         bank.dsp.present ? ", DSP program" : "");
     g_player.open = true;

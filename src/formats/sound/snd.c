@@ -5,6 +5,7 @@
 #include <math.h>
 #include "core/bytes.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/sound/snd.h"
 
 #define SND_HEADER_SIZE     0x60
@@ -481,7 +482,7 @@ bool SND_Load(const char* filepath, SND_Bank* bank) {
     bank->sampleCount = count;
     for (uint32_t i = 0; i < count; i++) {
         if (!ReadSample(buffer, size, buffer + table + 4 + (size_t)i * SND_SAMPLE_ENTRY_SIZE, &bank->samples[i])) {
-            fprintf(stderr, "[SND_Load]: Invalid sample %u in %s\n", i, filepath);
+            Log_Error("[SND_Load]: Invalid sample %u in %s\n", i, filepath);
             free(bank->samples[i].pcm);
             bank->samples[i].pcm = NULL;
             bank->samples[i].frameCount = 0;

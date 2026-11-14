@@ -6,6 +6,7 @@
 #include <math.h>
 #include "core/bytes.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/map/mapinfo.h"
 
 // Every chunk starts with its ID and its size, header included. Some chunks contain inner chunks or blocks with the same
@@ -347,7 +348,7 @@ static void ReadArrays(MAPINFO_File* file, const char* filepath) {
             file->lightCount = lights;
             file->shapeCount = shapes;
             if (file->cameras == NULL)
-                fprintf(stderr, "[MAPINFO_Load]: Invalid %s chunk at 0x%X in %s\n", chunk->id, chunk->offset, filepath);
+                Log_Error("[MAPINFO_Load]: Invalid %s chunk at 0x%X in %s\n", chunk->id, chunk->offset, filepath);
         }
     }
 }
@@ -398,7 +399,7 @@ bool MAPINFO_Load(const char* filepath, MAPINFO_File* file) {
             valid = false;
     }
     if (!valid) {
-        fprintf(stderr, "[MAPINFO_Load]: Invalid mapinfo file %s\n", filepath);
+        Log_Error("[MAPINFO_Load]: Invalid mapinfo file %s\n", filepath);
         MAPINFO_Free(file);
         return false;
     }
@@ -410,7 +411,7 @@ bool MAPINFO_Load(const char* filepath, MAPINFO_File* file) {
     file->banks = calloc(file->bankCount + 1, sizeof(MAPINFO_SoundBank));
     file->doors = calloc(file->doorCount + 1, sizeof(MAPINFO_Door));
     if (file->cameras == NULL || file->lights == NULL || file->shapes == NULL || file->banks == NULL || file->doors == NULL) {
-        fputs("[MAPINFO_Load]: Memory error\n", stderr);
+        Log_Error("[MAPINFO_Load]: Memory error\n");
         MAPINFO_Free(file);
         return false;
     }
@@ -427,7 +428,7 @@ bool MAPINFO_Load(const char* filepath, MAPINFO_File* file) {
         uint32_t count = ReadCutscenes(file, chunk, NULL);
         file->cutscenes = calloc(count + 1, sizeof(MAPINFO_Cutscene));
         if (file->cutscenes == NULL) {
-            fputs("[MAPINFO_Load]: Memory error\n", stderr);
+            Log_Error("[MAPINFO_Load]: Memory error\n");
             MAPINFO_Free(file);
             return false;
         }

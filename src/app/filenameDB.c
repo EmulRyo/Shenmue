@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "core/hashTable.h"
+#include "core/log.h"
 #include "formats/archive/tad.h"
 #include "app/filenameDB.h"
 
@@ -32,7 +33,7 @@ static void AddLine(HashTable ht, const char* line, size_t length) {
     }
     if (length == 0 || length >= PATH_SIZE) {
         if (length > 0)
-            fprintf(stderr, "[FilenameDB_Load]: Path too long: %.*s\n", (int)length, line);
+            Log_Error("[FilenameDB_Load]: Path too long: %.*s\n", (int)length, line);
         return;
     }
     memcpy(path, line, length);

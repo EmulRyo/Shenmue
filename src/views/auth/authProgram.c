@@ -1,4 +1,5 @@
 // What the program of the map does while a cutscene plays: its run, its items in the tree and their properties
+#include "core/log.h"
 #include "views/auth/authViewInternal.h"
 
 static const char* g_programFields[] = { "rotation", "position", "scale" };
@@ -139,13 +140,13 @@ bool AUTHProgram_Run(int cutscene, const char* file) {
         free(characters);
         const SCNCutscene* program = &g_auth.program;
         if (ok && program->found)
-            printf("[AUTHView_Open]: program of the map: cutscene played at 0x%X (function 0x%X, emulated from 0x%X, %u levels "
+            Log_Info("[AUTHView_Open]: program of the map: cutscene played at 0x%X (function 0x%X, emulated from 0x%X, %u levels "
                 "up), %u threads, %u frames, %u node calls, %u place calls, %u display calls, %u sound commands in %.2f s\n",
                 program->address, program->function, program->start, program->levels, program->run.threads,
                 program->run.frames, program->nodeCount, program->placeCount, program->displayCount, program->soundCount,
                 GetTime() - start);
         else if (ok)
-            printf("[AUTHView_Open]: the program of the map doesn't play the cutscene %d\n", cutscene);
+            Log_Info("[AUTHView_Open]: the program of the map doesn't play the cutscene %d\n", cutscene);
         MapProgram_FreeBytecode(&bytecode);
     }
     MAPINFO_Free(&mapinfo);

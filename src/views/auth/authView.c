@@ -8,6 +8,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include "raygui.h"
+#include "core/log.h"
 #include "app/gameDB.h"
 #include "core/path.h"
 #include "core/text.h"
@@ -291,16 +292,16 @@ static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutsc
     g_auth.hasMapinfo = FileExists(g_auth.mapinfoPath);
     Path_FindSceneFolder(g_auth.path, g_auth.sceneFolder, sizeof(g_auth.sceneFolder));
     if (cutscene >= 0 && !MapFiles_Load(mapFolder, ".mt5;.chrm;.chrt;.motn", &g_auth.mapFiles)) {
-        fputs("[AUTHView_Open]: Memory error\n", stderr);
+        Log_Error("[AUTHView_Open]: Memory error\n");
         AUTHView_Close();
         return false;
     }
     AUTHMotions_LoadBanks(g_auth.path, package);
-    printf("%s%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files\n", GetFileName(g_auth.path),
+    Log_Info("%s%s: cutscene, %u frames, %u characters, %u commands, %u sounds, %u MOTN files\n", GetFileName(g_auth.path),
         cutscene >= 0 ? TextFormat(" #%d", cutscene) : "", sequence->duration, sequence->characterCount, sequence->commandCount,
         sequence->soundCount, g_auth.bankCount);
     if (!AUTHMotions_Load() || !CreateLabels() || !AUTHModels_LoadCharacters() || !AUTHProgram_Run(cutscene, file)) {
-        fputs("[AUTHView_Open]: Memory error\n", stderr);
+        Log_Error("[AUTHView_Open]: Memory error\n");
         AUTHView_Close();
         return false;
     }
@@ -370,7 +371,7 @@ bool AUTHView_UsesMap(void) {
 // a cutscene of a mapinfo.bin is already open
 static void OpenMap(void) {
     if (!AUTHView_UsesMap() && g_auth.hasMapinfo && !MAPINFOView_Open(g_auth.mapinfoPath))
-        printf("[AUTHView_Open]: Failed to load the map %s\n", g_auth.mapinfoPath);
+        Log_Error("[AUTHView_Open]: Failed to load the map %s\n", g_auth.mapinfoPath);
 }
 
 // The characters of the map that are in the cutscene aren't drawn with the map: the cutscene places them; nor those that

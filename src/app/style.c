@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <raylib.h>
 #include "raygui.h"
+#include "core/log.h"
 #include "app/style.h"
 
 // Size of the text in logical pixels, scaled by the DPI of the window (Segoe UI 9 pt at 96 DPI)
@@ -78,7 +79,7 @@ void Style_Init(void) {
     if (FindFont(g_fontPath, sizeof(g_fontPath)))
         LoadScaledFont(GetWindowScaleDPI().y);
     else
-        fputs("[Style_Init]: No font found, using the default one\n", stderr);
+        Log_Warning("[Style_Init]: No font found, using the default one\n");
     SetStyle(STYLE_FONT_SIZE);
 }
 

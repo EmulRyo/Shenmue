@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "core/log.h"
 #include "core/text.h"
 #include "app/gameDB.h"
 
@@ -82,7 +83,7 @@ static void LoadCharacters(void) {
     Table table;
     if (!ReadTable(g_shenmue1Characters, g_shenmue1CharactersSize, 9, &table) ||
         (g_characters = calloc(table.count + 1, sizeof(GameDB_Character))) == NULL) {
-        fprintf(stderr, "[GameDB]: Out of memory\n");
+        Log_Error("[GameDB]: Out of memory\n");
         return;
     }
     for (size_t i = 0; i < table.count; i++) {
@@ -95,7 +96,7 @@ static void LoadCharacters(void) {
 static void LoadMaps(void) {
     Table table;
     if (!ReadTable(g_shenmue1Maps, g_shenmue1MapsSize, 6, &table) || (g_maps = calloc(table.count + 1, sizeof(GameDB_Map))) == NULL) {
-        fprintf(stderr, "[GameDB]: Out of memory\n");
+        Log_Error("[GameDB]: Out of memory\n");
         return;
     }
     for (size_t i = 0; i < table.count; i++) {
@@ -109,7 +110,7 @@ static void LoadGameFunctions(void) {
     Table table;
     if (!ReadTable(g_shenmue1GameFunctions, g_shenmue1GameFunctionsSize, 6, &table) ||
         (g_gameFunctions = calloc(table.count + 1, sizeof(GameDB_GameFunction))) == NULL) {
-        fprintf(stderr, "[GameDB]: Out of memory\n");
+        Log_Error("[GameDB]: Out of memory\n");
         return;
     }
     for (size_t i = 0; i < table.count; i++) {

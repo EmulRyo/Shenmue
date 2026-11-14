@@ -7,6 +7,7 @@
 #include <raylib.h>
 #include "raygui.h"
 #include "core/file.h"
+#include "core/log.h"
 #include "formats/texture/dds.h"
 #include "formats/texture/pvr.h"
 #include "formats/texture/spr.h"
@@ -278,7 +279,7 @@ bool ImageView_OpenDDS(const char* filepath) {
         count = DDS_GuessRaw(data, size, candidates, IMAGEVIEW_DDS_CANDIDATES);
     if (count == 0) {
         if (!header)
-            fprintf(stderr, "[ImageView_OpenDDS]: No DDS header, and 0x%zX bytes aren't BC1/BC3 blocks of any size\n", size);
+            Log_Error("[ImageView_OpenDDS]: No DDS header, and 0x%zX bytes aren't BC1/BC3 blocks of any size\n", size);
         free(data);
         return false;
     }
@@ -533,7 +534,7 @@ bool ImageView_Export(const char* filepath) {
 void ImageView_ExportDialog(void) {
     static char lastFolder[1024];
     if (g_image.data == NULL) {
-        printf("No image to export.\n");
+        Log_Warning("No image to export.\n");
         return;
     }
 
@@ -560,11 +561,11 @@ void ImageView_ExportDialog(void) {
         if (ImageView_Export(outPath))
             snprintf(lastFolder, sizeof(lastFolder), "%s", GetDirectoryPath(outPath));
         else
-            printf("Failed to export the image to %s\n", outPath);
+            Log_Error("Failed to export the image to %s\n", outPath);
         NFD_FreePathU8(outPath);
     }
     else if (result == NFD_ERROR)
-        printf("Error: %s\n", NFD_GetError());
+        Log_Error("Error: %s\n", NFD_GetError());
 }
 
 void ImageView_Status(ViewStatus* status) {
