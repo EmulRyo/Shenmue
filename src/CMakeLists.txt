@@ -168,13 +168,23 @@ set(SRC
     src/views/xwmView.c
     src/views/xwmView.h
 
+    src/views/auth/authModels.c
+    src/views/auth/authMotions.c
+    src/views/auth/authPose.c
+    src/views/auth/authProgram.c
     src/views/auth/authSounds.c
     src/views/auth/authSounds.h
     src/views/auth/authView.c
     src/views/auth/authView.h
+    src/views/auth/authViewInternal.h
 
+    src/views/mapinfo/mapinfoDate.c
+    src/views/mapinfo/mapinfoItems.c
+    src/views/mapinfo/mapinfoModels.c
+    src/views/mapinfo/mapinfoProperties.c
     src/views/mapinfo/mapinfoView.c
     src/views/mapinfo/mapinfoView.h
+    src/views/mapinfo/mapinfoViewInternal.h
 
     src/views/program/programView.c
     src/views/program/programView.h
