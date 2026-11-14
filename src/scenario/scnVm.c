@@ -804,6 +804,143 @@ static bool Hopeless(const Machine* machine, const State* state, const uint32_t*
     return fp == 0;
 }
 
+// The operator of a byte (BC_OPERATOR): the result register, the reads and writes of the memory, the unary and the
+// binary operators. Returns false on a stack error
+static bool RunOperator(Machine* machine, State* state, uint8_t byte) {
+    if (byte == 0x80) {
+        state->result = Pop(machine, state);
+        return true;
+    }
+    if (byte == 0x81)
+        return Push(machine, state, state->result);
+    if (byte >= 0x82 && byte <= 0x84) {
+        Value address = Pop(machine, state);
+        NoteRead(machine, state, address, byte == 0x82 ? 1 : byte == 0x83 ? 2 : 4);
+        return Push(machine, state, Load(machine, state, address, byte == 0x82 ? 1 : byte == 0x83 ? 2 : 4));
+    }
+    if (byte >= 0x85 && byte <= 0x87) {
+        Value value = Pop(machine, state);
+        Value address = Pop(machine, state);
+        uint32_t size = byte == 0x85 ? 1 : byte == 0x86 ? 2 : 4;
+        bool ok = Store(machine, state, address, size, value);
+        if (ok && size < 4 && value.known)
+            value.value = size == 1 ? (uint32_t)(int32_t)(int8_t)value.value : (uint32_t)(int32_t)(int16_t)value.value;
+        return ok && Push(machine, state, value);
+    }
+    if (byte == 0x8E || byte == 0x9D || byte == 0x9E) {
+        Value value = Pop(machine, state);
+        float f = AsFloat(value.value);
+        if (byte == 0x9E && value.known && (!isfinite(f) || f >= 2147483648.0f || f < -2147483648.0f))
+            value = g_unknown;
+        else if (value.known)
+            value.value = byte == 0x8E ? ~value.value : byte == 0x9D ? FloatBits((float)(int32_t)value.value) :
+                (uint32_t)(int32_t)f;
+        return Push(machine, state, value);
+    }
+    if (IsBinary(byte)) {
+        Value b = Pop(machine, state);
+        Value a = Pop(machine, state);
+        Value value = g_unknown;
+        if (a.known && b.known && Operate(byte, a.value, b.value, &value.value))
+            value.known = true;
+        return Push(machine, state, value);
+    }
+    return true;
+}
+
+// A branch if the result is 0 (BC_BRANCH_ZERO) to target, next being the following instruction: next is set to the way
+// that the path follows. With an unknown result, as 0 in a run with time; else the path follows both ways, the other
+// one in a copy of the state, unless one of them can't get to what the environment looks for. Returns false if the path
+// stops
+static bool RunBranchZero(Machine* machine, State* state, uint32_t target, uint32_t* next) {
+    const BC_Program* program = machine->program;
+    if (state->result.known) {
+        if (state->result.value == 0)
+            *next = target;
+        return true;
+    }
+    if (machine->timeline != NULL) {
+        *next = target;  // As 0
+        return true;
+    }
+    // Both ways, if this state wasn't seen at a branch
+    if (!AddHash(machine, &machine->seen, &machine->seenCount, &machine->seenSize, StateHash(machine, state)))
+        return false;
+    // The way followed first: the one closer to what the environment looks for
+    const uint32_t* distances = machine->environment != NULL ? machine->environment->distances : NULL;
+    bool zeroFirst = distances != NULL && target < program->codeEnd && *next < program->codeEnd &&
+        distances[target] < distances[*next];
+    bool zeroHopeless = distances != NULL && Hopeless(machine, state, distances, target);
+    bool otherHopeless = distances != NULL && Hopeless(machine, state, distances, *next);
+    if (zeroHopeless && otherHopeless)
+        return false;
+    if (zeroHopeless || otherHopeless) {
+        // Only one way
+        state->result = Known(zeroHopeless ? 1 : 0);
+        if (!zeroHopeless)
+            *next = target;
+        return true;
+    }
+    if (machine->workCount < VM_MAX_STATES) {
+        State* other = CopyState(machine, state);
+        if (other == NULL) {
+            machine->ok = false;
+            return false;
+        }
+        other->pc = zeroFirst ? *next : target;
+        other->result = Known(zeroFirst ? 1 : 0);
+        machine->work[machine->workCount++] = other;
+        machine->result->states++;
+        if (zeroFirst) {
+            state->result = Known(0);
+            *next = target;
+            return true;
+        }
+    }
+    state->result = Known(1);
+    return true;
+}
+
+// The services that yield (BC_DATA_SERVICE, BC_SERVICE2C): the next frames. In a run with time the thread waits from
+// next; else the path goes on, up to the waits of the environment. Returns false if the path stops
+static bool RunWait(Machine* machine, State* state, const BC_Instruction* ins, uint32_t next) {
+    Settle(machine, state);
+    state->result = g_unknown;
+    if (machine->timeline == NULL && machine->environment != NULL && machine->environment->maxWaits != 0 &&
+        ++state->waits > machine->environment->maxWaits)
+        return false;
+    if (machine->timeline == NULL && machine->environment != NULL && machine->environment->releaseWaits) {
+        // A wait that changes nothing: the other threads run meanwhile and change what it waits for, the
+        // variables that it has read since its last wait (all of them if it has read too many)
+        uint64_t hash = StateHash(machine, state);
+        if (hash == state->waitHash && state->readCount > VM_WAIT_READS)
+            memset(state->variables + machine->variableSize, 0, machine->variableSize);
+        else if (hash == state->waitHash) {
+            for (uint32_t i = 0; i < state->readCount; i++) {
+                uint32_t offset = state->reads[i] & 0xFFFFFF, size = state->reads[i] >> 24;
+                for (uint32_t b = 0; b < size && offset + b < machine->variableSize; b++)
+                    state->variables[machine->variableSize + offset + b] = 0;
+            }
+        }
+        state->waitHash = hash;
+        state->readCount = 0;
+    }
+    if (machine->timeline != NULL) {
+        // The service 0 waits the frames of its argument, the first value of the stack
+        uint32_t frames = 1;
+        if (ins->kind == BC_SERVICE2C && ins->operand == 0) {
+            Value wait = Load(machine, state, Known(state->sp), 4);
+            if (wait.known && wait.value >= 1 && wait.value <= 100000)
+                frames = wait.value;
+        }
+        state->wake = machine->timeline->frame + frames;
+        state->status = THREAD_WAITING;
+        state->pc = next;
+        return false;
+    }
+    return true;
+}
+
 // Runs a path until its thread ends, it stops or the limits are reached
 static void RunPath(Machine* machine, State* state) {
     const BC_Program* program = machine->program;
@@ -838,43 +975,9 @@ static void RunPath(Machine* machine, State* state) {
             ok = Push(machine, state, value);
             break;
         }
-        case BC_OPERATOR: {
-            uint8_t byte = ins.byte;
-            if (byte == 0x80) {
-                state->result = Pop(machine, state);
-            } else if (byte == 0x81) {
-                ok = Push(machine, state, state->result);
-            } else if (byte >= 0x82 && byte <= 0x84) {
-                Value address = Pop(machine, state);
-                NoteRead(machine, state, address, byte == 0x82 ? 1 : byte == 0x83 ? 2 : 4);
-                ok = Push(machine, state, Load(machine, state, address, byte == 0x82 ? 1 : byte == 0x83 ? 2 : 4));
-            } else if (byte >= 0x85 && byte <= 0x87) {
-                Value value = Pop(machine, state);
-                Value address = Pop(machine, state);
-                uint32_t size = byte == 0x85 ? 1 : byte == 0x86 ? 2 : 4;
-                ok = Store(machine, state, address, size, value);
-                if (ok && size < 4 && value.known)
-                    value.value = size == 1 ? (uint32_t)(int32_t)(int8_t)value.value : (uint32_t)(int32_t)(int16_t)value.value;
-                ok = ok && Push(machine, state, value);
-            } else if (byte == 0x8E || byte == 0x9D || byte == 0x9E) {
-                Value value = Pop(machine, state);
-                float f = AsFloat(value.value);
-                if (byte == 0x9E && value.known && (!isfinite(f) || f >= 2147483648.0f || f < -2147483648.0f))
-                    value = g_unknown;
-                else if (value.known)
-                    value.value = byte == 0x8E ? ~value.value : byte == 0x9D ? FloatBits((float)(int32_t)value.value) :
-                        (uint32_t)(int32_t)f;
-                ok = Push(machine, state, value);
-            } else if (IsBinary(byte)) {
-                Value b = Pop(machine, state);
-                Value a = Pop(machine, state);
-                Value value = g_unknown;
-                if (a.known && b.known && Operate(byte, a.value, b.value, &value.value))
-                    value.known = true;
-                ok = Push(machine, state, value);
-            }
+        case BC_OPERATOR:
+            ok = RunOperator(machine, state, ins.byte);
             break;
-        }
         case BC_RET: {
             state->sp = state->fp;
             Value fp = Pop(machine, state);
@@ -921,48 +1024,8 @@ static void RunPath(Machine* machine, State* state) {
             next = ins.target;
             break;
         case BC_BRANCH_ZERO:
-            if (state->result.known) {
-                if (state->result.value == 0)
-                    next = ins.target;
-            } else if (machine->timeline != NULL) {
-                next = ins.target;  // As 0
-            } else {
-                // Both ways, if this state wasn't seen at a branch
-                if (!AddHash(machine, &machine->seen, &machine->seenCount, &machine->seenSize, StateHash(machine, state)))
-                    return;
-                // The way followed first: the one closer to what the environment looks for
-                const uint32_t* distances = machine->environment != NULL ? machine->environment->distances : NULL;
-                bool zeroFirst = distances != NULL && ins.target < program->codeEnd && next < program->codeEnd &&
-                    distances[ins.target] < distances[next];
-                bool zeroHopeless = distances != NULL && Hopeless(machine, state, distances, ins.target);
-                bool otherHopeless = distances != NULL && Hopeless(machine, state, distances, next);
-                if (zeroHopeless && otherHopeless)
-                    return;
-                if (zeroHopeless || otherHopeless) {
-                    // Only one way
-                    state->result = Known(zeroHopeless ? 1 : 0);
-                    if (!zeroHopeless)
-                        next = ins.target;
-                    break;
-                }
-                if (machine->workCount < VM_MAX_STATES) {
-                    State* other = CopyState(machine, state);
-                    if (other == NULL) {
-                        machine->ok = false;
-                        return;
-                    }
-                    other->pc = zeroFirst ? next : ins.target;
-                    other->result = Known(zeroFirst ? 1 : 0);
-                    machine->work[machine->workCount++] = other;
-                    result->states++;
-                    if (zeroFirst) {
-                        state->result = Known(0);
-                        next = ins.target;
-                        break;
-                    }
-                }
-                state->result = Known(1);
-            }
+            if (!RunBranchZero(machine, state, ins.target, &next))
+                return;
             break;
         case BC_GAME:
             state->result = GameCall(machine, state, &ins);
@@ -971,41 +1034,8 @@ static void RunPath(Machine* machine, State* state) {
             break;
         case BC_DATA_SERVICE:
         case BC_SERVICE2C:
-            // They yield: the next frames
-            Settle(machine, state);
-            state->result = g_unknown;
-            if (machine->timeline == NULL && machine->environment != NULL && machine->environment->maxWaits != 0 &&
-                ++state->waits > machine->environment->maxWaits)
+            if (!RunWait(machine, state, &ins, next))
                 return;
-            if (machine->timeline == NULL && machine->environment != NULL && machine->environment->releaseWaits) {
-                // A wait that changes nothing: the other threads run meanwhile and change what it waits for, the
-                // variables that it has read since its last wait (all of them if it has read too many)
-                uint64_t hash = StateHash(machine, state);
-                if (hash == state->waitHash && state->readCount > VM_WAIT_READS)
-                    memset(state->variables + machine->variableSize, 0, machine->variableSize);
-                else if (hash == state->waitHash) {
-                    for (uint32_t i = 0; i < state->readCount; i++) {
-                        uint32_t offset = state->reads[i] & 0xFFFFFF, size = state->reads[i] >> 24;
-                        for (uint32_t b = 0; b < size && offset + b < machine->variableSize; b++)
-                            state->variables[machine->variableSize + offset + b] = 0;
-                    }
-                }
-                state->waitHash = hash;
-                state->readCount = 0;
-            }
-            if (machine->timeline != NULL) {
-                // The service 0 waits the frames of its argument, the first value of the stack
-                uint32_t frames = 1;
-                if (ins.kind == BC_SERVICE2C && ins.operand == 0) {
-                    Value wait = Load(machine, state, Known(state->sp), 4);
-                    if (wait.known && wait.value >= 1 && wait.value <= 100000)
-                        frames = wait.value;
-                }
-                state->wake = machine->timeline->frame + frames;
-                state->status = THREAD_WAITING;
-                state->pc = next;
-                return;
-            }
             break;
         case BC_NATIVE:
         case BC_NATIVE4:

@@ -78,6 +78,8 @@ set(SRC_CORE
     src/scenario/scnDecompile.h
     src/scenario/scnDisplay.c
     src/scenario/scnDisplay.h
+    src/scenario/scnGoal.c
+    src/scenario/scnGoal.h
     src/scenario/scnPair.c
     src/scenario/scnPair.h
     src/scenario/scnVm.c
