@@ -19,6 +19,7 @@ typedef struct {
     Value       result;
     uint8_t*    variables;  // variableSize bytes, then their known flags
     uint8_t*    stack;      // VM_STACK_SIZE bytes, then their known flags
+    uint8_t*    game;       // VM_GAME_SIZE bytes of the memory of the game, then their known flags
     uint32_t    overlayCount;
     uint32_t    overlayCapacity;
     uint32_t*   overlayAddresses;
@@ -27,6 +28,10 @@ typedef struct {
     uint8_t     path[VM_PATH_SIZE]; // Of the environment
     uint8_t     status;         // Of a thread run with time (ThreadStatus)
     uint32_t    wake;           // Frame at which a thread run with time goes on after a wait
+    uint64_t    waitHash;       // Of the state at its last yield (VM_Environment.releaseWaits)
+    uint32_t    readCount;      // Reads of the variables since its last yield (VM_WAIT_READS at most are kept)
+    uint32_t    reads[VM_WAIT_READS]; // Address of the first byte in the low 24 bits, size in the high 8 bits
+    uint32_t    waits;          // Yields on the path (VM_Environment.maxWaits)
 } State;
 
 typedef enum {
@@ -51,6 +56,7 @@ typedef struct {
     uint32_t    start;          // Address of the call of the snapshot
     bool        started;
     uint8_t*    variables;      // Shared by the threads
+    uint8_t*    game;           // Memory of the game, shared by the threads
 } Timeline;
 
 // A thread to run: its function and arguments, and the variables when it was started
@@ -84,6 +90,7 @@ typedef struct {
     bool                stop;           // A call was captured
     State*              captured;
     Timeline*           timeline;       // Of a run with time, NULL otherwise
+    uint64_t            maxSteps;       // Per thread
 } Machine;
 
 struct VM_Memory {
@@ -98,6 +105,7 @@ static void FreeState(State* state) {
         return;
     free(state->variables);
     free(state->stack);
+    free(state->game);
     free(state->overlayAddresses);
     free(state->overlayBytes);
     free(state);
@@ -109,7 +117,8 @@ static State* NewState(const Machine* machine) {
         return NULL;
     state->variables = calloc(machine->variableSize * 2 + 1, 1);
     state->stack = calloc(VM_STACK_SIZE * 2, 1);
-    if (state->variables == NULL || state->stack == NULL) {
+    state->game = calloc(VM_GAME_SIZE * 2, 1);
+    if (state->variables == NULL || state->stack == NULL || state->game == NULL) {
         FreeState(state);
         return NULL;
     }
@@ -126,7 +135,12 @@ static State* CopyState(const Machine* machine, const State* source) {
     state->result = source->result;
     state->yielded = source->yielded;
     memcpy(state->path, source->path, sizeof(state->path));
+    state->waitHash = source->waitHash;
+    state->readCount = source->readCount;
+    memcpy(state->reads, source->reads, sizeof(state->reads));
+    state->waits = source->waits;
     memcpy(state->variables, source->variables, machine->variableSize * 2);
+    memcpy(state->game, source->game, VM_GAME_SIZE * 2);
     // The stack above sp: below it, the values are not used before they are written
     uint32_t used = source->sp >= VM_STACK_BASE && source->sp <= VM_STACK_BASE + VM_STACK_SIZE ? source->sp - VM_STACK_BASE : 0;
     memcpy(state->stack + used, source->stack + used, VM_STACK_SIZE - used);
@@ -157,6 +171,11 @@ static bool ReadByte(const Machine* machine, const State* state, uint32_t addres
         *known = state->variables[machine->variableSize + address - VM_VARIABLES_BASE] != 0;
         return true;
     }
+    if (address >= VM_GAME_BASE && address < VM_GAME_BASE + VM_GAME_SIZE) {
+        *byte = state->game[address - VM_GAME_BASE];
+        *known = state->game[VM_GAME_SIZE + address - VM_GAME_BASE] != 0;
+        return true;
+    }
     if (address >= VM_PROGRAM_BASE && address < VM_PROGRAM_BASE + machine->programSize) {
         for (uint32_t i = state->overlayCount; i-- > 0;) {
             if (state->overlayAddresses[i] == address) {
@@ -181,6 +200,11 @@ static bool WriteByte(const Machine* machine, State* state, uint32_t address, ui
     if (address >= VM_VARIABLES_BASE && address < VM_VARIABLES_BASE + machine->variableSize) {
         state->variables[address - VM_VARIABLES_BASE] = byte;
         state->variables[machine->variableSize + address - VM_VARIABLES_BASE] = known;
+        return true;
+    }
+    if (address >= VM_GAME_BASE && address < VM_GAME_BASE + VM_GAME_SIZE) {
+        state->game[address - VM_GAME_BASE] = byte;
+        state->game[VM_GAME_SIZE + address - VM_GAME_BASE] = known;
         return true;
     }
     if (address >= VM_PROGRAM_BASE && address < VM_PROGRAM_BASE + machine->programSize) {
@@ -233,6 +257,16 @@ static Value Load(const Machine* machine, const State* state, Value address, uin
     return (Value) { known ? value : 0, known };
 }
 
+// Notes a read of the variables since the last yield (VM_Environment.releaseWaits)
+static void NoteRead(const Machine* machine, State* state, Value address, uint32_t size) {
+    if (machine->timeline != NULL || machine->environment == NULL || !machine->environment->releaseWaits ||
+        !address.known || address.value < VM_VARIABLES_BASE || address.value >= VM_VARIABLES_BASE + machine->variableSize)
+        return;
+    if (state->readCount < VM_WAIT_READS)
+        state->reads[state->readCount] = (address.value - VM_VARIABLES_BASE) | size << 24;
+    state->readCount++;
+}
+
 // Returns false if the address is known but not valid. A write to an unknown address is lost
 static bool Store(const Machine* machine, State* state, Value address, uint32_t size, Value value) {
     if (!address.known)
@@ -275,6 +309,7 @@ static uint64_t StateHash(const Machine* machine, const State* state) {
         hash = Hash(hash, state->path, sizeof(state->path));
     }
     hash = Hash(hash, state->variables, machine->variableSize * 2);
+    hash = Hash(hash, state->game, VM_GAME_SIZE * 2);
     if (state->sp >= VM_STACK_BASE && state->sp < VM_STACK_BASE + VM_STACK_SIZE) {
         uint32_t used = state->sp - VM_STACK_BASE;
         hash = Hash(hash, state->stack + used, VM_STACK_SIZE - used);
@@ -457,7 +492,8 @@ static Value Answer(Machine* machine, State* state, const VM_Call* call) {
         return g_unknown;
     VM_Answer answer;
     memset(&answer, 0, sizeof(answer));
-    environment->call(environment->context, call, state->yielded, state->path, &answer);
+    VM_Memory memory = { machine, state };
+    environment->call(environment->context, call, state->yielded, state->path, &memory, &answer);
     uint32_t size = answer.size < VM_ANSWER_BYTES ? answer.size : VM_ANSWER_BYTES;
     for (uint32_t i = 0; i < size; i++)
         WriteByte(machine, state, answer.address + i, answer.bytes[i], (answer.knownBytes >> i) & 1);
@@ -561,11 +597,31 @@ static Value GameCall(Machine* machine, State* state, const BC_Instruction* ins)
     return Answer(machine, state, &call);
 }
 
+// The path can't get to what the environment looks for from an offset of the code: nor after the returns of its stack
+static bool Hopeless(const Machine* machine, const State* state, const uint32_t* distances, uint32_t pc) {
+    uint32_t codeEnd = machine->program->codeEnd;
+    if (pc >= codeEnd || distances[pc] < VM_DISTANCE_RETURN)
+        return false;
+    uint32_t fp = state->fp;
+    for (uint32_t depth = 0; fp != 0 && depth < 256; depth++) {
+        Value saved = Load(machine, state, Known(fp), 4);
+        Value back = Load(machine, state, Known(fp + 4), 4);
+        if (!saved.known || !back.known)
+            return false;
+        if (back.value == 0 && saved.value == 0)
+            return true;    // The end of the thread
+        if (back.value >= codeEnd || distances[back.value] < VM_DISTANCE_RETURN)
+            return false;
+        fp = saved.value;
+    }
+    return fp == 0;
+}
+
 // Runs a path until its thread ends, it stops or the limits are reached
 static void RunPath(Machine* machine, State* state) {
     const BC_Program* program = machine->program;
     VM_Result* result = machine->result;
-    uint64_t maxSteps = machine->timeline != NULL ? VM_TIMED_STEPS : VM_MAX_STEPS;
+    uint64_t maxSteps = machine->timeline != NULL ? VM_TIMED_STEPS : machine->maxSteps;
     for (;;) {
         if (machine->steps >= maxSteps || !machine->ok || machine->stop)
             return;
@@ -588,6 +644,8 @@ static void RunPath(Machine* machine, State* state) {
                 value = Known(VM_PROGRAM_BASE + (uint32_t)ins.operand);
             else if (ins.area == BC_AREA_VARIABLE || ins.area == BC_AREA_LOCAL) {
                 Value address = Known((ins.area == BC_AREA_VARIABLE ? VM_VARIABLES_BASE : state->fp) + (uint32_t)ins.operand);
+                if (ins.width != 0)
+                    NoteRead(machine, state, address, ins.width);
                 value = ins.width == 0 ? address : Load(machine, state, address, ins.width);
             }
             ok = Push(machine, state, value);
@@ -601,6 +659,7 @@ static void RunPath(Machine* machine, State* state) {
                 ok = Push(machine, state, state->result);
             } else if (byte >= 0x82 && byte <= 0x84) {
                 Value address = Pop(machine, state);
+                NoteRead(machine, state, address, byte == 0x82 ? 1 : byte == 0x83 ? 2 : 4);
                 ok = Push(machine, state, Load(machine, state, address, byte == 0x82 ? 1 : byte == 0x83 ? 2 : 4));
             } else if (byte >= 0x85 && byte <= 0x87) {
                 Value value = Pop(machine, state);
@@ -684,16 +743,36 @@ static void RunPath(Machine* machine, State* state) {
                 // Both ways, if this state wasn't seen at a branch
                 if (!AddHash(machine, &machine->seen, &machine->seenCount, &machine->seenSize, StateHash(machine, state)))
                     return;
+                // The way followed first: the one closer to what the environment looks for
+                const uint32_t* distances = machine->environment != NULL ? machine->environment->distances : NULL;
+                bool zeroFirst = distances != NULL && ins.target < program->codeEnd && next < program->codeEnd &&
+                    distances[ins.target] < distances[next];
+                bool zeroHopeless = distances != NULL && Hopeless(machine, state, distances, ins.target);
+                bool otherHopeless = distances != NULL && Hopeless(machine, state, distances, next);
+                if (zeroHopeless && otherHopeless)
+                    return;
+                if (zeroHopeless || otherHopeless) {
+                    // Only one way
+                    state->result = Known(zeroHopeless ? 1 : 0);
+                    if (!zeroHopeless)
+                        next = ins.target;
+                    break;
+                }
                 if (machine->workCount < VM_MAX_STATES) {
                     State* other = CopyState(machine, state);
                     if (other == NULL) {
                         machine->ok = false;
                         return;
                     }
-                    other->pc = ins.target;
-                    other->result = Known(0);
+                    other->pc = zeroFirst ? next : ins.target;
+                    other->result = Known(zeroFirst ? 1 : 0);
                     machine->work[machine->workCount++] = other;
                     result->states++;
+                    if (zeroFirst) {
+                        state->result = Known(0);
+                        next = ins.target;
+                        break;
+                    }
                 }
                 state->result = Known(1);
             }
@@ -708,6 +787,25 @@ static void RunPath(Machine* machine, State* state) {
             // They yield: the next frames
             Settle(machine, state);
             state->result = g_unknown;
+            if (machine->timeline == NULL && machine->environment != NULL && machine->environment->maxWaits != 0 &&
+                ++state->waits > machine->environment->maxWaits)
+                return;
+            if (machine->timeline == NULL && machine->environment != NULL && machine->environment->releaseWaits) {
+                // A wait that changes nothing: the other threads run meanwhile and change what it waits for, the
+                // variables that it has read since its last wait (all of them if it has read too many)
+                uint64_t hash = StateHash(machine, state);
+                if (hash == state->waitHash && state->readCount > VM_WAIT_READS)
+                    memset(state->variables + machine->variableSize, 0, machine->variableSize);
+                else if (hash == state->waitHash) {
+                    for (uint32_t i = 0; i < state->readCount; i++) {
+                        uint32_t offset = state->reads[i] & 0xFFFFFF, size = state->reads[i] >> 24;
+                        for (uint32_t b = 0; b < size && offset + b < machine->variableSize; b++)
+                            state->variables[machine->variableSize + offset + b] = 0;
+                    }
+                }
+                state->waitHash = hash;
+                state->readCount = 0;
+            }
             if (machine->timeline != NULL) {
                 // The service 0 waits the frames of its argument, the first value of the stack
                 uint32_t frames = 1;
@@ -751,6 +849,8 @@ static State* NewThread(Machine* machine, uint32_t function, uint32_t count, con
     else {
         free(state->variables);
         state->variables = machine->timeline->variables;
+        free(state->game);
+        state->game = machine->timeline->game;
     }
     state->sp = VM_STACK_BASE + VM_STACK_SIZE;
     state->fp = 0;
@@ -762,8 +862,10 @@ static State* NewThread(Machine* machine, uint32_t function, uint32_t count, con
     state->fp = state->sp;
     state->pc = function;
     if (!ok) {
-        if (variables == NULL)
+        if (variables == NULL) {
             state->variables = NULL;
+            state->game = NULL;
+        }
         FreeState(state);
         return NULL;
     }
@@ -783,11 +885,11 @@ static void RunThread(Machine* machine, const Root* root) {
     machine->work[machine->workCount++] = state;
     while (machine->workCount > 0 && machine->ok) {
         State* path = machine->work[--machine->workCount];
-        if (states++ < VM_MAX_STATES && machine->steps < VM_MAX_STEPS)
+        if (states++ < VM_MAX_STATES && machine->steps < machine->maxSteps)
             RunPath(machine, path);
         FreeState(path);
     }
-    if (states > VM_MAX_STATES || machine->steps >= VM_MAX_STEPS)
+    if (states > VM_MAX_STATES || machine->steps >= machine->maxSteps)
         machine->result->truncated++;
 }
 
@@ -815,15 +917,32 @@ static bool Run(const BC_Program* program, uint32_t function, const VM_Environme
     machine.variableSize = header->variableSize;
     machine.result = result;
     machine.ok = true;
+    uint64_t maxTotal = environment != NULL && environment->maxSteps != 0 ? environment->maxSteps : VM_MAX_TOTAL_STEPS;
+    machine.maxSteps = environment != NULL && environment->maxSteps != 0 && environment->maxSteps < VM_MAX_STEPS ?
+        environment->maxSteps : VM_MAX_STEPS;
     machine.roots = calloc(VM_MAX_THREADS, sizeof(Root));
     machine.rootHashes = calloc(VM_MAX_THREADS, sizeof(uint64_t));
     machine.work = calloc(VM_MAX_STATES + 1, sizeof(State*));
     uint8_t* variables = calloc(machine.variableSize * 2 + 1, 1);   // Unknown at the start
     if (machine.roots == NULL || machine.rootHashes == NULL || machine.work == NULL || variables == NULL)
         machine.ok = false;
-    else
+    else {
+        if (environment != NULL && environment->initialize != NULL) {
+            State* first = NewState(&machine);
+            if (first == NULL)
+                machine.ok = false;
+            else {
+                free(first->variables);
+                first->variables = variables;
+                VM_Memory memory = { &machine, first };
+                environment->initialize(environment->context, &memory);
+                first->variables = NULL;
+                FreeState(first);
+            }
+        }
         AddRoot(&machine, function, 0, NULL, variables);
-    for (uint32_t r = 0; r < machine.rootCount && machine.ok && !machine.stop && result->steps < VM_MAX_TOTAL_STEPS; r++) {
+    }
+    for (uint32_t r = 0; r < machine.rootCount && machine.ok && !machine.stop && result->steps < maxTotal; r++) {
         machine.thread = r;
         RunThread(&machine, &machine.roots[r]);
         result->threads++;
@@ -854,6 +973,10 @@ static bool Run(const BC_Program* program, uint32_t function, const VM_Environme
 
 bool VM_RunEnvironment(const BC_Program* program, const VM_Environment* environment, VM_Result* result) {
     return Run(program, program->scn->header.entry, environment, result, NULL);
+}
+
+bool VM_RunFrom(const BC_Program* program, uint32_t function, const VM_Environment* environment, VM_Result* result) {
+    return Run(program, function, environment, result, NULL);
 }
 
 VM_Snapshot* VM_Capture(const BC_Program* program, const VM_Environment* environment) {
@@ -889,6 +1012,19 @@ void VM_FreeSnapshot(VM_Snapshot* snapshot) {
 
 uint32_t VM_SnapshotAddress(const VM_Snapshot* snapshot) {
     return snapshot->address;
+}
+
+bool VM_ReadSnapshotGame(const VM_Snapshot* snapshot, uint32_t address, uint32_t size, uint8_t* bytes, uint32_t* known) {
+    *known = 0;
+    if (address < VM_GAME_BASE || size > VM_GAME_SIZE || address - VM_GAME_BASE > VM_GAME_SIZE - size)
+        return false;
+    const uint8_t* game = snapshot->state->game;
+    for (uint32_t i = 0; i < size; i++) {
+        bytes[i] = game[address - VM_GAME_BASE + i];
+        if (game[VM_GAME_SIZE + address - VM_GAME_BASE + i] != 0 && i < 32)
+            *known |= 1u << i;
+    }
+    return true;
 }
 
 // Runs a thread with time until it waits or ends. Before the call of the snapshot, the waits of its thread don't wait
@@ -930,15 +1066,21 @@ bool VM_RunTimed(const BC_Program* program, const VM_Snapshot* snapshot, bool re
     machine.timeline = &timeline;
     timeline.threads = calloc(VM_TIMED_THREADS, sizeof(State*));
     timeline.variables = malloc(machine.variableSize * 2 + 1);
-    State* first = timeline.threads != NULL && timeline.variables != NULL ? CopyState(&machine, snapshot->state) : NULL;
+    timeline.game = malloc(VM_GAME_SIZE * 2);
+    State* first = timeline.threads != NULL && timeline.variables != NULL && timeline.game != NULL ?
+        CopyState(&machine, snapshot->state) : NULL;
     if (first == NULL) {
         free(timeline.threads);
         free(timeline.variables);
+        free(timeline.game);
         return false;
     }
     memcpy(timeline.variables, first->variables, machine.variableSize * 2);
     free(first->variables);
     first->variables = timeline.variables;
+    memcpy(timeline.game, first->game, VM_GAME_SIZE * 2);
+    free(first->game);
+    first->game = timeline.game;
     first->status = THREAD_RUNNING;
     first->wake = 0;
     // From the start of the function of the call, called from the same place: sp and fp as after the call
@@ -970,10 +1112,12 @@ bool VM_RunTimed(const BC_Program* program, const VM_Snapshot* snapshot, bool re
     result->steps = calls.steps;
     for (uint32_t t = 0; t < timeline.count; t++) {
         timeline.threads[t]->variables = NULL;  // Shared
+        timeline.threads[t]->game = NULL;
         FreeState(timeline.threads[t]);
     }
     free(timeline.threads);
     free(timeline.variables);
+    free(timeline.game);
     return machine.ok;
 }
 

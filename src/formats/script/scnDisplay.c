@@ -59,7 +59,9 @@ static bool Known(const VM_Call* call, uint32_t argument) {
     return argument < call->count && (call->known & (1u << argument));
 }
 
-static void OnCall(void* context, const VM_Call* call, bool yielded, uint8_t* path, VM_Answer* answer) {
+static void OnCall(void* context, const VM_Call* call, bool yielded, uint8_t* path, VM_Memory* memory,
+    VM_Answer* answer) {
+    (void)memory;
     Context* c = context;
     const SCNDisplay_Time* time = c->time;
     switch (call->id) {

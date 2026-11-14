@@ -23,10 +23,10 @@ id	handler	arguments	name	description	character
 015	0x0C157318	1			
 016	0x0C157326				
 017	0x0C157336				
-018	0x0C157D24	3	SetPosition	Sets the position of the character of ID argument 0 (the word 0x08 of the character, as Position of the CHRT scripts) from the vector of 3 floats at argument 2. Argument 1 has flags: 0x20000000, 0x10000000 and 0x08000000 select X, Y and Z (0x38000000: the three), 0x80000000 adds the vector to the position instead, and 0x40000000 uses another space (the word 0x04 and the functions around it)	yes
+018	0x0C157D24	3	SetPosition	Sets the position of the character of ID argument 0 (the word 0x08 of the character, as Position of the CHRT scripts) from the vector of 3 floats at argument 2. Argument 1 has flags: 0x20000000, 0x10000000 and 0x08000000 select X, Y and Z (0x38000000: the three), 0x80000000 adds the vector to the position instead, and 0x40000000 goes through the character of the word 0x04 of the character (*probably* the one it is attached to, e.g. with 0x0E6): when that word is 0, the same values as without the flag	yes
 019	0x0C157E6C	4	GetPosition	Copies the position of the character of ID argument 0 to the vector at argument 2: its own position (argument 1: -1) or that of its node of argument 1. Argument 3 has flags, 0x40000000 as for SetPosition (0x018)	yes
 01A	0x0C157FB4	5			yes
-01B	0x0C158024	1			yes
+01B	0x0C158024	1	Detach	Detaches the character of ID argument 0 from the character it was attached to with 0x0E6 (Attach): clears the attachment of its module FIXO. It *probably* stays where it was	yes
 01C	0x0C1583D0	3	GetAngle	Copies the angles of the character of ID argument 0 (the words 0x14 to 0x1C, as Angle of the CHRT scripts) to the vector at argument 1, each one masked with 0xFFFF. Argument 2 has flags, 0x40000000 as for SetPosition (0x018)	yes
 01D	0x0C15806E	4	SetAngle	Sets the angles of the character of ID argument 0 from the vector at argument 2, with the flags of SetPosition (0x018) in argument 1 (0x38000000: X, Y and Z, 0x10000000: only Y, the direction it faces). Argument 3 is passed to the function that turns it. Returns a value	yes
 01E	0x0C158098	4	TurnTowards	Computes the direction from the position of the character of ID argument 0 to the point at argument 2 (with the arctangent function at 0x0C0915E0) and sets it as with SetAngle (0x01D), with its flags (argument 1) and argument 3	yes
@@ -229,7 +229,7 @@ id	handler	arguments	name	description	character
 0E3	0x0C16AC74				
 0E4	0x0C1578B0				
 0E5	0x0C163C8E				
-0E6	0x0C157FF2	5			yes
+0E6	0x0C157FF2	5	Attach	Attaches the character of ID argument 0 to the one of argument 1, at the bone of argument 2 of the skeleton of its motion module MOTM (18: right hand, 12: left hand; not a node ID of the model), with a position (3 floats, argument 3) and angles (3 integers, 0x10000 = 360, argument 4) relative to the bone, through the module FIXO of the character; it then follows the bone. *Probably* attached to the character itself when it has no such bone	yes
 0E7	0x0C1659BE	9			yes
 0E8	0x0C1659F8	2			yes
 0E9	0x0C165A74	4, 5			yes
