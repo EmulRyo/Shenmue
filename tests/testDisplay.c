@@ -4,7 +4,7 @@
 #include "corpus.h"
 #include "formats/map/weather.h"
 #include "formats/script/scn.h"
-#include "formats/script/scnDisplay.h"
+#include "scenario/scnDisplay.h"
 #include "test.h"
 
 // WEATHER.BIN and the display of the maps by the scene programs at a date: the files have the 4 chunks, the events of

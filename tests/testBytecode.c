@@ -3,7 +3,7 @@
 #include "core/bytes.h"
 #include "corpus.h"
 #include "formats/script/scn.h"
-#include "formats/script/scnBytecode.h"
+#include "scenario/scnBytecode.h"
 #include "test.h"
 
 // The bytecode of the scene programs: the encodings of the instructions, and the bytecode of the 136 SCN files

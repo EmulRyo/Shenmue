@@ -4,8 +4,8 @@
 #include "corpus.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
-#include "formats/script/sh4.h"
-#include "formats/script/sh4Code.h"
+#include "sh4/sh4.h"
+#include "sh4/sh4Code.h"
 #include "test.h"
 
 // The SH-4 disassembler: the encodings of the manual of the SH-4, and the code of the SH-4 scene programs

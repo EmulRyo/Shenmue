@@ -3,7 +3,7 @@
 #include "corpus.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
-#include "formats/script/sh4Listing.h"
+#include "sh4/sh4Listing.h"
 #include "test.h"
 
 // The listing of the SH-4 programs: the lines of each function cover it without gaps, every place a line leads to is a

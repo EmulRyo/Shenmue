@@ -3,9 +3,9 @@
 #include "corpus.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
-#include "formats/script/scnBytecode.h"
-#include "formats/script/scnPair.h"
-#include "formats/script/sh4Listing.h"
+#include "scenario/scnBytecode.h"
+#include "scenario/scnPair.h"
+#include "sh4/sh4Listing.h"
 #include "test.h"
 
 // The two versions of the program of each SH-4 map: the SH-4 code of its mapinfo.bin and the bytecode of its SCN file

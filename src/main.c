@@ -9,7 +9,7 @@
 #include "views/imageView.h"
 #include "views/motnView.h"
 #include "views/mt5View.h"
-#include "views/programView.h"
+#include "views/program/programView.h"
 #include "views/views.h"
 #include "app/fileOpen.h"
 #include "app/filenameDB.h"

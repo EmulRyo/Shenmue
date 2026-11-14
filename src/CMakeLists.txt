@@ -1,4 +1,4 @@
-# The core and the formats: a library for the application and the tests
+# The core, the formats, the SH-4 code and the programs of the scenes: a library for the application and the tests
 set(SRC_CORE
     src/core/bytes.h
     src/core/dir.c
@@ -53,30 +53,8 @@ set(SRC_CORE
     src/formats/script/chrt.h
     src/formats/script/scn.c
     src/formats/script/scn.h
-    src/formats/script/scnBytecode.c
-    src/formats/script/scnBytecode.h
-    src/formats/script/scnCutscene.c
-    src/formats/script/scnCutscene.h
-    src/formats/script/scnData.c
-    src/formats/script/scnData.h
-    src/formats/script/scnDecompile.c
-    src/formats/script/scnDecompile.h
-    src/formats/script/scnDisplay.c
-    src/formats/script/scnDisplay.h
     src/formats/script/scnf.c
     src/formats/script/scnf.h
-    src/formats/script/scnPair.c
-    src/formats/script/scnPair.h
-    src/formats/script/scnVm.c
-    src/formats/script/scnVm.h
-    src/formats/script/sh4.c
-    src/formats/script/sh4.h
-    src/formats/script/sh4Code.c
-    src/formats/script/sh4Code.h
-    src/formats/script/sh4Listing.c
-    src/formats/script/sh4Listing.h
-    src/formats/script/sh4Program.c
-    src/formats/script/sh4Program.h
 
     src/formats/sound/snd.c
     src/formats/sound/snd.h
@@ -89,10 +67,34 @@ set(SRC_CORE
     src/formats/texture/pvr.h
     src/formats/texture/spr.c
     src/formats/texture/spr.h
+
+    src/scenario/scnBytecode.c
+    src/scenario/scnBytecode.h
+    src/scenario/scnCutscene.c
+    src/scenario/scnCutscene.h
+    src/scenario/scnData.c
+    src/scenario/scnData.h
+    src/scenario/scnDecompile.c
+    src/scenario/scnDecompile.h
+    src/scenario/scnDisplay.c
+    src/scenario/scnDisplay.h
+    src/scenario/scnPair.c
+    src/scenario/scnPair.h
+    src/scenario/scnVm.c
+    src/scenario/scnVm.h
+
+    src/sh4/sh4.c
+    src/sh4/sh4.h
+    src/sh4/sh4Code.c
+    src/sh4/sh4Code.h
+    src/sh4/sh4Listing.c
+    src/sh4/sh4Listing.h
+    src/sh4/sh4Program.c
+    src/sh4/sh4Program.h
     PARENT_SCOPE
 )
 
-# The application: the rendering, the audio, the interface and the views
+# The application: the files of the game, the rendering, the audio, the interface and the views
 set(SRC
     src/CMakeLists.txt
     src/main.c
@@ -114,6 +116,13 @@ set(SRC
     src/audio/sndSynth.c
     src/audio/sndSynth.h
     src/audio/sndSynthInternal.h
+
+    src/game/mapDate.c
+    src/game/mapDate.h
+    src/game/mapFiles.c
+    src/game/mapFiles.h
+    src/game/mapProgram.c
+    src/game/mapProgram.h
 
     src/render/bounds.h
     src/render/freeCamera.c
@@ -142,35 +151,32 @@ set(SRC
     src/ui/waveform.c
     src/ui/waveform.h
 
-    src/views/authSounds.c
-    src/views/authSounds.h
-    src/views/authView.c
-    src/views/authView.h
     src/views/chrtView.c
     src/views/chrtView.h
     src/views/fonView.c
     src/views/fonView.h
     src/views/imageView.c
     src/views/imageView.h
-    src/views/mapDate.c
-    src/views/mapDate.h
-    src/views/mapFiles.c
-    src/views/mapFiles.h
-    src/views/mapinfoView.c
-    src/views/mapinfoView.h
-    src/views/mapProgram.c
-    src/views/mapProgram.h
     src/views/motnView.c
     src/views/motnView.h
     src/views/mt5View.c
     src/views/mt5View.h
-    src/views/programView.c
-    src/views/programView.h
     src/views/sndView.c
     src/views/sndView.h
     src/views/views.c
     src/views/views.h
     src/views/xwmView.c
     src/views/xwmView.h
+
+    src/views/auth/authSounds.c
+    src/views/auth/authSounds.h
+    src/views/auth/authView.c
+    src/views/auth/authView.h
+
+    src/views/mapinfo/mapinfoView.c
+    src/views/mapinfo/mapinfoView.h
+
+    src/views/program/programView.c
+    src/views/program/programView.h
     PARENT_SCOPE
 )

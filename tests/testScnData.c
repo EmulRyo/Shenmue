@@ -7,8 +7,8 @@
 #include "corpus.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
-#include "formats/script/scnData.h"
-#include "formats/script/scnVm.h"
+#include "scenario/scnData.h"
+#include "scenario/scnVm.h"
 #include "test.h"
 
 // What the scene programs of the 136 maps (the SH-4 code with the arguments of its SCN file, or the bytecode) do with

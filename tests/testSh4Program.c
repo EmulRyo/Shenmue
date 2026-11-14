@@ -4,7 +4,7 @@
 #include "corpus.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
-#include "formats/script/sh4Program.h"
+#include "sh4/sh4Program.h"
 #include "test.h"
 
 // The analysis of the SH-4 programs: functions, blocks, calls and literals

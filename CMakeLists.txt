@@ -12,7 +12,7 @@ set(CJSON
     vendor/cJSON/cJSON.h
     vendor/cJSON/cJSON.c)
 
-# The core and the formats, shared by the application and the tests
+# The core, the formats, the SH-4 code and the programs of the scenes, shared by the application and the tests
 add_library(ShenmueCore STATIC ${SRC_CORE})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src PREFIX src FILES ${SRC_CORE})
 set_target_properties(ShenmueCore PROPERTIES C_STANDARD 11 FOLDER libraries)

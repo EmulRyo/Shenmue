@@ -2,7 +2,7 @@
 #include <string.h>
 #include "corpus.h"
 #include "formats/script/scn.h"
-#include "formats/script/scnDecompile.h"
+#include "scenario/scnDecompile.h"
 #include "test.h"
 
 // The pseudo-C of the bytecode of the 136 SCN files: every function is decompiled with the values of the stack used

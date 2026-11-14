@@ -2,7 +2,7 @@
 #include <string.h>
 #include "corpus.h"
 #include "formats/script/scn.h"
-#include "formats/script/scnVm.h"
+#include "scenario/scnVm.h"
 #include "test.h"
 
 // The emulation of the bytecode of the 136 SCN files: the arguments that the emulation knows are those of the analysis

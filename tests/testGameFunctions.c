@@ -5,8 +5,8 @@
 #include "corpus.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
-#include "formats/script/scnBytecode.h"
-#include "formats/script/sh4Program.h"
+#include "scenario/scnBytecode.h"
+#include "sh4/sh4Program.h"
 #include "test.h"
 
 // The database of the functions of the game called by the scene programs (resources/Shenmue1GameFunctions.tsv): one row

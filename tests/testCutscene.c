@@ -4,8 +4,8 @@
 #include <time.h>
 #include "corpus.h"
 #include "formats/script/scn.h"
-#include "formats/script/scnCutscene.h"
-#include "formats/script/scnData.h"
+#include "scenario/scnCutscene.h"
+#include "scenario/scnData.h"
 #include "test.h"
 
 // The run with time of the code of the scene programs that plays with the cutscenes of their table (scnCutscene.h):
