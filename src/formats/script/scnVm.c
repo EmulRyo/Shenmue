@@ -18,8 +18,11 @@ typedef struct {
     uint32_t    fp;
     Value       result;
     uint8_t*    variables;  // variableSize bytes, then their known flags
-    uint8_t*    stack;      // VM_STACK_SIZE bytes, then their known flags
+    uint8_t*    stack;      // The bytes of the stack from the offset stackBase to VM_STACK_SIZE: value, known
+    uint32_t    stackBase;  // Grows down when the stack is written below it
+    uint32_t    stackLow;   // Offset (>= stackBase) below which the bytes of the stack are 0 and unknown
     uint8_t*    game;       // VM_GAME_SIZE bytes of the memory of the game, then their known flags
+    bool        gameUsed;   // Else the memory of the game is 0 and unknown, whatever is in game
     uint32_t    overlayCount;
     uint32_t    overlayCapacity;
     uint32_t*   overlayAddresses;
@@ -67,6 +70,9 @@ typedef struct {
     uint8_t*    variables;
 } Root;
 
+#define VM_SPARE_STATES 64
+#define VM_STACK_CHUNK  0x100   // Bytes of the stack allocated at first
+
 typedef struct {
     const BC_Program*   program;
     uint32_t            programSize;    // Bytes of the program addressed: up to the end of the data
@@ -91,6 +97,8 @@ typedef struct {
     State*              captured;
     Timeline*           timeline;       // Of a run with time, NULL otherwise
     uint64_t            maxSteps;       // Per thread
+    State*              spares[VM_SPARE_STATES];    // Paths ended, whose memory is reused by the next ones
+    uint32_t            spareCount;
 } Machine;
 
 struct VM_Memory {
@@ -111,13 +119,72 @@ static void FreeState(State* state) {
     free(state);
 }
 
-static State* NewState(const Machine* machine) {
+// A path ended: its memory is kept for the next ones (only those that own their memory, out of a run with time)
+static void RecycleState(Machine* machine, State* state) {
+    if (state == NULL || machine->timeline != NULL || machine->spareCount == VM_SPARE_STATES) {
+        FreeState(state);
+        return;
+    }
+    free(state->overlayAddresses);
+    free(state->overlayBytes);
+    machine->spares[machine->spareCount++] = state;
+}
+
+static void FreeSpares(Machine* machine) {
+    while (machine->spareCount > 0)
+        FreeState(machine->spares[--machine->spareCount]);
+}
+
+// The stack of a state from an offset: its bytes from stackLow are kept, those below are 0 and unknown. Returns false on
+// memory error
+static bool LowerStack(State* state, uint32_t offset) {
+    if (offset >= state->stackLow)
+        return true;
+    if (offset < state->stackBase) {
+        // Room down to the offset, at least twice as much as before
+        uint32_t size = VM_STACK_SIZE - state->stackBase;
+        uint32_t base = (offset / VM_STACK_CHUNK) * VM_STACK_CHUNK;
+        if (size * 2 < VM_STACK_SIZE && VM_STACK_SIZE - size * 2 < base)
+            base = VM_STACK_SIZE - size * 2;
+        uint8_t* stack = malloc((VM_STACK_SIZE - base) * 2);
+        if (stack == NULL)
+            return false;
+        memcpy(stack + (state->stackLow - base) * 2, state->stack + (state->stackLow - state->stackBase) * 2,
+            (VM_STACK_SIZE - state->stackLow) * 2);
+        free(state->stack);
+        state->stack = stack;
+        state->stackBase = base;
+    }
+    memset(state->stack + (offset - state->stackBase) * 2, 0, (state->stackLow - offset) * 2);
+    state->stackLow = offset;
+    return true;
+}
+
+// A state with its variables zeroed (unknown) if zero, else to be written by the caller. Its stack and the memory of the
+// game start unknown
+static State* AllocState(Machine* machine, bool zero) {
+    if (machine->spareCount > 0) {
+        State* state = machine->spares[--machine->spareCount];
+        State reused = { 0 };
+        reused.variables = state->variables;
+        reused.stack = state->stack;
+        reused.stackBase = state->stackBase;
+        reused.stackLow = VM_STACK_SIZE;
+        reused.game = state->game;
+        *state = reused;
+        if (zero)
+            memset(state->variables, 0, machine->variableSize * 2 + 1);
+        return state;
+    }
     State* state = calloc(1, sizeof(State));
     if (state == NULL)
         return NULL;
-    state->variables = calloc(machine->variableSize * 2 + 1, 1);
-    state->stack = calloc(VM_STACK_SIZE * 2, 1);
-    state->game = calloc(VM_GAME_SIZE * 2, 1);
+    size_t variables = machine->variableSize * 2 + 1;
+    state->variables = zero ? calloc(variables, 1) : malloc(variables);
+    state->stack = malloc(VM_STACK_CHUNK * 2);
+    state->stackBase = VM_STACK_SIZE - VM_STACK_CHUNK;
+    state->stackLow = VM_STACK_SIZE;
+    state->game = malloc(VM_GAME_SIZE * 2);    // Not used yet
     if (state->variables == NULL || state->stack == NULL || state->game == NULL) {
         FreeState(state);
         return NULL;
@@ -125,8 +192,12 @@ static State* NewState(const Machine* machine) {
     return state;
 }
 
-static State* CopyState(const Machine* machine, const State* source) {
-    State* state = NewState(machine);
+static State* NewState(Machine* machine) {
+    return AllocState(machine, true);
+}
+
+static State* CopyState(Machine* machine, const State* source) {
+    State* state = AllocState(machine, false);
     if (state == NULL)
         return NULL;
     state->pc = source->pc;
@@ -140,11 +211,20 @@ static State* CopyState(const Machine* machine, const State* source) {
     memcpy(state->reads, source->reads, sizeof(state->reads));
     state->waits = source->waits;
     memcpy(state->variables, source->variables, machine->variableSize * 2);
-    memcpy(state->game, source->game, VM_GAME_SIZE * 2);
-    // The stack above sp: below it, the values are not used before they are written
+    state->variables[machine->variableSize * 2] = 0;
+    state->gameUsed = source->gameUsed;
+    if (source->gameUsed)
+        memcpy(state->game, source->game, VM_GAME_SIZE * 2);
+    // The stack above sp: below it, the values are not used before they are written (they are left unknown)
     uint32_t used = source->sp >= VM_STACK_BASE && source->sp <= VM_STACK_BASE + VM_STACK_SIZE ? source->sp - VM_STACK_BASE : 0;
-    memcpy(state->stack + used, source->stack + used, VM_STACK_SIZE - used);
-    memcpy(state->stack + VM_STACK_SIZE + used, source->stack + VM_STACK_SIZE + used, VM_STACK_SIZE - used);
+    uint32_t low = used > source->stackLow ? used : source->stackLow;
+    if (!LowerStack(state, low)) {
+        FreeState(state);
+        return NULL;
+    }
+    state->stackLow = low;
+    memcpy(state->stack + (low - state->stackBase) * 2, source->stack + (low - source->stackBase) * 2,
+        (VM_STACK_SIZE - low) * 2);
     if (source->overlayCount > 0) {
         state->overlayAddresses = malloc(source->overlayCount * sizeof(uint32_t));
         state->overlayBytes = malloc(source->overlayCount * 2);
@@ -162,8 +242,10 @@ static State* CopyState(const Machine* machine, const State* source) {
 // A byte of the memory, false if the address isn't one of the program, of its variables or of the stack
 static bool ReadByte(const Machine* machine, const State* state, uint32_t address, uint8_t* byte, bool* known) {
     if (address >= VM_STACK_BASE && address < VM_STACK_BASE + VM_STACK_SIZE) {
-        *byte = state->stack[address - VM_STACK_BASE];
-        *known = state->stack[VM_STACK_SIZE + address - VM_STACK_BASE] != 0;
+        uint32_t offset = address - VM_STACK_BASE;
+        const uint8_t* bytes = state->stack + (offset - state->stackBase) * 2;
+        *byte = offset >= state->stackLow ? bytes[0] : 0;
+        *known = offset >= state->stackLow && bytes[1] != 0;
         return true;
     }
     if (address >= VM_VARIABLES_BASE && address < VM_VARIABLES_BASE + machine->variableSize) {
@@ -172,8 +254,8 @@ static bool ReadByte(const Machine* machine, const State* state, uint32_t addres
         return true;
     }
     if (address >= VM_GAME_BASE && address < VM_GAME_BASE + VM_GAME_SIZE) {
-        *byte = state->game[address - VM_GAME_BASE];
-        *known = state->game[VM_GAME_SIZE + address - VM_GAME_BASE] != 0;
+        *byte = state->gameUsed ? state->game[address - VM_GAME_BASE] : 0;
+        *known = state->gameUsed && state->game[VM_GAME_SIZE + address - VM_GAME_BASE] != 0;
         return true;
     }
     if (address >= VM_PROGRAM_BASE && address < VM_PROGRAM_BASE + machine->programSize) {
@@ -191,10 +273,20 @@ static bool ReadByte(const Machine* machine, const State* state, uint32_t addres
     return false;
 }
 
+// The memory of the game of a state, written: 0 and unknown before its first write
+static void UseGame(State* state) {
+    if (!state->gameUsed)
+        memset(state->game, 0, VM_GAME_SIZE * 2);
+    state->gameUsed = true;
+}
+
 static bool WriteByte(const Machine* machine, State* state, uint32_t address, uint8_t byte, bool known) {
     if (address >= VM_STACK_BASE && address < VM_STACK_BASE + VM_STACK_SIZE) {
-        state->stack[address - VM_STACK_BASE] = byte;
-        state->stack[VM_STACK_SIZE + address - VM_STACK_BASE] = known;
+        uint32_t offset = address - VM_STACK_BASE;
+        if (offset < state->stackLow && !LowerStack(state, offset))
+            return false;
+        state->stack[(offset - state->stackBase) * 2] = byte;
+        state->stack[(offset - state->stackBase) * 2 + 1] = known;
         return true;
     }
     if (address >= VM_VARIABLES_BASE && address < VM_VARIABLES_BASE + machine->variableSize) {
@@ -203,6 +295,7 @@ static bool WriteByte(const Machine* machine, State* state, uint32_t address, ui
         return true;
     }
     if (address >= VM_GAME_BASE && address < VM_GAME_BASE + VM_GAME_SIZE) {
+        UseGame(state);
         state->game[address - VM_GAME_BASE] = byte;
         state->game[VM_GAME_SIZE + address - VM_GAME_BASE] = known;
         return true;
@@ -242,7 +335,23 @@ static Value Load(const Machine* machine, const State* state, Value address, uin
         return g_unknown;
     uint32_t value = 0;
     bool known = true;
-    for (uint32_t i = 0; i < size; i++) {
+    if (address.value >= VM_STACK_BASE && address.value <= VM_STACK_BASE + VM_STACK_SIZE - size &&
+        address.value - VM_STACK_BASE >= state->stackLow) {
+        // The same as ReadByte, from the stack
+        const uint8_t* bytes = state->stack + (address.value - VM_STACK_BASE - state->stackBase) * 2;
+        for (uint32_t i = 0; i < size; i++) {
+            value |= (uint32_t)bytes[i * 2] << (i * 8);
+            known &= bytes[i * 2 + 1] != 0;
+        }
+    } else if (address.value >= VM_VARIABLES_BASE && address.value - VM_VARIABLES_BASE <= machine->variableSize &&
+        machine->variableSize - (address.value - VM_VARIABLES_BASE) >= size) {
+        // And from the variables
+        const uint8_t* bytes = state->variables + (address.value - VM_VARIABLES_BASE);
+        for (uint32_t i = 0; i < size; i++) {
+            value |= (uint32_t)bytes[i] << (i * 8);
+            known &= bytes[machine->variableSize + i] != 0;
+        }
+    } else for (uint32_t i = 0; i < size; i++) {
         uint8_t byte;
         bool byteKnown;
         if (!ReadByte(machine, state, address.value + i, &byte, &byteKnown))
@@ -271,6 +380,28 @@ static void NoteRead(const Machine* machine, State* state, Value address, uint32
 static bool Store(const Machine* machine, State* state, Value address, uint32_t size, Value value) {
     if (!address.known)
         return true;
+    if (address.value >= VM_STACK_BASE && address.value <= VM_STACK_BASE + VM_STACK_SIZE - size) {
+        // The same as WriteByte, to the stack
+        uint32_t offset = address.value - VM_STACK_BASE;
+        if (offset < state->stackLow && !LowerStack(state, offset))
+            return false;
+        uint8_t* bytes = state->stack + (offset - state->stackBase) * 2;
+        for (uint32_t i = 0; i < size; i++) {
+            bytes[i * 2] = (uint8_t)(value.value >> (i * 8));
+            bytes[i * 2 + 1] = value.known;
+        }
+        return true;
+    }
+    if (address.value >= VM_VARIABLES_BASE && address.value - VM_VARIABLES_BASE <= machine->variableSize &&
+        machine->variableSize - (address.value - VM_VARIABLES_BASE) >= size) {
+        // And to the variables
+        uint8_t* bytes = state->variables + (address.value - VM_VARIABLES_BASE);
+        for (uint32_t i = 0; i < size; i++) {
+            bytes[i] = (uint8_t)(value.value >> (i * 8));
+            bytes[machine->variableSize + i] = value.known;
+        }
+        return true;
+    }
     for (uint32_t i = 0; i < size; i++) {
         if (!WriteByte(machine, state, address.value + i, (uint8_t)(value.value >> (i * 8)), value.known))
             return false;
@@ -289,31 +420,86 @@ static Value Pop(const Machine* machine, State* state) {
     return value;
 }
 
-// Hashes (FNV-1a)
+// Hashes: FNV-1a over the bytes of the small blocks; the big ones (the memory of a state, hashed at every branch) by
+// words of 8 bytes in 4 independent lanes, each word mixed as the finalizer of MurmurHash3
+
+#define HASH_PRIME 0x100000001B3ULL
+
+static uint64_t HashWord(uint64_t hash, uint64_t word) {
+    hash ^= word;
+    hash ^= hash >> 33;
+    hash *= 0xFF51AFD7ED558CCDULL;
+    hash ^= hash >> 33;
+    hash *= 0xC4CEB9FE1A85EC53ULL;
+    return hash ^ (hash >> 33);
+}
 
 static uint64_t Hash(uint64_t hash, const void* data, size_t size) {
     const uint8_t* bytes = data;
-    for (size_t i = 0; i < size; i++)
-        hash = (hash ^ bytes[i]) * 0x100000001B3ULL;
+    size_t i = 0;
+    if (size >= 32) {
+        uint64_t lanes[4] = { hash, hash ^ 0x9E3779B97F4A7C15ULL, hash ^ 0xC2B2AE3D27D4EB4FULL, hash ^ 0x165667B19E3779F9ULL };
+        for (; i + 32 <= size; i += 32) {
+            uint64_t words[4];
+            memcpy(words, bytes + i, sizeof(words));
+            for (int l = 0; l < 4; l++)
+                lanes[l] = HashWord(lanes[l], words[l]);
+        }
+        for (int l = 0; l < 4; l++)
+            hash = HashWord(hash, lanes[l]);
+    }
+    for (; i < size; i++)
+        hash = (hash ^ bytes[i]) * HASH_PRIME;
     return hash;
 }
 
-static uint64_t StateHash(const Machine* machine, const State* state) {
+// A block of memory mostly 0, by its words other than 0 and their offsets: the words of 0 don't change the hash
+static uint64_t HashSparse(uint64_t hash, const uint8_t* bytes, size_t size) {
+    size_t i = 0;
+    for (; i + 32 <= size; i += 32) {
+        uint64_t words[4];
+        memcpy(words, bytes + i, sizeof(words));
+        if ((words[0] | words[1] | words[2] | words[3]) == 0)
+            continue;
+        for (int w = 0; w < 4; w++) {
+            if (words[w] != 0)
+                hash = HashWord(HashWord(hash, i + w * 8), words[w]);
+        }
+    }
+    for (; i < size; i += 8) {
+        uint64_t word = 0;
+        memcpy(&word, bytes + i, size - i < 8 ? size - i : 8);
+        if (word != 0)
+            hash = HashWord(HashWord(hash, i), word);
+    }
+    return hash;
+}
+
+// A value by its fields: the padding of the structure is not set
+static uint64_t HashValue(uint64_t hash, Value value) {
+    hash = Hash(hash, &value.value, sizeof(value.value));
+    return Hash(hash, &value.known, sizeof(value.known));
+}
+
+static uint64_t StateHash(Machine* machine, State* state) {
     uint64_t hash = 0xCBF29CE484222325ULL;
     hash = Hash(hash, &state->pc, sizeof(state->pc));
     hash = Hash(hash, &state->sp, sizeof(state->sp));
     hash = Hash(hash, &state->fp, sizeof(state->fp));
-    hash = Hash(hash, &state->result, sizeof(state->result));
+    hash = HashValue(hash, state->result);
     if (machine->environment != NULL) {
         hash = Hash(hash, &state->yielded, sizeof(state->yielded));
         hash = Hash(hash, state->path, sizeof(state->path));
     }
-    hash = Hash(hash, state->variables, machine->variableSize * 2);
-    hash = Hash(hash, state->game, VM_GAME_SIZE * 2);
+    hash = HashSparse(hash, state->variables, machine->variableSize * 2);
+    if (state->gameUsed)
+        hash = HashSparse(hash, state->game, VM_GAME_SIZE * 2);
     if (state->sp >= VM_STACK_BASE && state->sp < VM_STACK_BASE + VM_STACK_SIZE) {
         uint32_t used = state->sp - VM_STACK_BASE;
-        hash = Hash(hash, state->stack + used, VM_STACK_SIZE - used);
-        hash = Hash(hash, state->stack + VM_STACK_SIZE + used, VM_STACK_SIZE - used);
+        if (!LowerStack(state, used))   // The same hash whatever stackLow
+            machine->ok = false;
+        else
+            hash = Hash(hash, state->stack + (used - state->stackBase) * 2, (VM_STACK_SIZE - used) * 2);
     }
     hash = Hash(hash, state->overlayAddresses, state->overlayCount * sizeof(uint32_t));
     return Hash(hash, state->overlayBytes, state->overlayCount * 2);
@@ -415,7 +601,8 @@ static void AddRoot(Machine* machine, uint32_t function, uint32_t count, const V
         root.arguments[i] = arguments[i].known ? arguments[i] : g_unknown;
     uint64_t hash = Hash(0xCBF29CE484222325ULL, &root.function, sizeof(root.function));
     hash = Hash(hash, &root.count, sizeof(root.count));
-    hash = Hash(hash, root.arguments, sizeof(root.arguments));
+    for (uint32_t i = 0; i < VM_MAX_ARGUMENTS; i++)
+        hash = HashValue(hash, root.arguments[i]);
     for (uint32_t r = 0; r < machine->rootCount; r++) {
         if (machine->rootHashes[r] == hash)
             return;
@@ -851,6 +1038,7 @@ static State* NewThread(Machine* machine, uint32_t function, uint32_t count, con
         state->variables = machine->timeline->variables;
         free(state->game);
         state->game = machine->timeline->game;
+        state->gameUsed = true;
     }
     state->sp = VM_STACK_BASE + VM_STACK_SIZE;
     state->fp = 0;
@@ -887,7 +1075,7 @@ static void RunThread(Machine* machine, const Root* root) {
         State* path = machine->work[--machine->workCount];
         if (states++ < VM_MAX_STATES && machine->steps < machine->maxSteps)
             RunPath(machine, path);
-        FreeState(path);
+        RecycleState(machine, path);
     }
     if (states > VM_MAX_STATES || machine->steps >= machine->maxSteps)
         machine->result->truncated++;
@@ -954,6 +1142,7 @@ static bool Run(const BC_Program* program, uint32_t function, const VM_Environme
         qsort(result->calls, result->callCount, sizeof(VM_Call), CompareCalls);
     while (machine.workCount > 0)
         FreeState(machine.work[--machine.workCount]);
+    FreeSpares(&machine);
     free(machine.roots);
     free(machine.rootHashes);
     free(machine.work);
@@ -1019,6 +1208,10 @@ bool VM_ReadSnapshotGame(const VM_Snapshot* snapshot, uint32_t address, uint32_t
     if (address < VM_GAME_BASE || size > VM_GAME_SIZE || address - VM_GAME_BASE > VM_GAME_SIZE - size)
         return false;
     const uint8_t* game = snapshot->state->game;
+    if (!snapshot->state->gameUsed) {
+        memset(bytes, 0, size);
+        return true;
+    }
     for (uint32_t i = 0; i < size; i++) {
         bytes[i] = game[address - VM_GAME_BASE + i];
         if (game[VM_GAME_SIZE + address - VM_GAME_BASE + i] != 0 && i < 32)
@@ -1078,6 +1271,7 @@ bool VM_RunTimed(const BC_Program* program, const VM_Snapshot* snapshot, bool re
     memcpy(timeline.variables, first->variables, machine.variableSize * 2);
     free(first->variables);
     first->variables = timeline.variables;
+    UseGame(first);
     memcpy(timeline.game, first->game, VM_GAME_SIZE * 2);
     free(first->game);
     first->game = timeline.game;

@@ -76,7 +76,10 @@ embed_resource(Shenmue1Characters.tsv g_shenmue1Characters)
 embed_resource(Shenmue1Maps.tsv g_shenmue1Maps)
 embed_resource(Shenmue1GameFunctions.tsv g_shenmue1GameFunctions)
 
-# Tests over the files of the game: cmake --build build --target ShenmueTests, then ctest --test-dir build -C Debug
+# Tests over the files of the game: cmake --build build --config Release --target ShenmueTests, then
+# ctest --test-dir build -C Release -j 8 (they run in parallel; the emulation is several times slower in Debug)
+cmake_host_system_information(RESULT SHENMUE_CORES QUERY NUMBER_OF_LOGICAL_CORES)
+set(CMAKE_CTEST_ARGUMENTS --parallel ${SHENMUE_CORES} --output-on-failure)    # Of the RUN_TESTS target
 enable_testing()
 set(SHENMUE_CONTENT "${CMAKE_SOURCE_DIR}/content/Shenmue1" CACHE PATH "Folder with the extracted files of Shenmue I, for the tests")
 add_subdirectory(tests)

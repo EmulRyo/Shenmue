@@ -64,3 +64,7 @@ foreach(test mapinfo_chunks scn3_chunks scn_files scn_pairs sh4_encodings sh4_co
     add_test(NAME ${test} COMMAND ShenmueTests ${SHENMUE_CONTENT} ${test})
     set_tests_properties(${test} PROPERTIES SKIP_RETURN_CODE 77)
 endforeach()
+# The tests that emulate the programs, the longest ones, first when they run in parallel (until CTest knows their times)
+set_tests_properties(display PROPERTIES COST 100)
+set_tests_properties(cutscene scn_data PROPERTIES COST 60)
+set_tests_properties(vm PROPERTIES COST 30)

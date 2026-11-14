@@ -121,9 +121,15 @@ void Test_Display(const TestContext* context) {
             continue;
         }
         SCNDisplay displays[TIME_COUNT];
-        bool ok = true;
-        for (uint32_t t = 0; t < TIME_COUNT && ok; t++)
-            ok = SCNDisplay_Run(&program, &g_times[t], &displays[t]);
+        // The time is only given to GetDate and Weather: if the program doesn't call them, the other times give the same
+        bool ok = SCNDisplay_Run(&program, &g_times[0], &displays[0]);
+        bool timeless = ok && displays[0].dateQueries == 0 && displays[0].eventQueries == 0;
+        for (uint32_t t = 1; t < TIME_COUNT && ok; t++) {
+            if (timeless)
+                displays[t] = displays[0];
+            else
+                ok = SCNDisplay_Run(&program, &g_times[t], &displays[t]);
+        }
         CHECK(ok, "%s: emulation", list.files[i].name);
         if (ok) {
             programs++;
