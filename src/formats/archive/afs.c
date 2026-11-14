@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include "core/dir.h"
 #include "core/file.h"
+#include "core/text.h"
 #include "formats/archive/idx.h"
 #include "formats/archive/afs.h"
 
@@ -198,12 +199,6 @@ uint8_t* AFS_LoadEntry(const char* filepath, uint32_t index, size_t* size, uint3
     return data;
 }
 
-static bool EqualsIgnoreCase(const char* a, const char* b) {
-    for (; *a != '\0' && tolower((unsigned char)*a) == tolower((unsigned char)*b); a++, b++)
-        ;
-    return tolower((unsigned char)*a) == tolower((unsigned char)*b);
-}
-
 uint8_t* AFS_LoadNamedEntry(const char* filepath, const char* name, size_t* size) {
     FILE* afsFile = fopen(filepath, "rb");
     if (afsFile == NULL)
@@ -233,7 +228,7 @@ uint8_t* AFS_LoadNamedEntry(const char* filepath, const char* name, size_t* size
 
     for (uint32_t i = 0; i < header.count; i++) {
         const AFS_Entry* entry = &entries[i];
-        if (!EqualsIgnoreCase(names[i], name) || entry->size == 0 || (uint64_t)entry->offset + entry->size > (uint64_t)fileSize)
+        if (!Text_EqualsIgnoreCase(names[i], name) || entry->size == 0 || (uint64_t)entry->offset + entry->size > (uint64_t)fileSize)
             continue;
         data = malloc(entry->size);
         if (data == NULL)

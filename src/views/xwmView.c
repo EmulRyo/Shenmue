@@ -5,6 +5,7 @@
 #include <math.h>
 #include <raylib.h>
 #include "raygui.h"
+#include "core/text.h"
 #include "formats/sound/xwm.h"
 #include "ui/toolbar.h"
 #include "ui/waveform.h"
@@ -134,8 +135,7 @@ static void UpdateInput(Rectangle waveform) {
 }
 
 static const char* FormatTime(uint32_t frame) {
-    uint32_t centiseconds = (uint32_t)((uint64_t)frame * 100 / g_player.info.sampleRate);
-    return TextFormat("%u:%02u.%02u", centiseconds / 6000, centiseconds / 100 % 60, centiseconds % 100);
+    return Text_FormatCentiseconds((uint32_t)((uint64_t)frame * 100 / g_player.info.sampleRate));
 }
 
 void XWMView_Draw(Rectangle area) {

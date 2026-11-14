@@ -9,7 +9,9 @@
 #include <rlgl.h>
 #include "raygui.h"
 #include "app/gameDB.h"
+#include "core/text.h"
 #include "formats/script/chrt.h"
+#include "render/bounds.h"
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
@@ -18,7 +20,6 @@
 #include "ui/tree.h"
 #include "views/chrtView.h"
 
-#define CHRTVIEW_FOVY 45.0f
 #define CHRTVIEW_FRAME_RATE 15.0f
 #define CHRTVIEW_PATH_SIZE 1024
 #define CHRTVIEW_LABEL_SIZE 128
@@ -102,26 +103,10 @@ static const char* ImageFile(const char* name) {
     return file != NULL ? file : name;
 }
 
-// Path of the model file in the folder of the script: <name>.chrm or <name>.mt5, without the extension of the script
-// (always .MT5) and the $ and @ prefixes of some names. Returns false if there is none
-static bool ModelPath(const char* folder, const char* file, char* path, size_t size) {
-    while (*file == '$' || *file == '@')
-        file++;
-    const char* dot = strrchr(file, '.');
-    int length = (int)(dot != NULL ? dot - file : strlen(file));
-    const char* extensions[2] = { "chrm", "mt5" };
-    for (int i = 0; i < 2; i++) {
-        snprintf(path, size, "%s/%.*s.%s", folder, length, file, extensions[i]);
-        if (FileExists(path))
-            return true;
-    }
-    return false;
-}
-
 // Index of the model, loaded the first time. Returns -1 if it can't be loaded
 static int32_t LoadCharacterModel(const char* path) {
     for (uint32_t i = 0; i < g_view.modelCount; i++) {
-        if (CHRT_EqualsIgnoreCase(g_view.models[i].path, path))
+        if (Text_EqualsIgnoreCase(g_view.models[i].path, path))
             return g_view.models[i].loaded ? (int32_t)i : -1;
     }
     CHRTView_Model* model = &g_view.models[g_view.modelCount++];
@@ -134,15 +119,9 @@ static int32_t LoadCharacterModel(const char* path) {
 // are placed at the origin. The models of the persons have their origin at the hips (the motions place them), so they
 // are lifted to stand at their position
 static Matrix CharacterTransform(const CHRT_Character* character, const MT5Render_Model* model) {
-    const float* angle = character->angle;
-    const float* position = character->position;
-    Matrix matrix = MatrixTranslate(0.0f, character->human ? -MT5Render_Bottom(model) : 0.0f, 0.0f);
-    matrix = MatrixMultiply(matrix, MatrixRotateX(angle[0] * DEG2RAD));
-    matrix = MatrixMultiply(matrix, MatrixRotateY(angle[1] * DEG2RAD));
-    matrix = MatrixMultiply(matrix, MatrixRotateZ(angle[2] * DEG2RAD));
-    if (!character->positioned)
-        return matrix;
-    return MatrixMultiply(matrix, MatrixTranslate(position[0], position[1], position[2]));
+    static const float origin[3] = { 0.0f, 0.0f, 0.0f };
+    return Scene3D_PlaceTransform(character->human ? -MT5Render_Bottom(model) : 0.0f, character->angle,
+        character->positioned ? character->position : origin);
 }
 
 static void LoadCharacter(uint32_t index, const char* folder) {
@@ -154,7 +133,7 @@ static void LoadCharacter(uint32_t index, const char* folder) {
     char path[CHRTVIEW_PATH_SIZE];
     if (character->info.image == NULL)
         character->error = "no image";
-    else if (!ModelPath(folder, ImageFile(character->info.image), path, sizeof(path)))
+    else if (!CHRT_ModelPath(folder, ImageFile(character->info.image), path, sizeof(path)))
         character->error = "no model file";
     else if ((character->model = LoadCharacterModel(path)) < 0)
         character->error = "invalid model file";
@@ -217,22 +196,19 @@ static void ArrangeUnpositioned(void) {
 
 // Bounding sphere of the characters with a model
 static void ComputeBounds(void) {
-    Vector3 min = { INFINITY, INFINITY, INFINITY }, max = { -INFINITY, -INFINITY, -INFINITY };
+    Bounds bounds = Bounds_Empty();
     for (uint32_t i = 0; i < g_view.characterCount; i++) {
         const CHRTView_Character* character = &g_view.characters[i];
-        if (character->model < 0)
-            continue;
-        Vector3 extent = { character->radius, character->radius, character->radius };
-        min = Vector3Min(min, Vector3Subtract(character->center, extent));
-        max = Vector3Max(max, Vector3Add(character->center, extent));
+        if (character->model >= 0)
+            Bounds_AddSphere(&bounds, character->center, character->radius);
     }
     if (g_view.modelledCount == 0) {
         g_view.center = Vector3Zero();
         g_view.radius = 1.0f;
         return;
     }
-    g_view.center = Vector3Scale(Vector3Add(min, max), 0.5f);
-    g_view.radius = fmaxf(Vector3Distance(min, max) * 0.5f, 0.1f);
+    g_view.center = Bounds_Center(&bounds);
+    g_view.radius = Bounds_Radius(&bounds, 0.1f);
 }
 
 // The ID and the name of each character
@@ -255,7 +231,7 @@ static Group CharacterGroup(const CHRTView_Character* character) {
 
 // From the front of the characters with angle 0, which face -Z as the bodies of the models
 static void ResetCamera(void) {
-    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, -1.0f }, g_view.radius, CHRTVIEW_FOVY);
+    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, -1.0f }, g_view.radius, SCENE3D_FOVY);
     g_view.selected = -1;
     g_view.fit = true;
 }
@@ -267,7 +243,7 @@ static void Select(int32_t index) {
     if (character->model < 0)
         return;
     g_view.camera.target = character->center;
-    g_view.camera.distance = 1.5f * character->radius / sinf(CHRTVIEW_FOVY * 0.5f * DEG2RAD);
+    g_view.camera.distance = 1.5f * character->radius / sinf(SCENE3D_FOVY * 0.5f * DEG2RAD);
 }
 
 void CHRTView_Close(void) {

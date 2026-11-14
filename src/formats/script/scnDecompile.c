@@ -1,6 +1,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include "core/text.h"
 #include "formats/script/scnDecompile.h"
 
 #define MAX_STACK   128
@@ -116,22 +117,13 @@ static char* Operand(const Value* value, uint8_t precedence) {
     return value->precedence < precedence ? Format("(%s)", value->text) : Format("%s", value->text);
 }
 
-static bool IsFourCC(uint32_t value) {
-    for (int i = 0; i < 4; i++) {
-        uint8_t c = (uint8_t)(value >> (i * 8));
-        if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || (c >= 'a' && c <= 'z')))
-            return false;
-    }
-    return true;
-}
-
 static Value Constant(int32_t number) {
     uint32_t bits = (uint32_t)number;
     uint32_t exponent = (bits >> 23) & 0xFF;
     char* text;
     if (number > -10000 && number < 10000)
         text = Format("%d", number);
-    else if (IsFourCC(bits))
+    else if (Text_IsFourCC(bits))
         text = Format("'%c%c%c%c'", (char)bits, (char)(bits >> 8), (char)(bits >> 16), (char)(bits >> 24));
     else if (exponent >= 107 && exponent <= 150 && (bits & 0xFF) == 0) {
         float f;

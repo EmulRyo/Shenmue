@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "formats/script/chrt.h"
+#include "core/text.h"
 #include "app/gameDB.h"
 
 // resources/Shenmue1Characters.tsv and resources/Shenmue1Maps.tsv, embedded by the build (see embed_resource in
@@ -161,7 +161,7 @@ const GameDB_Character* GameDB_FindCharacter(const char* id) {
     if (id == NULL || id[0] == '\0')
         return NULL;
     for (size_t i = 0; i < g_characterCount; i++) {
-        if (CHRT_EqualsIgnoreCase(g_characters[i].id, id))
+        if (Text_EqualsIgnoreCase(g_characters[i].id, id))
             return &g_characters[i];
     }
     return NULL;
@@ -216,7 +216,7 @@ const GameDB_Map* GameDB_FindMap(const char* id, const char* ipac) {
     if (ipac == NULL)
         ipac = "";
     for (size_t i = 0; i < g_mapCount; i++) {
-        if (CHRT_EqualsIgnoreCase(g_maps[i].id, id) && CHRT_EqualsIgnoreCase(g_maps[i].ipac, ipac))
+        if (Text_EqualsIgnoreCase(g_maps[i].id, id) && Text_EqualsIgnoreCase(g_maps[i].ipac, ipac))
             return &g_maps[i];
     }
     return NULL;

@@ -10,10 +10,12 @@
 #include <rlgl.h>
 #include "raygui.h"
 #include "app/gameDB.h"
+#include "core/text.h"
 #include "formats/map/mapinfo.h"
 #include "formats/map/weather.h"
 #include "formats/script/chrt.h"
 #include "formats/script/scnDisplay.h"
+#include "render/bounds.h"
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
@@ -29,11 +31,7 @@
 
 #define MAPINFOVIEW_LABEL_SIZE   160
 #define MAPINFOVIEW_LIST_WIDTH   420.0f
-#define MAPINFOVIEW_FOVY         45.0f
 #define MAPINFOVIEW_CAMERA_FOVY  60.0f   // Of the cameras without a field of view curve
-#define MAPINFOVIEW_ASPECT       (4.0f / 3.0f) // Of the screen of the game, for the cameras of the map
-#define MAPINFOVIEW_HEIGHT       1.7f    // Of the characters, drawn as cylinders
-#define MAPINFOVIEW_RADIUS       0.25f
 #define MAPINFOVIEW_CIRCLE_SIDES 24
 #define MAPINFOVIEW_PACKAGE      "mpk00" // Base package of the map (PKF/PKS files or their extracted folder)
 #define MAPINFOVIEW_SCENE_MODELS "model/chara" // Models of the characters in the folder of the scene, for the maps without them
@@ -187,7 +185,7 @@ typedef struct {
                                                    // from the current camera (AUTH_CameraCurve order)
     FreeCamera         camera;
     bool                fit;            // The camera is fitted to the map in the next draw, when the size of the view is known
-    Vector3             min, max;       // Box around the map
+    Bounds              bounds;         // Box around the map
     Vector3             center;
     float               radius;
 } MAPINFOView_State;
@@ -363,12 +361,7 @@ static bool IsDisplayed(const CHRT_Character* character) {
 // As the nodes of the models: rotation around X, Y and Z, and translation. The models of the persons have their origin
 // at the hips (the motions place them), so they are lifted to stand at their position
 static Matrix CharacterTransform(const CHRT_Character* character, const MT5Render_Model* model) {
-    const float* angle = character->angle;
-    Matrix matrix = MatrixTranslate(0.0f, character->human ? -MT5Render_Bottom(model) : 0.0f, 0.0f);
-    matrix = MatrixMultiply(matrix, MatrixRotateX(angle[0] * DEG2RAD));
-    matrix = MatrixMultiply(matrix, MatrixRotateY(angle[1] * DEG2RAD));
-    matrix = MatrixMultiply(matrix, MatrixRotateZ(angle[2] * DEG2RAD));
-    return MatrixMultiply(matrix, MatrixTranslate(character->position[0], character->position[1], character->position[2]));
+    return Scene3D_PlaceTransform(character->human ? -MT5Render_Bottom(model) : 0.0f, character->angle, character->position);
 }
 
 // Models of the map: MAP.mt5, MAP01.mt5... in the folder, in its subfolders (mpk00, map0...) and in its PKF/PKS files,
@@ -396,26 +389,16 @@ static bool LoadMapScript(const MapFile* file, CHRT_Script* script) {
     return file->packed != NULL ? CHRT_LoadFromMemory(file->packed->data, file->packed->size, file->name, script) : CHRT_Load(file->path, script);
 }
 
-// A model name of the CHRT scripts without the $ and @ prefixes and the extension (e.g. "DR01_009" for "$DR01_009.MT5")
-static void ModelBaseName(const char* name, char* base, size_t size) {
-    while (*name == '$' || *name == '@')
-        name++;
-    snprintf(base, size, "%s", name);
-    char* dot = strchr(base, '.');
-    if (dot != NULL)
-        *dot = '\0';
-}
-
 // Model file (MT5 or CHRM) of a model name of the CHRT scripts, preferably of a package (the variants can have models
 // with the same name), of any package if it is NULL. Returns -1 if there is none
 static int ModelFile(const MapFile* files, uint32_t count, const char* name, const char* package) {
     char base[64];
-    ModelBaseName(name, base, sizeof(base));
+    CHRT_ModelBase(name, base, sizeof(base));
     int found = -1;
     for (uint32_t i = 0; i < count; i++) {
-        if (IsFileExtension(files[i].name, ".chrt") || !CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files[i].name), base))
+        if (IsFileExtension(files[i].name, ".chrt") || !Text_EqualsIgnoreCase(GetFileNameWithoutExt(files[i].name), base))
             continue;
-        if (package == NULL || CHRT_EqualsIgnoreCase(files[i].package, package))
+        if (package == NULL || Text_EqualsIgnoreCase(files[i].package, package))
             return (int)i;
         if (found < 0)
             found = (int)i;
@@ -481,9 +464,9 @@ typedef struct {
 // characters whose model isn't in the map. Returns -1 if there is none or it can't be loaded
 static int FolderSceneModel(const char* folder, const char* name, SceneModel* sceneModels, uint32_t* sceneModelCount) {
     char base[64];
-    ModelBaseName(name, base, sizeof(base));
+    CHRT_ModelBase(name, base, sizeof(base));
     for (uint32_t i = 0; i < *sceneModelCount; i++) {
-        if (CHRT_EqualsIgnoreCase(sceneModels[i].name, base))
+        if (Text_EqualsIgnoreCase(sceneModels[i].name, base))
             return sceneModels[i].model;
     }
     char path[1024];
@@ -573,7 +556,7 @@ static void PlaceModels(const char* folder, const MapFile* files, uint32_t count
 static int ComparePackages(const void* a, const void* b) {
     const MapPackage* first = a;
     const MapPackage* second = b;
-    bool firstBase = CHRT_EqualsIgnoreCase(first->name, MAPINFOVIEW_PACKAGE), secondBase = CHRT_EqualsIgnoreCase(second->name, MAPINFOVIEW_PACKAGE);
+    bool firstBase = Text_EqualsIgnoreCase(first->name, MAPINFOVIEW_PACKAGE), secondBase = Text_EqualsIgnoreCase(second->name, MAPINFOVIEW_PACKAGE);
     if (firstBase != secondBase)
         return firstBase ? -1 : 1;
     if (first->characterCount != second->characterCount)
@@ -674,48 +657,36 @@ static float ShapeHeight(const MAPINFO_Shape* shape, uint32_t point) {
     return 0.0f;
 }
 
-static void AddPoint(Vector3 point, Vector3* min, Vector3* max) {
-    *min = Vector3Min(*min, point);
-    *max = Vector3Max(*max, point);
-}
-
 // Box around the models of the map, or around the cameras, lights and shapes if there is no model. The characters are
 // not included: they can be far from the map
 static void ComputeBounds(void) {
     const MAPINFO_File* file = &g_view.file;
-    Vector3 min = { INFINITY, INFINITY, INFINITY }, max = { -INFINITY, -INFINITY, -INFINITY };
-    for (uint32_t i = 0; i < g_view.mapModelCount; i++) {
-        const MT5Mesh* mesh = &g_view.models[i].mesh;
-        Vector3 extent = { mesh->radius, mesh->radius, mesh->radius };
-        AddPoint(Vector3Subtract(mesh->center, extent), &min, &max);
-        AddPoint(Vector3Add(mesh->center, extent), &min, &max);
-    }
+    Bounds bounds = Bounds_Empty();
+    for (uint32_t i = 0; i < g_view.mapModelCount; i++)
+        Bounds_AddSphere(&bounds, g_view.models[i].mesh.center, g_view.models[i].mesh.radius);
     if (g_view.mapModelCount == 0) {
         for (uint32_t i = 0; i < file->cameraCount; i++)
-            AddPoint(MapCamera(&file->cameras[i]).position, &min, &max);
+            Bounds_AddPoint(&bounds, MapCamera(&file->cameras[i]).position);
         for (uint32_t i = 0; i < file->lightCount; i++)
-            AddPoint(LightPosition(&file->lights[i]), &min, &max);
+            Bounds_AddPoint(&bounds, LightPosition(&file->lights[i]));
         for (uint32_t i = 0; i < file->shapeCount; i++) {
             // The points of the shape, or its center (circles: radius, x, z; rectangles: x, z, half axes)
             const MAPINFO_Shape* shape = &file->shapes[i];
             uint32_t first = shape->type == MAPINFO_SHAPE_CIRCLE ? 1 : 0;
             uint32_t end = shape->type == MAPINFO_SHAPE_CIRCLE ? 3 : shape->type == MAPINFO_SHAPE_RECTANGLE ? 2 : shape->valueCount;
             for (uint32_t v = first; v < end && v + 1 < shape->valueCount; v += 2)
-                AddPoint(ShapePoint(shape->values[v], 0.0f, shape->values[v + 1]), &min, &max);
+                Bounds_AddPoint(&bounds, ShapePoint(shape->values[v], 0.0f, shape->values[v + 1]));
         }
     }
-    if (min.x > max.x) {
-        min = (Vector3) { -1.0f, 0.0f, -1.0f };
-        max = (Vector3) { 1.0f, 2.0f, 1.0f };
-    }
-    g_view.min = min;
-    g_view.max = max;
-    g_view.center = Vector3Scale(Vector3Add(min, max), 0.5f);
-    g_view.radius = fmaxf(Vector3Distance(min, max) * 0.5f, 2.0f);
+    if (Bounds_IsEmpty(&bounds))
+        bounds = (Bounds) { { -1.0f, 0.0f, -1.0f }, { 1.0f, 2.0f, 1.0f } };
+    g_view.bounds = bounds;
+    g_view.center = Bounds_Center(&bounds);
+    g_view.radius = Bounds_Radius(&bounds, 2.0f);
 }
 
 static void ResetCamera(void) {
-    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, 1.0f }, g_view.radius, MAPINFOVIEW_FOVY);
+    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { 0.0f, 0.0f, 1.0f }, g_view.radius, SCENE3D_FOVY);
     g_view.camera.pitch = 0.8f;
     g_view.fit = true;
 }
@@ -730,8 +701,8 @@ static void FitCamera(Rectangle area) {
         return;
     if (count == 0) {
         for (int i = 0; i < 8; i++)
-            points[count++] = (Vector3) { (i & 1) ? g_view.max.x : g_view.min.x, (i & 2) ? g_view.max.y : g_view.min.y,
-                (i & 4) ? g_view.max.z : g_view.min.z };
+            points[count++] = (Vector3) { (i & 1) ? g_view.bounds.max.x : g_view.bounds.min.x,
+                (i & 2) ? g_view.bounds.max.y : g_view.bounds.min.y, (i & 4) ? g_view.bounds.max.z : g_view.bounds.min.z };
     }
     FreeCamera_Fit(&g_view.camera, points, count, area.width / area.height);
     free(points);
@@ -749,7 +720,7 @@ static void AddItem(ItemKind kind, uint32_t index, const char* text, bool failed
 // if NULL), the names compared ignoring the case
 static bool ProgramMatches(const SD_Reference* reference, SD_Kind kind, int32_t number, const char* name) {
     return reference->kind == kind && (number < 0 || reference->number == number) &&
-        (name == NULL || CHRT_EqualsIgnoreCase(reference->name, name));
+        (name == NULL || Text_EqualsIgnoreCase(reference->name, name));
 }
 
 static uint32_t ProgramCount(SD_Kind kind, int32_t number, const char* name) {
@@ -760,8 +731,8 @@ static uint32_t ProgramCount(SD_Kind kind, int32_t number, const char* name) {
 }
 
 static bool SameReference(const SD_Reference* a, const SD_Reference* b) {
-    return a->kind == b->kind && a->number == b->number && CHRT_EqualsIgnoreCase(a->name, b->name) &&
-        CHRT_EqualsIgnoreCase(a->folder, b->folder);
+    return a->kind == b->kind && a->number == b->number && Text_EqualsIgnoreCase(a->name, b->name) &&
+        Text_EqualsIgnoreCase(a->folder, b->folder);
 }
 
 // The references of a kind, each number, name and folder counted once
@@ -1203,11 +1174,6 @@ static bool ReadCutscenes(void) {
     return true;
 }
 
-static const char* FormatTime(float seconds) {
-    int centiseconds = (int)(seconds * 100.0f);
-    return TextFormat("%d:%02d.%02d", centiseconds / 6000, centiseconds / 100 % 60, centiseconds % 100);
-}
-
 // The names of the characters of a cutscene (their ID for those without a name), separated by commas, up to max of
 // them (followed by "..." if it has more)
 static const char* CutsceneNames(const MapCutscene* cutscene, int max) {
@@ -1440,7 +1406,7 @@ static void Select(int item) {
     if (selected->kind == ITEM_LIGHT)
         target = LightPosition(&g_view.file.lights[selected->index]);
     else if (selected->kind == ITEM_CHARACTER && g_view.characters[selected->index].info.positioned)
-        target = Vector3Add(CharacterPosition(&g_view.characters[selected->index].info), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT * 0.5f, 0.0f });
+        target = Vector3Add(CharacterPosition(&g_view.characters[selected->index].info), (Vector3) { 0.0f, SCENE3D_CHARACTER_HEIGHT * 0.5f, 0.0f });
     else if (selected->kind == ITEM_DOOR) {
         const float* position = g_view.file.doors[selected->index].position;
         target = (Vector3) { position[0], position[1] + 1.0f, position[2] };
@@ -1451,7 +1417,7 @@ static void Select(int item) {
         // The whole model
         const MT5Mesh* mesh = &g_view.models[selected->index].mesh;
         g_view.camera.target = mesh->center;
-        g_view.camera.distance = mesh->radius / sinf(MAPINFOVIEW_FOVY * 0.5f * DEG2RAD);
+        g_view.camera.distance = mesh->radius / sinf(SCENE3D_FOVY * 0.5f * DEG2RAD);
         return;
     }
     else
@@ -1641,7 +1607,7 @@ static void DrawShape(const MAPINFO_Shape* shape, Color color) {
 }
 
 static void DrawCameraGizmo(Camera3D camera, Color color) {
-    Scene3D_DrawCameraGizmo(camera, 0.6f, MAPINFOVIEW_ASPECT, false, color);
+    Scene3D_DrawCameraGizmo(camera, 0.6f, SCENE3D_GAME_ASPECT, false, color);
 }
 
 // The layers over the map, always visible
@@ -1691,10 +1657,10 @@ static void DrawOverlays(void) {
         if (!character->positioned || (!selected && (!visible || g_view.characters[i].model >= 0)))
             continue;
         Color color = selected ? g_selectedColor : character->sleep ? GRAY : g_characterColor;
-        DrawCylinderWires(CharacterPosition(character), MAPINFOVIEW_RADIUS, MAPINFOVIEW_RADIUS, MAPINFOVIEW_HEIGHT, 8, color);
+        DrawCylinderWires(CharacterPosition(character), SCENE3D_CHARACTER_RADIUS, SCENE3D_CHARACTER_RADIUS, SCENE3D_CHARACTER_HEIGHT, 8, color);
         // Direction it faces: angle 0 faces -Z, as the bodies of the models
         float yaw = character->angle[1] * DEG2RAD;
-        Vector3 eyes = Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT * 0.9f, 0.0f });
+        Vector3 eyes = Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, SCENE3D_CHARACTER_HEIGHT * 0.9f, 0.0f });
         DrawLine3D(eyes, Vector3Add(eyes, (Vector3) { -sinf(yaw) * 0.5f, 0.0f, -cosf(yaw) * 0.5f }), color);
     }
     rlDrawRenderBatchActive();
@@ -1715,7 +1681,7 @@ static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSiz
         bool selected = IsSelected(ITEM_CHARACTER, i);
         bool visible = g_options.layers[LAYER_CHARACTERS] && g_view.characters[i].shown && IsItemVisible(ITEM_CHARACTER, i);
         if (character->positioned && (visible || selected))
-            DrawLabel(camera, area, font, fontSize, Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, MAPINFOVIEW_HEIGHT + 0.1f, 0.0f }),
+            DrawLabel(camera, area, font, fontSize, Vector3Add(CharacterPosition(character), (Vector3) { 0.0f, SCENE3D_CHARACTER_HEIGHT + 0.1f, 0.0f }),
                 GameDB_CharacterDisplay(character->id), selected ? g_selectedColor : character->sleep ? GRAY : g_characterColor);
     }
     for (uint32_t i = 0; i < file->cameraCount && !g_view.mapCamera; i++) {
@@ -1733,7 +1699,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     DrawRectangleRec(area, (Color) { 45, 45, 48, 255 });
     if (source != NULL) {
         camera = MapCamera(source);
-        view = Scene3D_Letterbox(area, MAPINFOVIEW_ASPECT);
+        view = Scene3D_Letterbox(area, SCENE3D_GAME_ASPECT);
         FreeCamera_BeginCamera3D(camera, view, 0.05, g_view.radius * 4.0 + 100.0);
     }
     else
@@ -2040,7 +2006,7 @@ static void CutsceneProperties(Properties* properties, uint32_t index) {
         Properties_Note(properties, chunk->size <= 8 ? "Empty TRCK chunk" : "Invalid TRCK chunk");
         return;
     }
-    Properties_Text(properties, "Duration", TextFormat("%s (%u frames)", FormatTime(cutscene->duration / AUTH_FRAME_RATE), cutscene->duration));
+    Properties_Text(properties, "Duration", TextFormat("%s (%u frames)", Text_FormatTime(cutscene->duration / AUTH_FRAME_RATE), cutscene->duration));
     Properties_Int(properties, "Characters", cutscene->characterCount);
     Properties_Text(properties, "IDs", cutscene->ids);
     Properties_Text(properties, "Names", CutsceneNames(cutscene, INT32_MAX));

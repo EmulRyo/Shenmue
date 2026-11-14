@@ -17,46 +17,11 @@ add_executable(ShenmueTests
     testScnData.c
     testVm.c
     testDisplay.c
-    testCutscene.c
+    testCutscene.c)
 
-    ../src/core/bytes.h
-    ../src/core/file.c
-    ../src/core/file.h
-    ../src/formats/animation/auth.c
-    ../src/formats/animation/auth.h
-    ../src/formats/map/mapinfo.c
-    ../src/formats/map/mapinfo.h
-    ../src/formats/map/weather.c
-    ../src/formats/map/weather.h
-    ../src/formats/script/scn.c
-    ../src/formats/script/scn.h
-    ../src/formats/script/sh4.c
-    ../src/formats/script/sh4.h
-    ../src/formats/script/sh4Code.c
-    ../src/formats/script/sh4Code.h
-    ../src/formats/script/sh4Program.c
-    ../src/formats/script/sh4Program.h
-    ../src/formats/script/sh4Listing.c
-    ../src/formats/script/sh4Listing.h
-    ../src/formats/script/scnBytecode.c
-    ../src/formats/script/scnBytecode.h
-    ../src/formats/script/scnPair.c
-    ../src/formats/script/scnPair.h
-    ../src/formats/script/scnDecompile.c
-    ../src/formats/script/scnDecompile.h
-    ../src/formats/script/scnData.c
-    ../src/formats/script/scnData.h
-    ../src/formats/script/scnVm.c
-    ../src/formats/script/scnVm.h
-    ../src/formats/script/scnDisplay.c
-    ../src/formats/script/scnDisplay.h
-    ../src/formats/script/scnCutscene.c
-    ../src/formats/script/scnCutscene.h)
-
-target_include_directories(ShenmueTests PRIVATE ../src)
-# file.c decompresses the gzipped files with raylib
-target_link_libraries(ShenmueTests PRIVATE raylib)
-set_target_properties(ShenmueTests PROPERTIES FOLDER tests)
+# The formats, the programs and the emulation, with raylib (the gzipped files)
+target_link_libraries(ShenmueTests PRIVATE ShenmueCore)
+set_target_properties(ShenmueTests PROPERTIES C_STANDARD 11 FOLDER tests)
 # The databases of resources/, read by the tests from the source tree
 target_compile_definitions(ShenmueTests PRIVATE SHENMUE_RESOURCES="${CMAKE_SOURCE_DIR}/resources")
 

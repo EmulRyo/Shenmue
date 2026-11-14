@@ -3,10 +3,10 @@
 #include <string.h>
 #include <raylib.h>
 #include "core/file.h"
+#include "core/text.h"
 #include "formats/archive/afs.h"
 #include "formats/archive/pkf.h"
 #include "formats/archive/pks.h"
-#include "formats/script/chrt.h"
 #include "views/mapFiles.h"
 
 // Names the files added to the list from first: their package
@@ -126,7 +126,7 @@ bool MapFiles_Load(const char* folder, const char* extensions, MapFiles* files) 
         snprintf(name, sizeof(name), "%s", GetFileNameWithoutExt(packed->filename));
         bool onDisk = false;
         for (uint32_t d = 0; d < diskCount && !onDisk; d++)
-            onDisk = files->files[d].package[0] == '\0' && CHRT_EqualsIgnoreCase(GetFileNameWithoutExt(files->files[d].name), name);
+            onDisk = files->files[d].package[0] == '\0' && Text_EqualsIgnoreCase(GetFileNameWithoutExt(files->files[d].name), name);
         if (onDisk || !IsFileExtension(packed->filename, extensions))
             continue;
         MapFile* added = &files->files[files->count++];

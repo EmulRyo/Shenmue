@@ -11,6 +11,8 @@
 #include <nfd.h>
 #include "raygui.h"
 #include "core/file.h"
+#include "core/path.h"
+#include "core/text.h"
 #include "formats/animation/motn.h"
 #include "render/freeCamera.h"
 #include "render/mt5Export.h"
@@ -26,7 +28,6 @@
 #define MOTNVIEW_LABEL_SIZE     128
 #define MOTNVIEW_LIST_WIDTH     460.0f
 #define MOTNVIEW_TIMELINE_HEIGHT 24.0f
-#define MOTNVIEW_FOVY           45.0f
 #define MOTNVIEW_RYO            "model/chara/ykb_m.mt5" // In the folder of the scene
 #define MOTNVIEW_SCENES         "scene/01;scene/02;scene/03" // Searched for Ryo from the root of the game files
 #define MOTNVIEW_RYO_PREFIX     "AKI_"
@@ -85,34 +86,6 @@ static float LastFrame(void) {
     return g_view.decoded ? (float)g_view.motion.frames : 0.0f;
 }
 
-static bool EqualsIgnoreCase(const char* a, const char* b) {
-    for (; *a != '\0' && *b != '\0'; a++, b++) {
-        if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
-            return false;
-    }
-    return *a == *b;
-}
-
-// Folder of the scene that contains the file (e.g. .../scene/01 for .../scene/01/d000/auth/M_01TE.motn): the folder
-// whose parent is named "scene". Empty if the file isn't in a scene folder
-static void FindSceneFolder(const char* filepath, char* folder, size_t size) {
-    char path[MOTNVIEW_PATH_SIZE];
-    snprintf(path, sizeof(path), "%s", filepath);
-    for (char* c = path; *c != '\0'; c++) {
-        if (*c == '\\')
-            *c = '/';
-    }
-    folder[0] = '\0';
-    for (char* slash = strrchr(path, '/'); slash != NULL; slash = strrchr(path, '/')) {
-        *slash = '\0';
-        char* parent = strrchr(path, '/');
-        if (parent != NULL && EqualsIgnoreCase(parent + 1, "scene")) {
-            snprintf(folder, size, "%s/%s", path, slash + 1);
-            return;
-        }
-    }
-}
-
 static void FreeModel(void) {
     if (g_view.modelLoaded)
         MT5Render_FreeModel(&g_view.render3D);
@@ -137,7 +110,7 @@ static void OpenModel(int index) {
 // Adds a model to the list and returns its index, or that of the same path if it is already there. -1 if out of memory
 static int AddModel(const char* path) {
     for (uint32_t i = 0; i < g_view.modelCount; i++) {
-        if (EqualsIgnoreCase(g_view.modelPaths[i], path))
+        if (Text_EqualsIgnoreCase(g_view.modelPaths[i], path))
             return (int)i;
     }
     if (g_view.modelCount == g_view.modelCapacity) {
@@ -156,7 +129,7 @@ static int AddModel(const char* path) {
 // from a folder that contains the file (the root of the game files). Empty if not found
 static void FindRyo(char* ryo, size_t size) {
     char scene[MOTNVIEW_PATH_SIZE];
-    FindSceneFolder(g_view.path, scene, sizeof(scene));
+    Path_FindSceneFolder(g_view.path, scene, sizeof(scene));
     if (scene[0] != '\0') {
         snprintf(ryo, size, "%s/%s", scene, MOTNVIEW_RYO);
         if (!FileExists(ryo))
@@ -165,10 +138,7 @@ static void FindRyo(char* ryo, size_t size) {
     }
     char folder[MOTNVIEW_PATH_SIZE];
     snprintf(folder, sizeof(folder), "%s", g_view.path);
-    for (char* c = folder; *c != '\0'; c++) {
-        if (*c == '\\')
-            *c = '/';
-    }
+    Path_ToSlashes(folder);
     for (char* slash = strrchr(folder, '/'); slash != NULL; slash = strrchr(folder, '/')) {
         *slash = '\0';
         int count = 0;
@@ -223,7 +193,7 @@ static void LoadModelDialog(void) {
 }
 
 static bool IsRyo(int model) {
-    return model >= 0 && EqualsIgnoreCase(GetFileName(g_view.modelPaths[model]), GetFileName(MOTNVIEW_RYO));
+    return model >= 0 && Text_EqualsIgnoreCase(GetFileName(g_view.modelPaths[model]), GetFileName(MOTNVIEW_RYO));
 }
 
 // Whether the loaded model can show the selected motion: a body for the motions of the characters, a model with the
@@ -302,7 +272,7 @@ static void SelectMotion(int index) {
 }
 
 static void ResetCamera(void) {
-    FreeCamera_Reset(&g_view.camera, (Vector3) { 0.0f, 0.9f, 0.0f }, (Vector3) { 0.0f, 0.0f, -1.0f }, 2.0f, MOTNVIEW_FOVY);
+    FreeCamera_Reset(&g_view.camera, (Vector3) { 0.0f, 0.9f, 0.0f }, (Vector3) { 0.0f, 0.0f, -1.0f }, 2.0f, SCENE3D_FOVY);
     g_view.camera.yaw += 0.6f;
     g_view.camera.pitch = 0.25f;
     g_view.centered = false;

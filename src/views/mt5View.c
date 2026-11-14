@@ -16,7 +16,6 @@
 #include "ui/toolbar.h"
 #include "views/mt5View.h"
 
-#define MT5VIEW_FOVY 45.0f
 #define MT5VIEW_FRAME_RATE 15.0f
 
 typedef struct {
@@ -42,7 +41,7 @@ static MT5View_State g_view;
 static MT5View_Options g_options;
 
 static void ResetCamera(void) {
-    FreeCamera_Reset(&g_view.camera, g_view.model.mesh.center, g_view.model.mesh.front, g_view.model.mesh.radius, MT5VIEW_FOVY);
+    FreeCamera_Reset(&g_view.camera, g_view.model.mesh.center, g_view.model.mesh.front, g_view.model.mesh.radius, SCENE3D_FOVY);
     g_view.fit = true;
 }
 

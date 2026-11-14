@@ -1,25 +1,5 @@
-set(SRC
-    src/CMakeLists.txt
-    src/main.c
-
-    src/app/fileOpen.c
-    src/app/fileOpen.h
-    src/app/filenameDB.c
-    src/app/filenameDB.h
-    src/app/gameDB.c
-    src/app/gameDB.h
-    src/app/style.c
-    src/app/style.h
-    src/app/tadBatch.c
-    src/app/tadBatch.h
-
-    src/audio/sndDsp.c
-    src/audio/sndDsp.h
-    src/audio/sndSequencer.c
-    src/audio/sndSynth.c
-    src/audio/sndSynth.h
-    src/audio/sndSynthInternal.h
-
+# The core and the formats: a library for the application and the tests
+set(SRC_CORE
     src/core/bytes.h
     src/core/dir.c
     src/core/dir.h
@@ -29,10 +9,19 @@ set(SRC
     src/core/file.h
     src/core/hashTable.c
     src/core/hashTable.h
+    src/core/path.c
+    src/core/path.h
     src/core/stringBuilder.c
     src/core/stringBuilder.h
+    src/core/text.c
+    src/core/text.h
     src/core/thread.c
     src/core/thread.h
+
+    src/formats/animation/auth.c
+    src/formats/animation/auth.h
+    src/formats/animation/motn.c
+    src/formats/animation/motn.h
 
     src/formats/archive/afs.c
     src/formats/archive/afs.h
@@ -48,11 +37,6 @@ set(SRC
     src/formats/archive/tac.h
     src/formats/archive/tad.c
     src/formats/archive/tad.h
-
-    src/formats/animation/auth.c
-    src/formats/animation/auth.h
-    src/formats/animation/motn.c
-    src/formats/animation/motn.h
 
     src/formats/font/fon.c
     src/formats/font/fon.h
@@ -71,14 +55,16 @@ set(SRC
     src/formats/script/scn.h
     src/formats/script/scnBytecode.c
     src/formats/script/scnBytecode.h
-    src/formats/script/scnDecompile.c
-    src/formats/script/scnDecompile.h
     src/formats/script/scnCutscene.c
     src/formats/script/scnCutscene.h
-    src/formats/script/scnDisplay.c
-    src/formats/script/scnDisplay.h
     src/formats/script/scnData.c
     src/formats/script/scnData.h
+    src/formats/script/scnDecompile.c
+    src/formats/script/scnDecompile.h
+    src/formats/script/scnDisplay.c
+    src/formats/script/scnDisplay.h
+    src/formats/script/scnf.c
+    src/formats/script/scnf.h
     src/formats/script/scnPair.c
     src/formats/script/scnPair.h
     src/formats/script/scnVm.c
@@ -91,8 +77,6 @@ set(SRC
     src/formats/script/sh4Listing.h
     src/formats/script/sh4Program.c
     src/formats/script/sh4Program.h
-    src/formats/script/scnf.c
-    src/formats/script/scnf.h
 
     src/formats/sound/snd.c
     src/formats/sound/snd.h
@@ -105,7 +89,33 @@ set(SRC
     src/formats/texture/pvr.h
     src/formats/texture/spr.c
     src/formats/texture/spr.h
+    PARENT_SCOPE
+)
 
+# The application: the rendering, the audio, the interface and the views
+set(SRC
+    src/CMakeLists.txt
+    src/main.c
+
+    src/app/filenameDB.c
+    src/app/filenameDB.h
+    src/app/fileOpen.c
+    src/app/fileOpen.h
+    src/app/gameDB.c
+    src/app/gameDB.h
+    src/app/style.c
+    src/app/style.h
+    src/app/tadBatch.c
+    src/app/tadBatch.h
+
+    src/audio/sndDsp.c
+    src/audio/sndDsp.h
+    src/audio/sndSequencer.c
+    src/audio/sndSynth.c
+    src/audio/sndSynth.h
+    src/audio/sndSynthInternal.h
+
+    src/render/bounds.h
     src/render/freeCamera.c
     src/render/freeCamera.h
     src/render/mt5Export.c
@@ -146,13 +156,13 @@ set(SRC
     src/views/mapDate.h
     src/views/mapFiles.c
     src/views/mapFiles.h
-    src/views/mapProgram.c
-    src/views/mapProgram.h
     src/views/mapinfoView.c
     src/views/mapinfoView.h
-    src/views/mt5View.c
+    src/views/mapProgram.c
+    src/views/mapProgram.h
     src/views/motnView.c
     src/views/motnView.h
+    src/views/mt5View.c
     src/views/mt5View.h
     src/views/programView.c
     src/views/programView.h

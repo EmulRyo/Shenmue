@@ -9,6 +9,8 @@
 #include <raymath.h>
 #include "raygui.h"
 #include "app/gameDB.h"
+#include "core/path.h"
+#include "core/text.h"
 #include "formats/animation/auth.h"
 #include "formats/animation/motn.h"
 #include "formats/archive/pkf.h"
@@ -16,6 +18,7 @@
 #include "formats/map/mapinfo.h"
 #include "formats/script/chrt.h"
 #include "formats/script/scnCutscene.h"
+#include "render/bounds.h"
 #include "render/freeCamera.h"
 #include "render/mt5Pose.h"
 #include "render/mt5Render.h"
@@ -33,10 +36,6 @@
 #define AUTHVIEW_PATH_SIZE      1024
 #define AUTHVIEW_LIST_WIDTH     460.0f
 #define AUTHVIEW_TIMELINE_HEIGHT 64.0f
-#define AUTHVIEW_FOVY           45.0f
-#define AUTHVIEW_ASPECT         (4.0f / 3.0f) // Of the screen of the game, for the camera of the cutscene
-#define AUTHVIEW_HEIGHT         1.7f    // Of the characters, drawn as cylinders when their model isn't found
-#define AUTHVIEW_RADIUS         0.25f
 #define AUTHVIEW_SOUND_TIME     0.5f    // Seconds a sound with no length is shown
 #define AUTHVIEW_NEAR           0.05    // Planes of the camera of the cutscene, and of the free camera with the map
 #define AUTHVIEW_FAR            2000.0
@@ -334,69 +333,30 @@ static bool CreateLabels(void) {
     return true;
 }
 
-static void AddPoint(Vector3 point, Vector3* min, Vector3* max) {
-    *min = Vector3Min(*min, point);
-    *max = Vector3Max(*max, point);
-}
-
 // Box around the keys of the camera and of the characters
 static void ComputeBounds(void) {
     const AUTH_Sequence* sequence = &g_view.sequence;
-    Vector3 min = { INFINITY, INFINITY, INFINITY }, max = { -INFINITY, -INFINITY, -INFINITY };
+    Bounds bounds = Bounds_Empty();
     for (int c = 0; c <= AUTH_CAMERA_TARGET_X; c += AUTH_CAMERA_TARGET_X) {
         const AUTH_Curve* curves = &sequence->camera[c];
         for (uint32_t k = 0; k < curves[0].count; k++) {
             float time = curves[0].times[k];
-            AddPoint((Vector3) { AUTH_CurveValue(&curves[0], time, 0.0f), AUTH_CurveValue(&curves[1], time, 0.0f),
-                AUTH_CurveValue(&curves[2], time, 0.0f) }, &min, &max);
+            Bounds_AddPoint(&bounds, (Vector3) { AUTH_CurveValue(&curves[0], time, 0.0f), AUTH_CurveValue(&curves[1], time, 0.0f),
+                AUTH_CurveValue(&curves[2], time, 0.0f) });
         }
     }
     for (uint32_t i = 0; i < sequence->characterCount; i++) {
         const AUTH_Curve* curves = sequence->characters[i].curves;
         for (uint32_t k = 0; k < curves[AUTH_CHARACTER_X].count; k++) {
             float time = curves[AUTH_CHARACTER_X].times[k];
-            AddPoint((Vector3) { AUTH_CurveValue(&curves[AUTH_CHARACTER_X], time, 0.0f),
-                AUTH_CurveValue(&curves[AUTH_CHARACTER_Y], time, 0.0f), AUTH_CurveValue(&curves[AUTH_CHARACTER_Z], time, 0.0f) },
-                &min, &max);
+            Bounds_AddPoint(&bounds, (Vector3) { AUTH_CurveValue(&curves[AUTH_CHARACTER_X], time, 0.0f),
+                AUTH_CurveValue(&curves[AUTH_CHARACTER_Y], time, 0.0f), AUTH_CurveValue(&curves[AUTH_CHARACTER_Z], time, 0.0f) });
         }
     }
-    if (min.x > max.x) {
-        min = (Vector3) { -1.0f, 0.0f, -1.0f };
-        max = (Vector3) { 1.0f, 2.0f, 1.0f };
-    }
-    g_view.center = Vector3Scale(Vector3Add(min, max), 0.5f);
-    g_view.radius = fmaxf(Vector3Distance(min, max) * 0.5f, 2.0f);
-}
-
-static bool EqualsIgnoreCase(const char* a, const char* b) {
-    return CHRT_EqualsIgnoreCase(a, b);
-}
-
-// Removes the last component of a path with / separators. Returns false if there is none
-static bool ToParent(char* path) {
-    char* slash = strrchr(path, '/');
-    if (slash == NULL || slash == path)
-        return false;
-    *slash = '\0';
-    return true;
-}
-
-// Folder of the scene that contains the file (e.g. .../scene/01 for .../scene/01/d000/auth/SEQDATA0.auth): the folder
-// whose parent is named "scene". Empty if the file isn't in a scene folder
-static void FindSceneFolder(const char* filepath, char* folder, size_t size) {
-    snprintf(folder, size, "%s", filepath);
-    for (char* c = folder; *c != '\0'; c++) {
-        if (*c == '\\')
-            *c = '/';
-    }
-    while (ToParent(folder)) {
-        char parent[AUTHVIEW_PATH_SIZE];
-        snprintf(parent, sizeof(parent), "%s", folder);
-        const char* name = ToParent(parent) ? strrchr(parent, '/') : NULL;
-        if (name != NULL && EqualsIgnoreCase(name + 1, "scene"))
-            return;
-    }
-    folder[0] = '\0';
+    if (Bounds_IsEmpty(&bounds))
+        bounds = (Bounds) { { -1.0f, 0.0f, -1.0f }, { 1.0f, 2.0f, 1.0f } };
+    g_view.center = Bounds_Center(&bounds);
+    g_view.radius = Bounds_Radius(&bounds, 2.0f);
 }
 
 // Loads a MOTN file at the end of the banks. Returns false if there is no memory
@@ -445,7 +405,7 @@ static void AddFamilyMotionBanks(const char* folder) {
         qsort(family, count, sizeof(const char*), CompareFolders);
         for (int mot = 1; mot >= 0; mot--) {
             for (unsigned int i = 0; i < count; i++) {
-                if (EqualsIgnoreCase(GetFileName(family[i]) + familyLength, "mot") == (mot == 1))
+                if (Text_EqualsIgnoreCase(GetFileName(family[i]) + familyLength, "mot") == (mot == 1))
                     AddFolderMotionBanks(family[i]);
             }
         }
@@ -461,7 +421,7 @@ static uint32_t AddMapMotionBanks(const char* package, bool* loaded) {
     uint32_t count = 0;
     for (uint32_t i = 0; i < g_view.mapFiles.count; i++) {
         const MapFile* file = &g_view.mapFiles.files[i];
-        if (loaded[i] || !IsFileExtension(file->name, ".motn") || (package != NULL && !EqualsIgnoreCase(file->package, package)))
+        if (loaded[i] || !IsFileExtension(file->name, ".motn") || (package != NULL && !Text_EqualsIgnoreCase(file->package, package)))
             continue;
         loaded[i] = true;
         MOTN_Bank* banks = realloc(g_view.banks, (g_view.bankCount + 1) * sizeof(MOTN_Bank));
@@ -496,15 +456,15 @@ static void AddMapFamilyMotionBanks(const char* package, bool* loaded) {
         const char* other = g_view.mapFiles.files[i].package;
         bool known = false;
         for (uint32_t f = 0; f < count && !known; f++)
-            known = EqualsIgnoreCase(family[f], other);
+            known = Text_EqualsIgnoreCase(family[f], other);
         snprintf(prefix, sizeof(prefix), "%.*s", familyLength, other);
-        if (!known && (int)strlen(other) > familyLength && EqualsIgnoreCase(prefix, name) && !EqualsIgnoreCase(other, package))
+        if (!known && (int)strlen(other) > familyLength && Text_EqualsIgnoreCase(prefix, name) && !Text_EqualsIgnoreCase(other, package))
             family[count++] = other;
     }
     qsort(family, count, sizeof(const char*), CompareFolders);
     for (int mot = 1; mot >= 0; mot--) {
         for (uint32_t i = 0; i < count; i++) {
-            if (EqualsIgnoreCase(family[i] + familyLength, "mot") == (mot == 1))
+            if (Text_EqualsIgnoreCase(family[i] + familyLength, "mot") == (mot == 1))
                 AddMapMotionBanks(family[i], loaded);
         }
     }
@@ -556,7 +516,7 @@ static void LoadMotionBanks(const char* filepath, const char* package) {
             snprintf(lower, sizeof(lower), "%s", package);
             for (char* c = lower; *c != '\0'; c++)
                 *c = (char)tolower((unsigned char)*c);
-            if (!EqualsIgnoreCase(lower, GetFileName(folder)))
+            if (!Text_EqualsIgnoreCase(lower, GetFileName(folder)))
                 AddMapFolderMotionBanks(lower);
         }
         AddMapFolderMotionBanks(GetFileName(folder));
@@ -565,47 +525,21 @@ static void LoadMotionBanks(const char* filepath, const char* package) {
     }
     char common[AUTHVIEW_PATH_SIZE];
     snprintf(common, sizeof(common), "%s", g_view.sceneFolder);
-    if (common[0] != '\0' && ToParent(common) && ToParent(common)) {
+    if (common[0] != '\0' && Path_ToParent(common) && Path_ToParent(common)) {
         strncat(common, AUTHVIEW_COMMON_MOTIONS, sizeof(common) - strlen(common) - 1);
         if (FileExists(common))
             AddMotionBank(common);
     }
 }
 
-// Path of a model file of the CHRT scripts in a folder: <name>.chrm or <name>.mt5, without the extension of the script
-// (always .MT5) and the $ and @ prefixes of some names. Returns false if there is none
-static bool ModelPath(const char* folder, const char* file, char* path, size_t size) {
-    while (*file == '$' || *file == '@')
-        file++;
-    const char* dot = strrchr(file, '.');
-    int length = (int)(dot != NULL ? dot - file : strlen(file));
-    const char* extensions[2] = { "chrm", "mt5" };
-    for (int i = 0; i < 2; i++) {
-        snprintf(path, size, "%s/%.*s.%s", folder, length, file, extensions[i]);
-        if (FileExists(path))
-            return true;
-    }
-    return false;
-}
-
-// Name of a model of the CHRT scripts without the $ and @ prefixes and the extension
-static void ModelBase(const char* file, char* base, size_t size) {
-    while (*file == '$' || *file == '@')
-        file++;
-    snprintf(base, size, "%s", file);
-    char* dot = strchr(base, '.');
-    if (dot != NULL)
-        *dot = '\0';
-}
-
 // Model file of a model name of the CHRT scripts in the files of a PKF/PKS pair (e.g. FUK_M.MT5 of
 // scene/01/stream/humans/FUKU.pkf). Returns NULL if there is none
 static const IPAC_File* PackageModel(const IPAC_FileList* files, const char* file) {
     char base[64];
-    ModelBase(file, base, sizeof(base));
+    CHRT_ModelBase(file, base, sizeof(base));
     for (uint32_t i = 0; i < files->count; i++) {
         const IPAC_File* candidate = &files->files[i];
-        if (IsFileExtension(candidate->filename, ".chrm;.mt5") && EqualsIgnoreCase(GetFileNameWithoutExt(candidate->filename), base))
+        if (IsFileExtension(candidate->filename, ".chrm;.mt5") && Text_EqualsIgnoreCase(GetFileNameWithoutExt(candidate->filename), base))
             return candidate;
     }
     return NULL;
@@ -616,13 +550,13 @@ static const IPAC_File* PackageModel(const IPAC_FileList* files, const char* fil
 // file. Returns NULL if there is none
 static const MapFile* MapModel(const char* file, const char* package, char* path, size_t size) {
     char base[64];
-    ModelBase(file, base, sizeof(base));
+    CHRT_ModelBase(file, base, sizeof(base));
     const MapFile* found = NULL;
     for (uint32_t i = 0; i < g_view.mapFiles.count; i++) {
         const MapFile* candidate = &g_view.mapFiles.files[i];
-        if (!IsFileExtension(candidate->name, ".chrm;.mt5") || !EqualsIgnoreCase(GetFileNameWithoutExt(candidate->name), base))
+        if (!IsFileExtension(candidate->name, ".chrm;.mt5") || !Text_EqualsIgnoreCase(GetFileNameWithoutExt(candidate->name), base))
             continue;
-        if (found == NULL || (package != NULL && EqualsIgnoreCase(candidate->package, package) && !EqualsIgnoreCase(found->package, package)))
+        if (found == NULL || (package != NULL && Text_EqualsIgnoreCase(candidate->package, package) && !Text_EqualsIgnoreCase(found->package, package)))
             found = candidate;
     }
     if (found != NULL && found->packed != NULL)
@@ -665,8 +599,8 @@ static bool ScriptModel(const CHRT_Script* script, const char* id, const char* f
             return true;
         }
         const MapFile* mapFile = NULL;
-        if ((folder != NULL && ModelPath(folder, file, path, size)) || (mapFile = MapModel(file, package, path, size)) != NULL ||
-            (g_view.sceneFolder[0] != '\0' && ModelPath(models, TextToLower(file), path, size))) {
+        if ((folder != NULL && CHRT_ModelPath(folder, file, path, size)) || (mapFile = MapModel(file, package, path, size)) != NULL ||
+            (g_view.sceneFolder[0] != '\0' && CHRT_ModelPath(models, TextToLower(file), path, size))) {
             *packed = mapFile != NULL ? mapFile->packed : NULL;
             *textures = &g_view.mapFiles.packed;
             *human = character.human;
@@ -981,7 +915,7 @@ static bool LoadCharacterModels(void) {
 }
 
 static void ResetCamera(void) {
-    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { sinf(0.6f), 0.0f, cosf(0.6f) }, g_view.radius, AUTHVIEW_FOVY);
+    FreeCamera_Reset(&g_view.camera, g_view.center, (Vector3) { sinf(0.6f), 0.0f, cosf(0.6f) }, g_view.radius, SCENE3D_FOVY);
     g_view.camera.pitch = 0.6f;
 }
 
@@ -1267,18 +1201,15 @@ static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutsc
     g_view.cutscene = cutscene;
     g_view.current = -1;
     g_view.selectedCharacter = -1;
-    for (char* c = g_view.path; *c != '\0'; c++) {
-        if (*c == '\\')
-            *c = '/';
-    }
+    Path_ToSlashes(g_view.path);
     // The map of an AUTH file is the parent folder of its folder (of its PKS)
     char mapFolder[AUTHVIEW_PATH_SIZE];
     snprintf(mapFolder, sizeof(mapFolder), "%s", GetDirectoryPath(g_view.path));
     if (cutscene < 0)
-        ToParent(mapFolder);
+        Path_ToParent(mapFolder);
     snprintf(g_view.mapinfoPath, sizeof(g_view.mapinfoPath), "%s", cutscene < 0 ? TextFormat("%s/mapinfo.bin", mapFolder) : g_view.path);
     g_view.hasMapinfo = FileExists(g_view.mapinfoPath);
-    FindSceneFolder(g_view.path, g_view.sceneFolder, sizeof(g_view.sceneFolder));
+    Path_FindSceneFolder(g_view.path, g_view.sceneFolder, sizeof(g_view.sceneFolder));
     if (cutscene >= 0 && !MapFiles_Load(mapFolder, ".mt5;.chrm;.chrt;.motn", &g_view.mapFiles)) {
         fputs("[AUTHView_Open]: Memory error\n", stderr);
         AUTHView_Close();
@@ -1350,19 +1281,9 @@ bool AUTHView_IsMapCutscene(void) {
     return g_view.open && g_view.cutscene >= 0;
 }
 
-// The same path, ignoring the case and the kind of separators
-static bool SamePath(const char* a, const char* b) {
-    for (; *a != '\0' && *b != '\0'; a++, b++) {
-        char ca = *a == '\\' ? '/' : (char)tolower((unsigned char)*a), cb = *b == '\\' ? '/' : (char)tolower((unsigned char)*b);
-        if (ca != cb)
-            return false;
-    }
-    return *a == *b;
-}
-
 bool AUTHView_UsesMap(void) {
     const char* map = MAPINFOView_Path();
-    return g_view.open && map != NULL && SamePath(map, g_view.mapinfoPath);
+    return g_view.open && map != NULL && Path_Equals(map, g_view.mapinfoPath);
 }
 
 // Opens the view of the map of an AUTH file (its parent folder) if it isn't open, behind this one. The view of the map of
@@ -1459,7 +1380,7 @@ static Vector3 CurvePoint(const AUTH_Curve* curves, float time) {
 
 // The camera of the cutscene at the current time, with its roll
 static Camera3D CutsceneCamera(void) {
-    return Scene3D_CurveCamera(g_view.sequence.camera, g_view.time, AUTHVIEW_FOVY);
+    return Scene3D_CurveCamera(g_view.sequence.camera, g_view.time, SCENE3D_FOVY);
 }
 
 
@@ -1568,7 +1489,7 @@ static bool IsShown(uint32_t character) {
 
 static void DrawCameraGizmo(void) {
     Camera3D camera = CutsceneCamera();
-    Scene3D_DrawCameraGizmo(camera, fmaxf(g_view.radius * 0.15f, 0.5f), AUTHVIEW_ASPECT, true, g_cameraColor);
+    Scene3D_DrawCameraGizmo(camera, fmaxf(g_view.radius * 0.15f, 0.5f), SCENE3D_GAME_ASPECT, true, g_cameraColor);
     DrawLine3D(camera.position, camera.target, Fade(g_cameraColor, 0.3f));
     DrawSphere(camera.target, 0.05f, g_cameraColor);
 }
@@ -1681,18 +1602,15 @@ static Matrix CharacterTransform(uint32_t index) {
     const AUTHView_Model* model = &g_view.models[characterModel->model];
     Vector3 position = CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time);
     Vector3 rotation = CurvePoint(&character->curves[AUTH_CHARACTER_ROTATION_X], g_view.time);
-    Matrix matrix = MatrixTranslate(0.0f, characterModel->human && !model->posed ? model->lift : 0.0f, 0.0f);
-    matrix = MatrixMultiply(matrix, MatrixRotateX(rotation.x * DEG2RAD));
-    matrix = MatrixMultiply(matrix, MatrixRotateY(rotation.y * DEG2RAD));
-    matrix = MatrixMultiply(matrix, MatrixRotateZ(rotation.z * DEG2RAD));
-    return MatrixMultiply(matrix, MatrixTranslate(position.x, position.y, position.z));
+    return Scene3D_PlaceTransform(characterModel->human && !model->posed ? model->lift : 0.0f,
+        (const float[3]) { rotation.x, rotation.y, rotation.z }, (const float[3]) { position.x, position.y, position.z });
 }
 
 // Height of the top of a character above its position: of its model, or of the cylinder
 static float CharacterHeight(uint32_t index) {
     const AUTHView_CharacterModel* characterModel = &g_view.characterModels[index];
     if (characterModel->model < 0)
-        return AUTHVIEW_HEIGHT;
+        return SCENE3D_CHARACTER_HEIGHT;
     const AUTHView_Model* model = &g_view.models[characterModel->model];
     return model->top + (characterModel->human ? model->lift : 0.0f);
 }
@@ -1786,11 +1704,7 @@ static bool ProgramTransform(const AUTHView_Placed* placed, Matrix* transform) {
 // stand at their position
 static Matrix PlacedTransform(const AUTHView_Placed* placed, const float position[3], const float angle[3]) {
     const AUTHView_Model* model = &g_view.models[placed->model];
-    Matrix matrix = MatrixTranslate(0.0f, placed->human ? model->lift : 0.0f, 0.0f);
-    matrix = MatrixMultiply(matrix, MatrixRotateX(angle[0] * DEG2RAD));
-    matrix = MatrixMultiply(matrix, MatrixRotateY(angle[1] * DEG2RAD));
-    matrix = MatrixMultiply(matrix, MatrixRotateZ(angle[2] * DEG2RAD));
-    return MatrixMultiply(matrix, MatrixTranslate(position[0], position[1], position[2]));
+    return Scene3D_PlaceTransform(placed->human ? model->lift : 0.0f, angle, position);
 }
 
 // With their model, or as cylinders with a line to the direction they face if it wasn't found; then the characters placed
@@ -1824,9 +1738,9 @@ static void DrawCharacters(Camera3D camera) {
             continue;
         Color color = CharacterColor((int)i);
         Vector3 position = CurvePoint(&character->curves[AUTH_CHARACTER_X], g_view.time);
-        DrawCylinder(position, AUTHVIEW_RADIUS, AUTHVIEW_RADIUS, AUTHVIEW_HEIGHT, 12, Fade(color, 0.6f));
-        DrawCylinderWires(position, AUTHVIEW_RADIUS, AUTHVIEW_RADIUS, AUTHVIEW_HEIGHT, 12, color);
-        Vector3 eyes = Vector3Add(position, (Vector3) { 0.0f, AUTHVIEW_HEIGHT * 0.9f, 0.0f });
+        DrawCylinder(position, SCENE3D_CHARACTER_RADIUS, SCENE3D_CHARACTER_RADIUS, SCENE3D_CHARACTER_HEIGHT, 12, Fade(color, 0.6f));
+        DrawCylinderWires(position, SCENE3D_CHARACTER_RADIUS, SCENE3D_CHARACTER_RADIUS, SCENE3D_CHARACTER_HEIGHT, 12, color);
+        Vector3 eyes = Vector3Add(position, (Vector3) { 0.0f, SCENE3D_CHARACTER_HEIGHT * 0.9f, 0.0f });
         Vector3 front = Vector3Add(eyes, Vector3Scale(CharacterForward(character), 0.6f));
         DrawLine3D(eyes, front, color);
         DrawSphere(front, 0.06f, color);
@@ -1902,7 +1816,7 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     bool map = ShowsMap();
     if (g_options.cutsceneCamera) {
         camera = CutsceneCamera();
-        view = Scene3D_Letterbox(area, AUTHVIEW_ASPECT);
+        view = Scene3D_Letterbox(area, SCENE3D_GAME_ASPECT);
         FreeCamera_BeginCamera3D(camera, view, AUTHVIEW_NEAR, AUTHVIEW_FAR);
     }
     else if (map) {
@@ -2089,11 +2003,6 @@ static void DrawTree(Rectangle bounds) {
     }
 }
 
-static const char* FormatTime(float seconds) {
-    int centiseconds = (int)(seconds * 100.0f);
-    return TextFormat("%d:%02d.%02d", centiseconds / 6000, centiseconds / 100 % 60, centiseconds % 100);
-}
-
 static const char* g_characterCurves[AUTH_CHARACTER_CURVES] = { "X", "Y", "Z", "Rotation X", "Rotation Y", "Rotation Z", "Unknown 6",
     "Unknown 7", "Unknown 8" };
 
@@ -2137,7 +2046,7 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
 static void CommandProperties(Properties* properties, uint32_t index) {
     const AUTH_Command* command = &g_view.sequence.commands[index];
     Properties_Int(properties, "Frame", command->frame);
-    Properties_Text(properties, "Time", FormatTime(command->frame / AUTH_FRAME_RATE));
+    Properties_Text(properties, "Time", Text_FormatTime(command->frame / AUTH_FRAME_RATE));
     Properties_Int(properties, "Opcode", command->opcode);
     Properties_Text(properties, "Command", CommandText(command));
     if (command->opcode == AUTH_COMMAND_VOICE || command->opcode == AUTH_COMMAND_SOUND)
@@ -2187,7 +2096,7 @@ static void ProgramProperties(Properties* properties, uint32_t index) {
     const SCNCutscene* program = &g_view.program;
     Properties_Text(properties, "Frames", item->lastFrame != item->firstFrame ? TextFormat("%u-%u", item->firstFrame, item->lastFrame) :
         TextFormat("%u", item->firstFrame));
-    Properties_Text(properties, "Time", FormatTime(item->firstFrame / AUTH_FRAME_RATE));
+    Properties_Text(properties, "Time", Text_FormatTime(item->firstFrame / AUTH_FRAME_RATE));
     Properties_Int(properties, "Calls", item->count);
     if (item->kind == PROGRAM_SOUND) {
         const SCNCutscene_Sound* sound = &program->sounds[item->first];
@@ -2338,8 +2247,8 @@ void AUTHView_Draw(Rectangle area) {
 
     float x = controls.x;
     // TextFormat uses a rotating buffer, so the two times can be formatted in the same call
-    const char* status = TextFormat("Frame %u/%u   %s / %s", CurrentFrame(), sequence->duration, FormatTime(g_view.time),
-        FormatTime(Duration()));
+    const char* status = TextFormat("Frame %u/%u   %s / %s", CurrentFrame(), sequence->duration, Text_FormatTime(g_view.time),
+        Text_FormatTime(Duration()));
     DrawTextEx(font, status, (Vector2) { x, controls.y + (controlsHeight - fontSize) * 0.5f }, fontSize, 1.0f, LIGHTGRAY);
 }
 
@@ -2357,7 +2266,7 @@ void AUTHView_Status(ViewStatus* status) {
     AUTHSounds_Info sounds;
     AUTHSounds_GetInfo(&sounds);
     snprintf(status->info, sizeof(status->info), "%s%s, %u characters, %u commands, voices %u/%u, effects %u/%u%s%s%s",
-        CutsceneText(), FormatTime(Duration()), sequence->characterCount, sequence->commandCount, sounds.voices, sounds.voiceCommands, sounds.effects, sounds.effectCommands,
+        CutsceneText(), Text_FormatTime(Duration()), sequence->characterCount, sequence->commandCount, sounds.voices, sounds.voiceCommands, sounds.effects, sounds.effectCommands,
         sounds.bank[0] != '\0' ? " in " : "", sounds.bank, g_view.program.found ? TextFormat(", program: %u node calls, sounds %u/%u",
         g_view.program.nodeCount, sounds.programEffects, sounds.programCommands) : "");
     if (g_options.cutsceneCamera)

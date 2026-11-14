@@ -4,7 +4,9 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include <raylib.h>
 #include "core/file.h"
+#include "core/text.h"
 #include "formats/script/chrt.h"
 
 // A CHRT file is a CHRS block with a list of commands followed by a STRG block with the strings.
@@ -22,16 +24,8 @@ typedef struct {
 
 static const char* g_blockCommands[] = { "DefImage", "Character", "Image", "Entry" };
 
-bool CHRT_EqualsIgnoreCase(const char* a, const char* b) {
-    for (; *a != '\0' && *b != '\0'; a++, b++) {
-        if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
-            return false;
-    }
-    return *a == *b;
-}
-
 bool CHRT_IsCommand(const CHRT_Command* command, const char* name) {
-    return CHRT_EqualsIgnoreCase(command->name, name);
+    return Text_EqualsIgnoreCase(command->name, name);
 }
 
 // Last string argument, NULL if none
@@ -47,7 +41,7 @@ const char* CHRT_ImageFile(const CHRT_Script* script, const char* name) {
     for (uint32_t c = 0; c < script->commandCount; c++) {
         const CHRT_Command* command = &script->commands[c];
         if (command->parent != -1 || !CHRT_IsCommand(command, "DefImage") || command->argCount == 0 ||
-            command->args[0].type != CHRT_ARG_STRING || !CHRT_EqualsIgnoreCase(command->args[0].string, name))
+            command->args[0].type != CHRT_ARG_STRING || !Text_EqualsIgnoreCase(command->args[0].string, name))
             continue;
         for (uint32_t i = c + 1; i < script->commandCount && script->commands[i].parent == (int32_t)c; i++) {
             const char* file = StringArg(&script->commands[i]);
@@ -56,6 +50,29 @@ const char* CHRT_ImageFile(const CHRT_Script* script, const char* name) {
         }
     }
     return NULL;
+}
+
+void CHRT_ModelBase(const char* file, char* base, size_t size) {
+    while (*file == '$' || *file == '@')
+        file++;
+    snprintf(base, size, "%s", file);
+    char* dot = strchr(base, '.');
+    if (dot != NULL)
+        *dot = '\0';
+}
+
+bool CHRT_ModelPath(const char* folder, const char* file, char* path, size_t size) {
+    while (*file == '$' || *file == '@')
+        file++;
+    const char* dot = strrchr(file, '.');
+    int length = (int)(dot != NULL ? dot - file : strlen(file));
+    const char* extensions[2] = { "chrm", "mt5" };
+    for (int i = 0; i < 2; i++) {
+        snprintf(path, size, "%s/%.*s.%s", folder, length, file, extensions[i]);
+        if (FileExists(path))
+            return true;
+    }
+    return false;
 }
 
 static bool IsInScene(const float position[3]) {
@@ -106,7 +123,7 @@ void CHRT_ReadCharacter(const CHRT_Script* script, uint32_t index, CHRT_Characte
             hand = true;
         else if (CHRT_IsCommand(child, "Flags")) {
             for (uint32_t i = 0; i < child->argCount; i++)
-                character->sleep |= child->args[i].type == CHRT_ARG_STRING && CHRT_EqualsIgnoreCase(child->args[i].string, "SLEEP");
+                character->sleep |= child->args[i].type == CHRT_ARG_STRING && Text_EqualsIgnoreCase(child->args[i].string, "SLEEP");
         }
     }
     character->arm = object && hand;

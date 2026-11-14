@@ -64,12 +64,18 @@ bool CHRT_Load(const char* filepath, CHRT_Script* script);
 bool CHRT_LoadFromMemory(const uint8_t* data, size_t size, const char* name, CHRT_Script* script);
 void CHRT_Free(CHRT_Script* script);
 
-// Command names are case-insensitive (Image, IMAGE, image), so are some string arguments (DISP, Disp)
-bool CHRT_EqualsIgnoreCase(const char* a, const char* b);
+// Command names are case-insensitive (Image, IMAGE, image), so are some string arguments (DISP, Disp: compare them
+// with Text_EqualsIgnoreCase)
 bool CHRT_IsCommand(const CHRT_Command* command, const char* name);
 // Model file of an image name: the file of the first Image of the DefImage with that name (case-insensitive), e.g.
 // "HOS_L.MT5" for DefImage("HOS_L") { Image(1, "HOS_L.MT5") }. Returns NULL if the script has no DefImage with that name
 const char* CHRT_ImageFile(const CHRT_Script* script, const char* name);
+// Name of a model file of an Image without the $ and @ prefixes of some names and the extension (e.g. "DR01_009" for
+// "$DR01_009.MT5")
+void CHRT_ModelBase(const char* file, char* base, size_t size);
+// Path of the model file of an Image in a folder: <name>.chrm or <name>.mt5, without the extension of the Image (always
+// .MT5) and the $ and @ prefixes of some names. Returns false if there is none
+bool CHRT_ModelPath(const char* folder, const char* file, char* path, size_t size);
 // Reads the Character block whose command is at index: its ID, image, flags, position and angle
 void CHRT_ReadCharacter(const CHRT_Script* script, uint32_t index, CHRT_Character* character);
 

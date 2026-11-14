@@ -77,3 +77,11 @@ Rectangle Scene3D_DrawLabel(Vector2 point, const char* text, Font font, float fo
     DrawTextEx(font, text, (Vector2) { box.x + 3.0f, box.y + 1.0f }, fontSize, 1.0f, color);
     return box;
 }
+
+Matrix Scene3D_PlaceTransform(float lift, const float angle[3], const float position[3]) {
+    Matrix matrix = MatrixTranslate(0.0f, lift, 0.0f);
+    matrix = MatrixMultiply(matrix, MatrixRotateX(angle[0] * DEG2RAD));
+    matrix = MatrixMultiply(matrix, MatrixRotateY(angle[1] * DEG2RAD));
+    matrix = MatrixMultiply(matrix, MatrixRotateZ(angle[2] * DEG2RAD));
+    return MatrixMultiply(matrix, MatrixTranslate(position[0], position[1], position[2]));
+}

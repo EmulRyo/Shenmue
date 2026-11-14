@@ -11,6 +11,7 @@
 #include "core/bytes.h"
 #include "app/gameDB.h"
 #include "core/file.h"
+#include "core/path.h"
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
 #include "formats/script/scnBytecode.h"
@@ -153,18 +154,9 @@ bool ProgramView_IsOpen(void) {
     return g_view.open;
 }
 
-static bool SamePath(const char* a, const char* b) {
-    for (; *a != '\0' && *b != '\0'; a++, b++) {
-        char x = *a == '\\' ? '/' : (char)tolower((unsigned char)*a), y = *b == '\\' ? '/' : (char)tolower((unsigned char)*b);
-        if (x != y)
-            return false;
-    }
-    return *a == *b;
-}
-
 bool ProgramView_UsesMap(void) {
     const char* map = MAPINFOView_Path();
-    return g_view.open && g_view.fromMap && map != NULL && SamePath(map, g_view.path);
+    return g_view.open && g_view.fromMap && map != NULL && Path_Equals(map, g_view.path);
 }
 
 // The analyzed program, SH-4 code or bytecode: its functions, calls, strings and listing

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "core/bytes.h"
+#include "core/text.h"
 #include "formats/script/sh4Listing.h"
 
 #define MAX_STRING 48   // Characters of a string shown in a comment
@@ -48,16 +49,6 @@ void SH4_QuoteString(const char* string, char* text, size_t size) {
     text[length < size ? length : size - 1] = '\0';
 }
 
-// Four characters of an ID (letters, digits, underscores), as stored in memory, e.g. 'AKIR'
-static bool IsFourCC(uint32_t value) {
-    for (int i = 0; i < 4; i++) {
-        uint8_t c = (uint8_t)(value >> (i * 8));
-        if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || (c >= 'a' && c <= 'z')))
-            return false;
-    }
-    return true;
-}
-
 // A float that is probably a float: a normal number from about 1e-6 to 1e7 with its low mantissa bits zero
 static bool LooksLikeFloat(uint32_t value) {
     uint32_t exponent = (value >> 23) & 0xFF;
@@ -66,7 +57,7 @@ static bool LooksLikeFloat(uint32_t value) {
 
 void SH4_DescribeNumber(uint32_t value, char* text, size_t size) {
     int32_t number = (int32_t)value;
-    if (IsFourCC(value)) {
+    if (Text_IsFourCC(value)) {
         snprintf(text, size, "'%c%c%c%c'", (char)value, (char)(value >> 8), (char)(value >> 16), (char)(value >> 24));
     } else if (number > -10000 && number < 10000) {
         snprintf(text, size, "%d", number);

@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <raylib.h>
+#include "core/path.h"
 #include "formats/archive/afs.h"
 #include "formats/map/mapinfo.h"
 #include "formats/sound/snd.h"
@@ -53,20 +54,6 @@ static uint32_t Arg(const AUTH_Command* command, uint32_t arg) {
     return arg < command->argCount ? command->args[arg] : 0;
 }
 
-// Removes the last component of a path with / separators. Returns false if there is none
-static bool ToParent(char* path) {
-    char* slash = strrchr(path, '/');
-    if (slash == NULL || slash == path)
-        return false;
-    *slash = '\0';
-    return true;
-}
-
-static const char* LastComponent(const char* path) {
-    const char* slash = strrchr(path, '/');
-    return slash != NULL ? slash + 1 : path;
-}
-
 // Sound with a key, -1 if it isn't loaded yet
 static int FindSound(const char* key) {
     for (uint32_t i = 0; i < g_sounds.soundCount; i++) {
@@ -90,7 +77,7 @@ static int AddSound(const char* key, const int16_t* pcm, uint32_t frameCount, ui
 // Clip name and voice AFS name of a voice path: the file name, and the file name without its last 4 characters (the
 // speaker and the number), e.g. "E1020B001" and "e1020" for .../01YAMA/SOUND/E1020B001.aiff
 static bool VoiceNames(const char* path, char* afs, char* clip) {
-    const char* name = LastComponent(path);
+    const char* name = Path_LastComponent(path);
     const char* dot = strrchr(name, '.');
     int length = (int)(dot != NULL ? dot - name : strlen(name));
     if (length <= 4 || length >= AUTHSOUNDS_NAME_SIZE)
@@ -133,11 +120,11 @@ static int16_t* DecodeVoice(const FilePathList* roots, const char* scene, const 
 static FilePathList AudioRoots(const char* sceneFolder) {
     char root[AUTHSOUNDS_PATH_SIZE], outer[AUTHSOUNDS_PATH_SIZE];
     snprintf(root, sizeof(root), "%s", sceneFolder);
-    ToParent(root);  // scene
-    ToParent(root);  // The folder that contains the scene folders
+    Path_ToParent(root);  // scene
+    Path_ToParent(root);  // The folder that contains the scene folders
     snprintf(outer, sizeof(outer), "%s", root);
     FilePathList roots = { 0 };
-    if (ToParent(outer))
+    if (Path_ToParent(outer))
         roots = LoadDirectoryFilesEx(outer, "DIRS*", false);
     // The folder of the scene folders first
     FilePathList all = { 0 };
@@ -154,10 +141,7 @@ static FilePathList AudioRoots(const char* sceneFolder) {
         if (all.paths[all.count] == NULL)
             break;
         strcpy(all.paths[all.count], roots.paths[i]);
-        for (char* c = all.paths[all.count]; *c != '\0'; c++) {
-            if (*c == '\\')
-                *c = '/';
-        }
+        Path_ToSlashes(all.paths[all.count]);
         if (strcmp(all.paths[all.count], root) != 0)
             all.count++;
         else
@@ -175,7 +159,7 @@ static void FreeRoots(FilePathList* roots) {
 
 static void LoadVoices(const AUTH_Sequence* sequence, const char* sceneFolder) {
     FilePathList roots = AudioRoots(sceneFolder);
-    const char* scene = LastComponent(sceneFolder);
+    const char* scene = Path_LastComponent(sceneFolder);
     for (uint32_t i = 0; i < sequence->commandCount; i++) {
         const AUTH_Command* command = &sequence->commands[i];
         if (command->opcode != AUTH_COMMAND_VOICE)
