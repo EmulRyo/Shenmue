@@ -29,6 +29,7 @@
 #include "ui/tree.h"
 #include "views/auth/authSounds.h"
 #include "views/auth/authView.h"
+#include "views/auth/authMusic.h"
 #include "views/auth/authViewInternal.h"
 #include "game/mapProgram.h"
 #include "game/mapFiles.h"
@@ -755,7 +756,7 @@ static void DrawTimeline(Rectangle area, Font font, float fontSize) {
         const AUTHView_ProgramItem* item = &g_auth.programItems[i];
         float x = area.x + item->firstFrame / AUTH_FRAME_RATE * scale;
         float width = fmaxf((item->lastFrame - item->firstFrame) / AUTH_FRAME_RATE * scale, 2.0f);
-        bool sound = item->kind == PROGRAM_SOUND;
+        bool sound = item->kind == PROGRAM_SOUND || item->kind == PROGRAM_BANK;
         float y = area.y + 3.0f * laneHeight + (sound ? 2.0f : laneHeight * 0.5f);
         if (item->kind == PROGRAM_DISPLAY || item->kind == PROGRAM_ATTACH)
             width = 2.0f;
@@ -997,10 +998,16 @@ void AUTHView_Status(ViewStatus* status) {
     snprintf(status->file, sizeof(status->file), "%s", g_auth.path);
     AUTHSounds_Info sounds;
     AUTHSounds_GetInfo(&sounds);
-    snprintf(status->info, sizeof(status->info), "%s%s, %u characters, %u commands, voices %u/%u, effects %u/%u%s%s%s",
+    AUTHMusic_Info music;
+    AUTHMusic_GetInfo(&music);
+    char musicText[32] = "";
+    if (music.music > 0)
+        snprintf(musicText, sizeof(musicText), ", music %u/%u", music.found, music.music);
+    snprintf(status->info, sizeof(status->info), "%s%s, %u characters, %u commands, voices %u/%u, effects %u/%u%s%s%s%s",
         CutsceneText(), Text_FormatTime(Duration()), sequence->characterCount, sequence->commandCount, sounds.voices, sounds.voiceCommands, sounds.effects, sounds.effectCommands,
         sounds.bank[0] != '\0' ? " in " : "", sounds.bank, g_auth.program.found ? TextFormat(", program: %u node calls, sounds %u/%u",
-        g_auth.program.nodeCount, sounds.programEffects, sounds.programCommands) : "");
+        g_auth.program.nodeCount, sounds.programEffects, sounds.programCommands) : "",
+        musicText);
     if (g_options.cutsceneCamera)
         snprintf(status->hint, sizeof(status->hint), "Click the timeline: seek");
     else

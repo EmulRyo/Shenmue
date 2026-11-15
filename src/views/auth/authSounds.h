@@ -11,7 +11,8 @@
 // of the sound folder of the scene that the program of the map of the cutscene loads with it (see LoadProgramBank): the
 // low 16 bits of their sound ID are the ID of the group of the sequence, the high 16 bits its index in the group, and
 // the events of the sequence start or stop effects of the effect program. The sound commands that the program of the map
-// runs with the cutscene (SoundCommand, 0x06C, see scnCutscene.h) play the sequences of the same bank
+// runs with the cutscene (SoundCommand, 0x06C, see scnCutscene.h) play the sequences of the same bank, and its music
+// commands the music of the banks of the slots (authMusic.h)
 
 typedef struct {
     uint32_t    voices;         // Voice commands with a clip

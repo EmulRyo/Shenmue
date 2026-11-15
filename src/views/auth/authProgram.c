@@ -1,12 +1,13 @@
 // What the program of the map does while a cutscene plays: its run, its items in the tree and their properties
 #include "core/log.h"
+#include "views/auth/authMusic.h"
 #include "views/auth/authViewInternal.h"
 
 static const char* g_programFields[] = { "rotation", "position", "scale" };
 
 // The items of the program in the tree: the calls for the same node, field and mode, or that place the same character
 // with the same function and flags, are one item while each one comes at most a frame after the previous one; then the
-// sound commands, all in the order of their first frame
+// sound commands and the banks loaded, all in the order of their first frame
 static int CompareProgramItems(const void* a, const void* b) {
     const AUTHView_ProgramItem* x = a;
     const AUTHView_ProgramItem* y = b;
@@ -17,10 +18,35 @@ static int CompareProgramItems(const void* a, const void* b) {
     return x->first < y->first ? -1 : x->first > y->first;
 }
 
+// The operation of a command of a slot (bits 8 to 15 of a sound command 0xA0)
+static uint32_t SlotOperation(const SCNCutscene_Sound* sound) {
+    return (sound->command >> 8) & 0xFF;
+}
+
+static bool IsSlotCommand(const SCNCutscene_Sound* sound) {
+    return (sound->command & 0xFF) == SCNCUTSCENE_SOUND_SLOT && (sound->known & 3) == 3;
+}
+
+// The label of a sound command: the music and the bank of its sequence, the volume or the fade of a slot, or the command
+static const char* SoundText(uint32_t index) {
+    const SCNCutscene_Sound* sound = &g_auth.program.sounds[index];
+    if ((sound->command & 0xFF) == SCNCUTSCENE_SOUND_MUSIC) {
+        const char* bank = AUTHMusic_BankOf(index);
+        return TextFormat("Music 0x%X%s%s", sound->command, bank != NULL ? " " : "", bank != NULL ? bank : "");
+    }
+    if (IsSlotCommand(sound) && SlotOperation(sound) == SCNCUTSCENE_SLOT_VOLUME)
+        return TextFormat("Volume %u: %u", sound->slot, sound->value & 0x7F);
+    if (IsSlotCommand(sound) && SlotOperation(sound) == SCNCUTSCENE_SLOT_FADE)
+        return TextFormat("Fade out %u: %u frames", sound->slot, sound->value);
+    if (IsSlotCommand(sound))
+        return TextFormat("Slot %u 0x%X: %u", sound->slot, sound->command, sound->value);
+    return TextFormat("Sound 0x%08X", sound->command);
+}
+
 static bool CreateProgramItems(void) {
     const SCNCutscene* program = &g_auth.program;
     uint32_t capacity = program->nodeCount + program->placeCount + program->displayCount + program->attachCount +
-        program->soundCount;
+        program->soundCount + program->bankCount;
     if (capacity == 0)
         return true;
     g_auth.programItems = malloc(capacity * sizeof(AUTHView_ProgramItem));
@@ -73,6 +99,9 @@ static bool CreateProgramItems(void) {
     for (uint32_t i = 0; i < program->soundCount; i++)
         g_auth.programItems[count++] = (AUTHView_ProgramItem) { PROGRAM_SOUND, i, i, 1, program->sounds[i].frame,
             program->sounds[i].frame };
+    for (uint32_t i = 0; i < program->bankCount; i++)
+        g_auth.programItems[count++] = (AUTHView_ProgramItem) { PROGRAM_BANK, i, i, 1, program->banks[i].frame,
+            program->banks[i].frame };
     qsort(g_auth.programItems, count, sizeof(AUTHView_ProgramItem), CompareProgramItems);
     g_auth.programItemCount = count;
     for (uint32_t i = 0; i < count; i++) {
@@ -81,7 +110,10 @@ static bool CreateProgramItems(void) {
         const char* frames = item->lastFrame != item->firstFrame ? TextFormat("%u-%u", item->firstFrame, item->lastFrame) :
             TextFormat("%u", item->firstFrame);
         if (item->kind == PROGRAM_SOUND)
-            snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  Sound 0x%08X", frames, program->sounds[item->first].command);
+            snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  %s", frames, SoundText(item->first));
+        else if (item->kind == PROGRAM_BANK)
+            snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  Bank %u %s", frames, program->banks[item->first].slot,
+                program->banks[item->first].name);
         else if (item->kind == PROGRAM_DISPLAY) {
             const SCNCutscene_Display* display = &program->displays[item->first];
             snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  %s %s", frames, display->active ? (display->on ? "Wake" : "Sleep") :
@@ -198,9 +230,31 @@ void AUTHProgram_Properties(Properties* properties, uint32_t index) {
         const SCNCutscene_Sound* sound = &program->sounds[item->first];
         Properties_Text(properties, "Function", TextFormat("SoundCommand (0x%03X)", SCNCUTSCENE_SOUND));
         Properties_Hex(properties, "Command", sound->command);
-        Properties_Text(properties, "Sequence", TextFormat("group 0x%04X, sequence %u", sound->command & 0xFFFF, sound->command >> 16));
-        Properties_Text(properties, "Audio", AUTHSounds_HasProgramSound(item->first) ? "found" : "not found");
+        if (IsSlotCommand(sound)) {
+            uint32_t operation = SlotOperation(sound);
+            Properties_Text(properties, "Operation", operation == SCNCUTSCENE_SLOT_VOLUME ? "volume of the slot" :
+                operation == SCNCUTSCENE_SLOT_FADE ? "fade out of the slot" : TextFormat("0x%02X, unknown", operation));
+            Properties_Int(properties, "Slot", (int)sound->slot);
+            Properties_Text(properties, "Value", operation == SCNCUTSCENE_SLOT_FADE ? TextFormat("%u frames", sound->value) :
+                TextFormat("%u", sound->value));
+        } else {
+            bool music = (sound->command & 0xFF) == SCNCUTSCENE_SOUND_MUSIC;
+            Properties_Text(properties, "Sequence", TextFormat("%s, group 0x%04X, sequence %u", music ? "music" : "effect",
+                sound->command & 0xFFFF, sound->command >> 16));
+            const char* bank = AUTHMusic_BankOf(item->first);
+            if (music)
+                Properties_Text(properties, "Bank", bank != NULL ? bank : "not found");
+            else
+                Properties_Text(properties, "Audio", AUTHSounds_HasProgramSound(item->first) ? "found" : "not found");
+        }
         Properties_Hex(properties, "Address", sound->address);
+    } else if (item->kind == PROGRAM_BANK) {
+        const SCNCutscene_Bank* bank = &program->banks[item->first];
+        Properties_Text(properties, "Function", bank->function == SCNCUTSCENE_SOUND_BANK ?
+            TextFormat("SoundBank (0x%03X)", SCNCUTSCENE_SOUND_BANK) : TextFormat("SoundBanks (0x%03X)", SCNCUTSCENE_SOUND_BANKS));
+        Properties_Int(properties, "Slot", (int)bank->slot);
+        Properties_Text(properties, "Bank", bank->name);
+        Properties_Hex(properties, "Address", bank->address);
     } else if (item->kind == PROGRAM_DISPLAY) {
         const SCNCutscene_Display* display = &program->displays[item->first];
         Properties_Text(properties, "Function", display->active ? TextFormat("CharacterActive (0x%03X)", SCNCUTSCENE_ACTIVE) :

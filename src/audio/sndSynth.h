@@ -18,6 +18,9 @@ SND_Synth*  SND_SynthCreate(const SND_Bank* bank);
 void        SND_SynthDestroy(SND_Synth* synth);
 // Stops everything and starts a sequence (an index of bank->sequences)
 void        SND_SynthPlaySequence(SND_Synth* synth, uint32_t sequence);
+// Advances the sequence played by frames without rendering them: its events change the channels (programs,
+// controllers) but the notes they start are dropped, and the voices sounding stop
+void        SND_SynthSkip(SND_Synth* synth, uint64_t frames);
 // Stops everything and plays a sample alone at a rate, repeating its loop if it has one and loop is true
 void        SND_SynthPlaySample(SND_Synth* synth, uint32_t sample, uint32_t rate, bool loop);
 void        SND_SynthStop(SND_Synth* synth);

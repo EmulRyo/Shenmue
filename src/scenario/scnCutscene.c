@@ -59,6 +59,7 @@ typedef struct {
     uint32_t            loaderCount;
     struct LoaderCall*  loaders;    // Calls to the functions that load the package of a character
     bool                packagesRead; // At the first call of the run with time
+    uint32_t            bankCapacity;
 } Context;
 
 // A call to a function of the program that loads the package of a character (SCNCUTSCENE_PACKAGE until
@@ -360,6 +361,61 @@ static void AddSound(Context* c, const SCNCutscene_Sound* sound) {
         c->soundCapacity = capacity;
     }
     cutscene->sounds[cutscene->soundCount++] = *sound;
+}
+
+static void AddBank(Context* c, const SCNCutscene_Bank* bank) {
+    SCNCutscene* cutscene = c->cutscene;
+    if (cutscene->bankCount == c->bankCapacity) {
+        uint32_t capacity = c->bankCapacity == 0 ? 8 : c->bankCapacity * 2;
+        SCNCutscene_Bank* banks = realloc(cutscene->banks, capacity * sizeof(SCNCutscene_Bank));
+        if (banks == NULL) {
+            c->ok = false;
+            return;
+        }
+        cutscene->banks = banks;
+        c->bankCapacity = capacity;
+    }
+    cutscene->banks[cutscene->bankCount++] = *bank;
+}
+
+// Copies a string of the data of the program (a known argument). Returns false if it isn't one or doesn't fit
+static bool ProgramString(const BC_Program* program, const VM_Call* call, uint32_t argument, char* text, size_t size) {
+    int64_t offset = Known(call, argument) ? VM_DataOffset(program, call->values[argument]) : -1;
+    if (offset < 0)
+        return false;
+    const SCN_Header* header = &program->scn->header;
+    uint32_t end = header->end < header->size ? header->end : header->size;
+    uint32_t start = header->dataStart + (uint32_t)offset;
+    for (size_t i = 0; start + i < end; i++) {
+        uint8_t byte = program->scn->data[start + i];
+        if (byte == '\0') {
+            text[i] = '\0';
+            return i > 0;
+        }
+        if (i + 1 >= size || byte < 0x20 || byte >= 0x7F)
+            return false;
+        text[i] = (char)byte;
+    }
+    return false;
+}
+
+// SoundBank (0, slot, name, 0) and SoundBanks (8 names, 0 keeps the slot)
+static void BankCall(Context* c, uint32_t frame, const VM_Call* call) {
+    SCNCutscene_Bank bank = { frame, call->address, (uint32_t)call->id, 0, { 0 } };
+    if (call->id == SCNCUTSCENE_SOUND_BANK) {
+        if (Known(call, 0) && call->values[0] == 0 && Known(call, 1) && call->values[1] < SCNCUTSCENE_SOUND_SLOTS &&
+            ProgramString(c->program, call, 2, bank.name, sizeof(bank.name))) {
+            bank.slot = call->values[1];
+            AddBank(c, &bank);
+        }
+        return;
+    }
+    for (uint32_t slot = 0; slot < SCNCUTSCENE_SOUND_SLOTS; slot++) {
+        if (ProgramString(c->program, call, slot, bank.name, sizeof(bank.name))) {
+            bank.slot = slot;
+            AddBank(c, &bank);
+        }
+    }
 }
 
 static void AddPlace(Context* c, const SCNCutscene_Place* place) {
@@ -696,7 +752,12 @@ static void OnTimedCall(void* context, uint32_t frame, uint32_t thread, const VM
         break;
     case SCNCUTSCENE_SOUND:
         if (Known(call, 0))
-            AddSound(c, &(SCNCutscene_Sound) { frame, call->address, call->values[0] });
+            AddSound(c, &(SCNCutscene_Sound) { frame, call->address, call->values[0], call->values[1], call->values[2],
+                (uint8_t)((Known(call, 1) ? 1 : 0) | (Known(call, 2) ? 2 : 0)) });
+        break;
+    case SCNCUTSCENE_SOUND_BANK:
+    case SCNCUTSCENE_SOUND_BANKS:
+        BankCall(c, frame, call);
         break;
     case SCNCUTSCENE_DISPLAY:
     case SCNCUTSCENE_ACTIVE: {
@@ -714,6 +775,7 @@ static void OnTimedCall(void* context, uint32_t frame, uint32_t thread, const VM
 static void ClearCalls(SCNCutscene* cutscene) {
     cutscene->nodeCount = 0;
     cutscene->soundCount = 0;
+    cutscene->bankCount = 0;
     cutscene->placeCount = 0;
     cutscene->displayCount = 0;
     cutscene->attachCount = 0;
@@ -923,6 +985,7 @@ bool SCNCutscene_Run(const BC_Program* program, uint32_t slot, const char* file,
 void SCNCutscene_Free(SCNCutscene* cutscene) {
     free(cutscene->nodes);
     free(cutscene->sounds);
+    free(cutscene->banks);
     free(cutscene->places);
     free(cutscene->displays);
     free(cutscene->attaches);

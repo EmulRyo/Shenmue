@@ -173,6 +173,8 @@ set(SRC
     src/views/xwmView.h
 
     src/views/auth/authModels.c
+    src/views/auth/authMusic.c
+    src/views/auth/authMusic.h
     src/views/auth/authMotions.c
     src/views/auth/authPose.c
     src/views/auth/authProgram.c

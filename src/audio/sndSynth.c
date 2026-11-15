@@ -521,6 +521,14 @@ void SND_SynthPlaySequence(SND_Synth* synth, uint32_t index) {
     Sequencer_Start(synth, &bank->sequences[index]);
 }
 
+void SND_SynthSkip(SND_Synth* synth, uint64_t frames) {
+    for (uint64_t f = 0; f < frames && synth->sequencer.active; f++)
+        Sequencer_Update(synth);
+    for (int i = 0; i < SND_SYNTH_VOICES; i++)
+        synth->voices[i].active = false;
+    synth->time += frames;
+}
+
 void SND_SynthPlaySample(SND_Synth* synth, uint32_t index, uint32_t rate, bool loop) {
     SND_SynthStop(synth);
     const SND_Bank* bank = synth->bank;

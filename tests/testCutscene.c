@@ -11,7 +11,7 @@
 // The run with time of the code of the scene programs that plays with the cutscenes of their table (scnCutscene.h):
 // over the cutscenes that the 136 SCN files play, the calls are in the order of the frames and move nodes of characters,
 // and in act01_d000.scn the cutscenes 16 and 17 of the bus open and close its doors and turn its wheels at the frames
-// of the wiki, the cutscene 2 places the phone books, and the cutscene 22 of the vending machine has the machine JIHN
+// of the wiki (17 then loads the sound banks of the map and plays its music), the cutscene 2 places the phone books, and the cutscene 22 of the vending machine has the machine JIHN
 // where the loop of the map puts the machine VM_0 when Ryo is there, and the can and the letter in the hands
 
 #define CUTSCENE_FRAMES 600
@@ -70,6 +70,23 @@ static void CheckBus(const BC_Program* program) {
     CHECK(Rotation(&cutscene, 173, 164, 0) == 0 && Rotation(&cutscene, 173, 165, 0) == 0xAAA, "act01_d000: cutscene 17, wheels from the frame 165");
     CHECK(cutscene.soundCount >= 2 && cutscene.sounds[0].command == 0x1B04A9 && cutscene.sounds[0].frame == 0,
         "act01_d000: cutscene 17, sound 0x1B04A9 at 0");
+    // At the frame 217 the program loads the banks of the map (the music chosen by the game in the slot 2, the ambient
+    // sounds amb021.snd in the slot 1) and plays the music 0x3FA8 at the volume 100
+    bool music = false, ambient = false, select = false;
+    for (uint32_t s = 0; s + 1 < cutscene.soundCount; s++) {
+        const SCNCutscene_Sound* sound = &cutscene.sounds[s];
+        const SCNCutscene_Sound* next = &cutscene.sounds[s + 1];
+        music |= sound->command == 0x3FA8 && sound->frame == 217 && next->command == 0x4A0 && next->slot == 2 &&
+            next->value == 100 && next->known == 3;
+    }
+    for (uint32_t b = 0; b < cutscene.bankCount; b++) {
+        const SCNCutscene_Bank* bank = &cutscene.banks[b];
+        ambient |= bank->frame == 217 && bank->slot == 1 && strcmp(bank->name, "amb021.snd") == 0 &&
+            bank->function == SCNCUTSCENE_SOUND_BANKS;
+        select |= bank->frame == 217 && bank->slot == 2 && strcmp(bank->name, "SELECT") == 0;
+    }
+    CHECK(music, "act01_d000: cutscene 17, music 0x3FA8 at 217 with the volume 100 of the slot 2");
+    CHECK(ambient && select, "act01_d000: cutscene 17, banks amb021.snd and SELECT loaded at 217");
     SCNCutscene_Free(&cutscene);
 }
 

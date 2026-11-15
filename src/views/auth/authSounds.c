@@ -12,6 +12,7 @@
 #include "formats/map/mapinfo.h"
 #include "formats/sound/snd.h"
 #include "formats/sound/xwm.h"
+#include "views/auth/authMusic.h"
 #include "views/auth/authSounds.h"
 
 #define AUTHSOUNDS_PATH_SIZE    1024
@@ -422,7 +423,25 @@ static int CompareCues(const void* a, const void* b) {
     return ta < tb ? -1 : ta > tb;
 }
 
+// The music of the program of the map: the banks of its music commands, with the names of the cutscene
+static void LoadMusic(const AUTH_Sequence* sequence, const char* sceneFolder, const char* mapinfo, const char* name,
+    const SCNCutscene* program) {
+    if (program == NULL || program->soundCount == 0)
+        return;
+    char keys[AUTHSOUNDS_PROGRAM_BANKS][AUTHSOUNDS_NAME_SIZE];
+    const char* keyPointers[AUTHSOUNDS_PROGRAM_BANKS];
+    uint32_t keyCount = CutsceneKeys(sequence, name, keys, AUTHSOUNDS_PROGRAM_BANKS);
+    for (uint32_t k = 0; k < keyCount; k++)
+        keyPointers[k] = keys[k];
+    MAPINFO_File map;
+    bool hasMap = mapinfo != NULL && FileExists(mapinfo) && MAPINFO_Load(mapinfo, &map);
+    AUTHMusic_Load(sceneFolder, hasMap ? &map : NULL, keyPointers, keyCount, program);
+    if (hasMap)
+        MAPINFO_Free(&map);
+}
+
 void AUTHSounds_Free(void) {
+    AUTHMusic_Free();
     for (uint32_t i = 0; i < g_sounds.soundCount; i++)
         UnloadSound(g_sounds.sounds[i].sound);
     free(g_sounds.sounds);
@@ -463,6 +482,7 @@ void AUTHSounds_Load(const char* sceneFolder, const char* mapinfo, const char* n
     g_sounds.program = program;
     LoadEffects(sequence, sceneFolder, mapinfo, name);
     g_sounds.program = NULL;
+    LoadMusic(sequence, sceneFolder, mapinfo, name, program);
     // The events of a sequence can come after the next commands
     if (g_sounds.cues != NULL)
         qsort(g_sounds.cues, g_sounds.cueCount, sizeof(AUTHCue), CompareCues);
@@ -479,6 +499,7 @@ static void StopAll(void) {
 }
 
 void AUTHSounds_Update(float time, bool playing, bool jumped) {
+    AUTHMusic_Update(time, playing, jumped);
     if (g_sounds.soundCount == 0)
         return;
     jumped |= time < g_sounds.lastTime || time - g_sounds.lastTime > AUTHSOUNDS_JUMP;

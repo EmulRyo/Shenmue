@@ -254,6 +254,8 @@ The sequences (the songs, and the sound effects requested by the game) are group
 
 The sound commands of the cutscenes ([AUTH](AUTH#sound-bank), command 6) play a sequence by the ID of its group (the low 16 bits of their sound ID) and its index in the group (the high 16 bits). The banks of the cutscenes of `scene/01/d000` (`a1_busno.snd`, `a1_yanji.snd`, `a1_yamaw.snd`...) have a single group, `0x04A9`, of effect sequences; the music banks have groups `xxA8` (`3FA8` in `bgm085.snd`, `25A8` in `bgm013.snd`) and `battle_1.snd` has `76AB` and `77AB`.
 
+The scene programs play the sequences in the same way ([sound commands](MAPINFO#sound-commands)), in the banks loaded in the slots of the sound driver, so different banks share a group: `3FA8` is the group of the music of 113 of the 191 names of banks with music sequences (almost all the `bgm*.snd`, `fre*.snd`, `rim*.snd`, `tsm*.snd` and `ykm*.snd` banks: the music of the bank of the slot 2), and `5EA8` the group of the ambient sounds of 7 `amb*.snd` banks. The other music banks have their own group (`4AA8` in `bgm068.snd`, `64A8` in `bgm067.snd`, `0DA8` in `tsm001.snd`).
+
 ### Group
 
 | Offset | Size | Type       | Name        | Description                       |

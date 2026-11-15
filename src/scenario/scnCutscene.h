@@ -22,8 +22,16 @@
 //                 doors and the wheels of the bus of scene/01/d000): the node whose ID has node in its low 16 bits. Mode
 //                 0 sets its position (3 floats) and its rotation (3 integers, 0x10000 = 360°), 1 adds them, 2 reads
 //                 them, 3 sets its scale (3 floats at the position argument). A NULL address leaves the value
-//   SoundCommand  (0x06C): (command, 0, 0) plays a sequence of the sound bank of the cutscene, with the IDs of the sound
-//                 commands of the AUTH files (group in the low 16 bits, index of the sequence in the high 16 bits)
+//   SoundCommand  (0x06C): (command, slot, value) a command to the sound driver, its operation in the low byte:
+//                 0xA8 plays a music sequence and 0xA9 or 0xAB an effect sequence (the low 16 bits, e.g. 0x3FA8 or
+//                 0x04A9, are the ID of the group of the sequence in the loaded banks, the high 16 bits its index in the
+//                 group, as the sound IDs of the AUTH files: 0x1D04A9 is the effect 29 of a1_busno.snd); 0xA0 sets a
+//                 value of the bank of a slot (bits 8 to 15: 0x04 its volume, 0 to 127; 0x0A fades it out in value
+//                 frames, e.g. 0xAA0 (2, 30) at the end of a cutscene)
+//   SoundBank     (0x16D): (0, slot, name, 0) loads a SND bank of the sound folder of the scene in a slot ("FREE" empties
+//                 it, "SELECT" loads the music chosen by the game); SoundBanks (0x0F3): the banks of the 8 slots at
+//                 once, a name per argument (0 keeps the slot). The music is usually in the slot 2, the ambient sounds
+//                 (amb*.snd) in the slots 1 and 3
 //   SetPosition   (0x018) and SetAngle (0x01D): (character, flags, &vector) place a character of the map or of the
 //                 package of the cutscene that the AUTH file doesn't declare (e.g. the phone books TBK1 and TBK2 of the
 //                 cutscene of scene/01/d000/auth.pks). The flags 0x20000000, 0x10000000 and 0x08000000 select X, Y and Z,
@@ -51,7 +59,14 @@
 #define SCNCUTSCENE_PLAY        0x050   // (slot): plays a cutscene; (-1): 1 while it plays
 #define SCNCUTSCENE_SEQUENCE    0x13E   // (0, slot, file, package): loads an AUTH file in a slot
 #define SCNCUTSCENE_NODE        0x0C9   // (character, node, &position, &rotation, mode)
-#define SCNCUTSCENE_SOUND       0x06C   // (command, channel, value)
+#define SCNCUTSCENE_SOUND       0x06C   // (command, slot, value)
+#define SCNCUTSCENE_SOUND_BANK  0x16D   // (0, slot, name, 0)
+#define SCNCUTSCENE_SOUND_BANKS 0x0F3   // (8 names)
+#define SCNCUTSCENE_SOUND_SLOTS 8
+#define SCNCUTSCENE_SOUND_MUSIC 0xA8    // Low byte of a command that plays a music sequence
+#define SCNCUTSCENE_SOUND_SLOT  0xA0    // Low byte of a command that sets a value of a slot
+#define SCNCUTSCENE_SLOT_VOLUME 0x04    // Bits 8 to 15 of a command of a slot: its volume
+#define SCNCUTSCENE_SLOT_FADE   0x0A    // Fade out
 #define SCNCUTSCENE_SET_POSITION 0x018 // (character, flags, &position)
 #define SCNCUTSCENE_SET_ANGLE   0x01D   // (character, flags, &angles, value)
 #define SCNCUTSCENE_GET_POSITION 0x019  // (character, node, &position, flags)
@@ -139,7 +154,19 @@ typedef struct {
     uint32_t    frame;
     uint32_t    address;
     uint32_t    command;
+    uint32_t    slot;       // Arguments 1 and 2
+    uint32_t    value;
+    uint8_t     known;      // Bit 0: slot is known, bit 1: value
 } SCNCutscene_Sound;
+
+// A sound bank loaded in a slot
+typedef struct {
+    uint32_t    frame;
+    uint32_t    address;
+    uint32_t    function;   // SCNCUTSCENE_SOUND_BANK or SCNCUTSCENE_SOUND_BANKS
+    uint32_t    slot;
+    char        name[SCNCUTSCENE_NAME_SIZE];    // e.g. "bgm013.snd", "FREE" or "SELECT"
+} SCNCutscene_Bank;
 
 typedef struct {
     bool                found;      // The program plays the slot
@@ -150,6 +177,8 @@ typedef struct {
     SCNCutscene_Node*   nodes;      // In the order of the calls (the frames grow)
     uint32_t            soundCount;
     SCNCutscene_Sound*  sounds;
+    uint32_t            bankCount;
+    SCNCutscene_Bank*   banks;      // In the order of the calls
     uint32_t            placeCount;
     SCNCutscene_Place*  places;     // In the order of the calls
     uint32_t            displayCount;

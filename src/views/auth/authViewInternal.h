@@ -86,13 +86,14 @@ typedef struct {
 
 // What the program of the map does while the cutscene plays (scnCutscene.h), in the tree: the calls that move a node of
 // a character, place a character, show, hide, wake or put to sleep one, or attach or detach one, grouped while they follow each other frame
-// after frame, and the sound commands. Those before the cutscene are at its frame 0
+// after frame, the sound commands and the sound banks loaded. Those before the cutscene are at its frame 0
 typedef enum {
     PROGRAM_NODE,
     PROGRAM_PLACE,
     PROGRAM_DISPLAY,
     PROGRAM_ATTACH,
     PROGRAM_SOUND,
+    PROGRAM_BANK,
 } ProgramKind;
 
 typedef struct {
