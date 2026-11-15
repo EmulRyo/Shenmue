@@ -1,0 +1,6 @@
+# The repository stores the text files with LF; the checkout has CRLF (Windows and Visual Studio), whatever core.autocrlf
+* text=auto eol=crlf
+
+# Binary files
+*.ico binary
+*.png binary
