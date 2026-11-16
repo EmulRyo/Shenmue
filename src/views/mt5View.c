@@ -6,7 +6,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
-#include <nfd.h>
+#include "app/dialog.h"
 #include "raygui.h"
 #include "core/file.h"
 #include "core/log.h"
@@ -169,17 +169,16 @@ void MT5View_ExportDialog(void) {
         snprintf(name + length, sizeof(name) - length, "_frame%u", g_view.frame + 1);
     }
     File_SanitizeName(name);
-    const nfdu8filteritem_t glb = { "glTF binary", "glb" }, obj = { "Wavefront OBJ", "obj" };
-    nfdu8filteritem_t filters[2] = { lastOBJ ? obj : glb, lastOBJ ? glb : obj };
+    const DialogFilter glb = { "glTF binary", "glb" }, obj = { "Wavefront OBJ", "obj" };
+    DialogFilter filters[2] = { lastOBJ ? obj : glb, lastOBJ ? glb : obj };
     strncat(name, lastOBJ ? ".obj" : ".glb", sizeof(name) - strlen(name) - 1);
 
     // It opens in the folder of the last export, or in that of the model
     char folder[1024];
     snprintf(folder, sizeof(folder), "%s", lastFolder[0] != '\0' ? lastFolder : GetDirectoryPath(g_view.path));
 
-    nfdu8char_t* outPath = NULL;
-    nfdresult_t result = NFD_SaveDialogU8(&outPath, filters, 2, folder[0] != '\0' ? folder : NULL, name);
-    if (result == NFD_OKAY) {
+    char outPath[DIALOG_PATH_SIZE];
+    if (Dialog_Save(outPath, filters, 2, folder[0] != '\0' ? folder : NULL, name) == DIALOG_OK) {
         // A name typed with another extension is exported in the format of the last export
         char path[1100];
         bool known = IsFileExtension(outPath, ".glb") || IsFileExtension(outPath, ".obj");
@@ -191,10 +190,7 @@ void MT5View_ExportDialog(void) {
         }
         else
             Log_Error("Failed to export the model to %s\n", path);
-        NFD_FreePathU8(outPath);
     }
-    else if (result == NFD_ERROR)
-        Log_Error("Error: %s\n", NFD_GetError());
 }
 
 void MT5View_Status(ViewStatus* status) {

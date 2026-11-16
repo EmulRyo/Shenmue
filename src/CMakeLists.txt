@@ -7,6 +7,8 @@ set(SRC_CORE
     src/core/dynamicArray.h
     src/core/file.c
     src/core/file.h
+    src/core/frameTime.c
+    src/core/frameTime.h
     src/core/hashTable.c
     src/core/hashTable.h
     src/core/log.c
@@ -103,12 +105,18 @@ set(SRC
     src/CMakeLists.txt
     src/main.c
 
+    src/app/controlPipe.c
+    src/app/controlPipe.h
+    src/app/dialog.c
+    src/app/dialog.h
     src/app/filenameDB.c
     src/app/filenameDB.h
     src/app/fileOpen.c
     src/app/fileOpen.h
     src/app/gameDB.c
     src/app/gameDB.h
+    src/app/headless.c
+    src/app/headless.h
     src/app/style.c
     src/app/style.h
     src/app/tadBatch.c

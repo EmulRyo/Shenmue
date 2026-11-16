@@ -2,11 +2,12 @@
 #include <math.h>
 #include <raylib.h>
 #include <raymath.h>
+#include "core/frameTime.h"
 #include "formats/animation/auth.h"
 #include "render/scene3D.h"
 
 float Scene3D_FrameTime(void) {
-    return fminf(GetFrameTime(), 0.25f);
+    return fminf(FrameTime_Get(), 0.25f);
 }
 
 static Vector3 CurvePoint(const AUTH_Curve* curves, float time) {

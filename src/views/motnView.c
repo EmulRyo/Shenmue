@@ -8,7 +8,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
-#include <nfd.h>
+#include "app/dialog.h"
 #include "raygui.h"
 #include "core/file.h"
 #include "core/log.h"
@@ -173,10 +173,9 @@ static void LoadModelDialog(void) {
     char folder[MOTNVIEW_PATH_SIZE];
     snprintf(folder, sizeof(folder), "%s", lastFolder[0] != '\0' ? lastFolder : GetDirectoryPath(g_view.path));
 
-    nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[1] = { { "Models", "mt5,chrm" } };
-    nfdresult_t result = NFD_OpenDialogU8(&outPath, filters, 1, folder[0] != '\0' ? folder : NULL);
-    if (result == NFD_OKAY) {
+    char outPath[DIALOG_PATH_SIZE];
+    DialogFilter filters[1] = { { "Models", "mt5,chrm" } };
+    if (Dialog_Open(outPath, filters, 1, folder[0] != '\0' ? folder : NULL) == DIALOG_OK) {
         snprintf(lastFolder, sizeof(lastFolder), "%s", GetDirectoryPath(outPath));
         int index = AddModel(outPath);
         if (index < 0)
@@ -187,10 +186,7 @@ static void LoadModelDialog(void) {
             if (!g_view.modelLoaded)
                 Log_Error("Failed to load the model %s\n", outPath);
         }
-        NFD_FreePathU8(outPath);
     }
-    else if (result == NFD_ERROR)
-        Log_Error("Error: %s\n", NFD_GetError());
 }
 
 static bool IsRyo(int model) {
@@ -641,10 +637,9 @@ void MOTNView_ExportDialog(void) {
     char folder[MOTNVIEW_PATH_SIZE];
     snprintf(folder, sizeof(folder), "%s", lastFolder[0] != '\0' ? lastFolder : GetDirectoryPath(g_view.path));
 
-    nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[1] = { { "glTF binary", "glb" } };
-    nfdresult_t result = NFD_SaveDialogU8(&outPath, filters, 1, folder[0] != '\0' ? folder : NULL, name);
-    if (result == NFD_OKAY) {
+    char outPath[DIALOG_PATH_SIZE];
+    DialogFilter filters[1] = { { "glTF binary", "glb" } };
+    if (Dialog_Save(outPath, filters, 1, folder[0] != '\0' ? folder : NULL, name) == DIALOG_OK) {
         char path[MOTNVIEW_PATH_SIZE + 8];
         snprintf(path, sizeof(path), "%s%s", outPath, IsFileExtension(outPath, ".glb") ? "" : ".glb");
         // The motions only if the model is a body
@@ -655,10 +650,7 @@ void MOTNView_ExportDialog(void) {
         }
         else
             Log_Error("Failed to export the model to %s\n", path);
-        NFD_FreePathU8(outPath);
     }
-    else if (result == NFD_ERROR)
-        Log_Error("Error: %s\n", NFD_GetError());
 }
 
 void MOTNView_Status(ViewStatus* status) {

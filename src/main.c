@@ -6,12 +6,14 @@
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 #include "core/hashTable.h"
+#include "core/log.h"
 #include "views/imageView.h"
 #include "views/motnView.h"
 #include "views/mt5View.h"
 #include "views/program/programView.h"
 #include "views/views.h"
 #include "app/fileOpen.h"
+#include "app/headless.h"
 #include "app/filenameDB.h"
 #include "app/style.h"
 #include "app/tadBatch.h"
@@ -137,23 +139,55 @@ static void Draw() {
     Input_EndFrame();
 }
 
+// Shenmue [--headless <script>] [--control <pipe>] [file]
 int main(int argc, char** argv) {
-    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI);
+    const char* file = NULL;
+    const char* script = NULL;
+    const char* pipe = NULL;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--headless") == 0 && i + 1 < argc)
+            script = argv[++i];
+        else if (strcmp(argv[i], "--control") == 0 && i + 1 < argc)
+            pipe = argv[++i];
+        else
+            file = argv[i];
+    }
+    bool headless = script != NULL || pipe != NULL;
+
+    // Headless, the window is hidden and the frames are drawn as fast as possible
+    unsigned int flags = FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI;
+    SetConfigFlags(headless ? flags | FLAG_WINDOW_HIDDEN : flags | FLAG_VSYNC_HINT);
     InitWindow(1280, 720, "Shenmue");
+    // Escape doesn't close the application, as raylib does by default (e.g. while a text box is edited)
+    SetExitKey(KEY_NULL);
+    if (headless && !Headless_Start(script, pipe)) {
+        CloseWindow();
+        return 1;
+    }
 
     Init();
-    if (argc > 1)
-        FileOpen_Open(argv[1]);
+    if (file != NULL)
+        FileOpen_Open(file);
 
-    while (!WindowShouldClose()) {
+    bool running = true;
+    while (running && !WindowShouldClose()) {
         Update();
 
         BeginDrawing();
 
         ClearBackground((Color) {28, 28, 28, 255});
         Draw();
+        if (headless)
+            Headless_Capture();
 
         EndDrawing();
+        if (headless)
+            running = Headless_Update();
+    }
+    if (headless) {
+        if (running)
+            Log_Warning("[Headless] The window was closed before the end of the commands\n");
+        Headless_End();
     }
 
     TADBatch_Stop();
@@ -162,5 +196,5 @@ int main(int argc, char** argv) {
         CloseAudioDevice();
     CloseWindow();
     NFD_Quit();
-    return 0;
+    return headless && Headless_Errors() > 0 ? 1 : 0;
 }

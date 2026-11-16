@@ -3,6 +3,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
+#include "core/frameTime.h"
 #include "render/freeCamera.h"
 #include "ui/input.h"
 #include "ui/input.h"
@@ -154,7 +155,7 @@ static void UpdateFly(FreeCamera* camera, Rectangle area) {
         return;
     float speed = camera->speed * (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ? 4.0f : 1.0f);
     // Without jumping after a long frame (loading)
-    camera->target = Vector3Add(camera->target, Vector3Scale(Vector3Normalize(move), speed * fminf(GetFrameTime(), 0.1f)));
+    camera->target = Vector3Add(camera->target, Vector3Scale(Vector3Normalize(move), speed * fminf(FrameTime_Get(), 0.1f)));
 }
 
 void FreeCamera_Update(FreeCamera* camera, Rectangle area, float minDistance) {

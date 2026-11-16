@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <nfd.h>
 #include <raylib.h>
+#include "app/dialog.h"
 #include "core/file.h"
 #include "core/log.h"
 #include "formats/archive/afs.h"
@@ -133,17 +133,8 @@ void FileOpen_Open(const char* filepath) {
 }
 
 void FileOpen_Dialog(void) {
-    nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[10] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds,png,tga,gz" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Motions", "motn,bin" }, { "Maps", "bin" }, { "Fonts", "fon" } };
-    nfdopendialogu8args_t args = { 0 };
-    args.filterList = filters;
-    args.filterCount = 10;
-    nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
-    if (result == NFD_OKAY)
-        FileOpen_Open(outPath);
-    else if (result == NFD_ERROR)
-        Log_Error("Error: %s\n", NFD_GetError());
-
-    if (outPath != NULL)
-        NFD_FreePathU8(outPath);
+    char path[DIALOG_PATH_SIZE];
+    DialogFilter filters[10] = { { "Containers", "afs,idx,pkf,pks" }, { "Textures", "pvr,spr,dds,png,tga,gz" }, { "Models", "mt5,chrm,mt7" }, { "Sounds", "xwm,snd" }, { "Scripts", "chrt" }, { "Dialogues", "scnf,bin" }, { "Cutscenes", "auth" }, { "Motions", "motn,bin" }, { "Maps", "bin" }, { "Fonts", "fon" } };
+    if (Dialog_Open(path, filters, 10, NULL) == DIALOG_OK)
+        FileOpen_Open(path);
 }

@@ -1,89 +1,82 @@
-# Drives the window of the application from PowerShell, to see a change working without computer-use.
-# The coordinates are relative to the top left corner of the window (with its border), in physical pixels.
+# Drives a hidden instance of the application from PowerShell, to see a change working in the background: the window is
+# never shown, and the input goes to the application through its control pipe, not through the mouse and the keyboard of
+# the desktop. Each action returns when the application has done it, with what it printed or "ok"; it fails if the
+# application reports an error. The coordinates are pixels of the screenshots, from the top left corner of the window
+# contents. Time advances only with the actions, 1/60 s per frame drawn, so the same actions give the same images.
 #
-#   tools/ui.ps1 start <file> [log]     Starts build/Release/Shenmue.exe opening <file>; stdout goes to [log]
-#   tools/ui.ps1 shot <png>             Saves a screenshot of the window to <png>
-#   tools/ui.ps1 click <x> <y>          Left click
+#   tools/ui.ps1 start [file] [log]     Starts build/Release/Shenmue.exe hidden, opening [file]; its output goes to
+#                                       [log] (stdout) and [log].err (stderr), by default in %TEMP%\Shenmue-ui.log
+#   tools/ui.ps1 shot <png>             Draws a frame and saves it to <png>
+#   tools/ui.ps1 click <x> <y> [right|middle]
 #   tools/ui.ps1 wheel <x> <y> [ticks]  Mouse wheel, down (negative ticks scroll up)
-#   tools/ui.ps1 type <keys>            Sends keys with the syntax of SendKeys ("{LEFT}", "^s", "abc"...)
-#   tools/ui.ps1 stop                   Stops the application
+#   tools/ui.ps1 type <text>            Types the text in the text box being edited
+#   tools/ui.ps1 key <keys>             A key with its modifiers: "ctrl+s", "left", "escape", "f"...
+#   tools/ui.ps1 do <command>           Any other command of the headless mode (src/app/headless.h): "move 10 20",
+#                                       "drag 900 400 1100 400", "hold w 30", "frames 60", "status", "open <file>",
+#                                       "dialog <path>"...
+#   tools/ui.ps1 stop                   Ends the instance started by start (and only it)
 param([string]$Action, [string]$Arg1, [string]$Arg2, [string]$Arg3)
-
-Add-Type -AssemblyName System.Drawing
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class ShenmueUi {
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
-  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-  [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e);
-  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
-}
-"@
-# Without it the coordinates and the size of the window are scaled on high DPI screens
-[ShenmueUi]::SetProcessDPIAware() | Out-Null
 
 $root = Split-Path -Parent $PSScriptRoot
 $exeFolder = Join-Path $root "build\Release"
+$pipeName = "Shenmue-ui"
+$pidFile = Join-Path $env:TEMP "Shenmue-ui.pid"
 
-function Get-Window {
-    $p = Get-Process Shenmue -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-    if ($null -eq $p) { throw "Shenmue isn't running" }
-    [ShenmueUi]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
-    Start-Sleep -Milliseconds 300
-    $r = New-Object ShenmueUi+RECT
-    [ShenmueUi]::GetWindowRect($p.MainWindowHandle, [ref]$r) | Out-Null
-    $r
+function Get-FullPath([string]$path) {
+    if ([System.IO.Path]::IsPathRooted($path)) { return $path }
+    return [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $path))
 }
 
-function Move-Cursor([string]$x, [string]$y) {
-    $r = Get-Window
-    [ShenmueUi]::SetCursorPos($r.L + [int]$x, $r.T + [int]$y) | Out-Null
-    Start-Sleep -Milliseconds 150
+# Sends a command and returns the reply. Fails if the application can't be reached or reports an error
+function Send-Command([string]$command, [int]$timeout = 10000) {
+    $pipe = New-Object System.IO.Pipes.NamedPipeClientStream(".", $pipeName, [System.IO.Pipes.PipeDirection]::InOut)
+    try {
+        try { $pipe.Connect($timeout) } catch { throw "Shenmue isn't running: tools/ui.ps1 start" }
+        $utf8 = New-Object System.Text.UTF8Encoding $false
+        $writer = New-Object System.IO.StreamWriter($pipe, $utf8)
+        $writer.Write("$command`n")
+        $writer.Flush()
+        $reader = New-Object System.IO.StreamReader($pipe, $utf8)
+        $reply = $reader.ReadToEnd().TrimEnd()
+    }
+    finally { $pipe.Dispose() }
+    if ($reply -match "(?m)^error:") { throw $reply }
+    $reply
+}
+
+function Stop-Instance {
+    if (-not (Test-Path $pidFile)) { return }
+    $id = [int](Get-Content $pidFile)
+    $process = Get-Process -Id $id -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq "Shenmue" }
+    if ($null -ne $process) {
+        try { Send-Command "quit" 2000 | Out-Null } catch { }
+        if (-not $process.WaitForExit(5000)) { Stop-Process -Id $id -Force }
+    }
+    Remove-Item $pidFile
 }
 
 switch ($Action) {
     "start" {
-        Get-Process Shenmue -ErrorAction SilentlyContinue | Stop-Process -Force
-        $file = (Resolve-Path $Arg1).Path
-        $options = @{ FilePath = (Join-Path $exeFolder "Shenmue.exe"); ArgumentList = "`"$file`""; WorkingDirectory = $exeFolder }
-        if ($Arg2) { $options.RedirectStandardOutput = $Arg2 }
-        Start-Process @options
-        # Until the window exists and the file is loaded
-        $deadline = (Get-Date).AddSeconds(30)
-        while ((Get-Date) -lt $deadline -and -not (Get-Process Shenmue -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })) {
-            Start-Sleep -Milliseconds 250
-        }
-        Start-Sleep -Seconds 3
+        Stop-Instance
+        $log = Join-Path $env:TEMP "Shenmue-ui.log"
+        if ($Arg2) { $log = Get-FullPath $Arg2 }
+        $arguments = "--control $pipeName"
+        if ($Arg1) { $arguments += " `"$(Get-FullPath $Arg1)`"" }
+        $process = Start-Process -FilePath (Join-Path $exeFolder "Shenmue.exe") -ArgumentList $arguments -WorkingDirectory $exeFolder `
+            -WindowStyle Hidden -RedirectStandardOutput $log -RedirectStandardError "$log.err" -PassThru
+        Set-Content -Path $pidFile -Value $process.Id
+        # The first command is answered once the file is loaded
+        Send-Command "status" 60000
     }
-    "shot" {
-        $r = Get-Window
-        $bitmap = New-Object System.Drawing.Bitmap ($r.R - $r.L), ($r.B - $r.T)
-        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-        $graphics.CopyFromScreen($r.L, $r.T, 0, 0, $bitmap.Size)
-        $bitmap.Save([System.IO.Path]::GetFullPath($Arg1))
-        $graphics.Dispose(); $bitmap.Dispose()
-        "Saved $Arg1 ($($r.R - $r.L)x$($r.B - $r.T) at $($r.L),$($r.T))"
-    }
-    "click" {
-        Move-Cursor $Arg1 $Arg2
-        [ShenmueUi]::mouse_event(2, 0, 0, 0, 0); Start-Sleep -Milliseconds 60; [ShenmueUi]::mouse_event(4, 0, 0, 0, 0)
-        Start-Sleep -Milliseconds 700
-    }
+    "shot" { Send-Command "shot $(Get-FullPath $Arg1)" }
+    "click" { Send-Command ("click $Arg1 $Arg2 $Arg3".TrimEnd()) }
     "wheel" {
         $ticks = 1; if ($Arg3) { $ticks = [int]$Arg3 }
-        Move-Cursor $Arg1 $Arg2
-        [ShenmueUi]::mouse_event(0x800, 0, 0, -120 * $ticks, 0)
-        Start-Sleep -Milliseconds 500
+        Send-Command "wheel $Arg1 $Arg2 $ticks"
     }
-    "type" {
-        Add-Type -AssemblyName System.Windows.Forms
-        Get-Window | Out-Null
-        [System.Windows.Forms.SendKeys]::SendWait($Arg1)
-        Start-Sleep -Milliseconds 700
-    }
-    "stop" { Get-Process Shenmue -ErrorAction SilentlyContinue | Stop-Process -Force }
-    default { throw "Usage: ui.ps1 start|shot|click|wheel|type|stop [arguments]" }
+    "type" { Send-Command "type $Arg1" }
+    "key" { Send-Command "key $Arg1" }
+    "do" { Send-Command (@($Arg1, $Arg2, $Arg3) -join " ").TrimEnd() }
+    "stop" { Stop-Instance }
+    default { throw "Usage: ui.ps1 start|shot|click|wheel|type|key|do|stop [arguments]" }
 }

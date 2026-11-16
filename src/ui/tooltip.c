@@ -3,6 +3,7 @@
 #include <math.h>
 #include <raylib.h>
 #include "raygui.h"
+#include "core/frameTime.h"
 #include "ui/tooltip.h"
 
 #define TOOLTIP_TIME 0.4f // Seconds over a control before its tooltip is shown
@@ -46,7 +47,7 @@ const char* Tooltip_Fit(Rectangle bounds, const char* text, float width, bool st
 void Tooltip_Draw(void) {
     Rectangle bounds = g_tooltip.bounds;
     bool same = bounds.width > 0.0f && bounds.x == g_tooltip.previous.x && bounds.y == g_tooltip.previous.y;
-    g_tooltip.time = same ? g_tooltip.time + GetFrameTime() : 0.0f;
+    g_tooltip.time = same ? g_tooltip.time + FrameTime_Get() : 0.0f;
     g_tooltip.previous = bounds;
     g_tooltip.bounds = (Rectangle) { 0 };
     if (bounds.width <= 0.0f || g_tooltip.time < TOOLTIP_TIME || IsMouseButtonDown(MOUSE_BUTTON_LEFT))

@@ -42,7 +42,8 @@ set_target_properties(Shenmue PROPERTIES
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Shenmue)
 
 target_sources(Shenmue PRIVATE ${SRC} ${RAYGUI} ${CJSON})
-target_include_directories(${PROJECT_NAME} PRIVATE src vendor/raygui vendor/cJSON)
+# GLFW of raylib: the headless mode gives the input to the callbacks of the window
+target_include_directories(${PROJECT_NAME} PRIVATE src vendor/raygui vendor/cJSON vendor/raylib/src/external/glfw/include)
 target_link_libraries(${PROJECT_NAME} PRIVATE ShenmueCore raylib nfd)
 
 # Icon of the executable and of the window

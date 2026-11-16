@@ -3,8 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include <nfd.h>
 #include <raylib.h>
+#include "app/dialog.h"
+#include "app/headless.h"
 #include "core/dir.h"
 #include "core/file.h"
 #include "core/hashTable.h"
@@ -226,35 +227,16 @@ void TADBatch_Start(const char* const* files, unsigned int count, const char* ou
 void TADBatch_Dialog(HashTable filenameDB) {
     if (g_running)
         return;
-    const nfdpathset_t* pathSet;
-    nfdu8filteritem_t filters[1] = { { "TAD archives", "tad" } };
-    nfdresult_t result = NFD_OpenDialogMultipleU8(&pathSet, filters, 1, NULL);
-    if (result == NFD_OKAY) {
-        nfdpathsetsize_t count = 0;
-        NFD_PathSet_GetCount(pathSet, &count);
-        nfdu8char_t** paths = calloc(count, sizeof(nfdu8char_t*));
-        unsigned int valid = 0;
-        for (nfdpathsetsize_t i = 0; i < count; i++)
-            if (NFD_PathSet_GetPathU8(pathSet, i, &paths[valid]) == NFD_OKAY)
-                valid++;
-        // The output folder, starting at the one of the last extraction
-        nfdu8char_t* outputPath = NULL;
-        result = NFD_PickFolderU8(&outputPath, g_outputPath);
-        if (result == NFD_OKAY) {
-            TADBatch_Start((const char* const*)paths, valid, outputPath, filenameDB);
-            NFD_FreePathU8(outputPath);
-        }
-        else if (result == NFD_ERROR) {
-            Log_Error("Error: %s\n", NFD_GetError());
-        }
-        for (unsigned int i = 0; i < valid; i++)
-            NFD_PathSet_FreePathU8(paths[i]);
-        free(paths);
-        NFD_PathSet_Free(pathSet);
-    }
-    else if (result == NFD_ERROR) {
-        Log_Error("Error: %s\n", NFD_GetError());
-    }
+    char** paths;
+    unsigned int count;
+    const DialogFilter filters[1] = { { "TAD archives", "tad" } };
+    if (Dialog_OpenMultiple(&paths, &count, filters, 1, NULL) != DIALOG_OK)
+        return;
+    // The output folder, starting at the one of the last extraction
+    char outputPath[DIALOG_PATH_SIZE];
+    if (Dialog_PickFolder(outputPath, g_outputPath) == DIALOG_OK)
+        TADBatch_Start((const char* const*)paths, count, outputPath, filenameDB);
+    Dialog_FreePaths(paths, count);
 }
 
 void TADBatch_Update(void) {
@@ -302,7 +284,10 @@ TADBatch_Progress TADBatch_GetProgress(void) {
 }
 
 void TADBatch_OpenOutput(void) {
-    if (g_outputPath != NULL && OpenDir(g_outputPath) != 0)
+    // Headless, the folder isn't opened in the file explorer of the user
+    if (Headless_IsActive())
+        Log_Info("[Headless] Not opening the folder %s\n", g_outputPath != NULL ? g_outputPath : "");
+    else if (g_outputPath != NULL && OpenDir(g_outputPath) != 0)
         Log_Error("Error: can't open %s\n", g_outputPath);
 }
 

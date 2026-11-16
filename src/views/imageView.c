@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <nfd.h>
 #include <raylib.h>
+#include "app/dialog.h"
 #include "raygui.h"
 #include "core/file.h"
 #include "core/log.h"
@@ -554,18 +554,14 @@ void ImageView_ExportDialog(void) {
     char folder[1024];
     snprintf(folder, sizeof(folder), "%s", lastFolder[0] != '\0' ? lastFolder : GetDirectoryPath(g_path));
 
-    nfdu8char_t* outPath = NULL;
-    nfdu8filteritem_t filters[3] = { { "PNG image", "png" }, { "BMP image", "bmp" }, { "JPG image", "jpg" } };
-    nfdresult_t result = NFD_SaveDialogU8(&outPath, filters, 3, folder[0] != '\0' ? folder : NULL, name);
-    if (result == NFD_OKAY) {
+    char outPath[DIALOG_PATH_SIZE];
+    DialogFilter filters[3] = { { "PNG image", "png" }, { "BMP image", "bmp" }, { "JPG image", "jpg" } };
+    if (Dialog_Save(outPath, filters, 3, folder[0] != '\0' ? folder : NULL, name) == DIALOG_OK) {
         if (ImageView_Export(outPath))
             snprintf(lastFolder, sizeof(lastFolder), "%s", GetDirectoryPath(outPath));
         else
             Log_Error("Failed to export the image to %s\n", outPath);
-        NFD_FreePathU8(outPath);
     }
-    else if (result == NFD_ERROR)
-        Log_Error("Error: %s\n", NFD_GetError());
 }
 
 void ImageView_Status(ViewStatus* status) {

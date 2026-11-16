@@ -5,8 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <nfd.h>
 #include <raylib.h>
+#include "app/dialog.h"
 #include "raygui.h"
 #include "core/bytes.h"
 #include "app/gameDB.h"
@@ -1099,10 +1099,9 @@ void ProgramView_ExportDialog(void) {
     strncat(name, ".txt", sizeof(name) - strlen(name) - 1);
     char folder[1024];
     snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(g_view.path));
-    const nfdu8filteritem_t filter = { "Text", "txt" };
-    nfdu8char_t* outPath = NULL;
-    nfdresult_t result = NFD_SaveDialogU8(&outPath, &filter, 1, folder[0] != '\0' ? folder : NULL, name);
-    if (result == NFD_OKAY) {
+    const DialogFilter filter = { "Text", "txt" };
+    char outPath[DIALOG_PATH_SIZE];
+    if (Dialog_Save(outPath, &filter, 1, folder[0] != '\0' ? folder : NULL, name) == DIALOG_OK) {
         FILE* file = fopen(outPath, "w");
         if (file != NULL) {
             const SCN_Header* header = &g_view.scn.header;
@@ -1123,8 +1122,5 @@ void ProgramView_ExportDialog(void) {
         }
         else
             Log_Error("Failed to export the program to %s\n", outPath);
-        NFD_FreePathU8(outPath);
     }
-    else if (result == NFD_ERROR)
-        Log_Error("Error: %s\n", NFD_GetError());
 }
