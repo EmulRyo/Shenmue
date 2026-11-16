@@ -123,10 +123,21 @@ static bool PlacedAt(const AUTHView_Placed* placed, uint32_t frame, float positi
     return SCNCutscene_PlaceAt(&g_auth.program, placed->idValue, frame, position, angle);
 }
 
-// Placed or attached by the program up to a frame
+// Placed or attached by the program up to a frame, or a character whose nodes it moves (from the frame 0)
 bool AUTHPose_PlacedDrawn(const AUTHView_Placed* placed, uint32_t frame) {
     float position[3], angle[3];
-    return SCNCutscene_AttachAt(&g_auth.program, placed->idValue, frame) != NULL || PlacedAt(placed, frame, position, angle);
+    return SCNCutscene_AttachAt(&g_auth.program, placed->idValue, frame) != NULL || PlacedAt(placed, frame, position, angle) ||
+        SCNCutscene_MovesCharacter(&g_auth.program, placed->idValue);
+}
+
+// Puts the model of a character placed by the program in the pose that the program gives to its nodes at the current
+// time (e.g. the flaps of the letter MALS of the cutscene 24 of scene/01/d000), or in the pose of the file
+void AUTHPose_PosePlaced(const AUTHView_Placed* placed) {
+    AUTHView_Model* model = &g_auth.models[placed->model];
+    model->posed = false;
+    model->programPosed = ProgramPose(placed->idValue, model);
+    if (!model->programPosed)
+        MT5Render_Pose(&model->model, NULL);
 }
 
 // The node of a body to which a bone of the skeleton of the game is attached (SCNCutscene_Attach.node): the bones of the
@@ -183,7 +194,8 @@ static bool AttachedTransform(const SCNCutscene_Attach* attach, uint32_t frame, 
 }
 
 // The transform of a character placed or attached by the program at the current frame: attached, where it is attached
-// to; detached, where it was when it was detached; else where the calls place it. Returns false if it isn't drawn yet
+// to; detached, where it was when it was detached; else where the calls place it, or where its script places it if the
+// program only moves its nodes. Returns false if it isn't drawn yet
 bool AUTHPose_ProgramTransform(const AUTHView_Placed* placed, Matrix* transform) {
     uint32_t frame = CurrentFrame();
     const SCNCutscene_Attach* attach = SCNCutscene_AttachAt(&g_auth.program, placed->idValue, frame);
@@ -194,7 +206,7 @@ bool AUTHPose_ProgramTransform(const AUTHView_Placed* placed, Matrix* transform)
     if (before != NULL && before->parent != 0)
         return AttachedTransform(before, attach->frame, transform);
     float position[3], angle[3];
-    if (!PlacedAt(placed, frame, position, angle))
+    if (!PlacedAt(placed, frame, position, angle) && !SCNCutscene_MovesCharacter(&g_auth.program, placed->idValue))
         return false;
     *transform = PlacedTransform(placed, position, angle);
     return true;

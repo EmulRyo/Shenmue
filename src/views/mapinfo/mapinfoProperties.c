@@ -41,6 +41,11 @@ static void MapModelProperties(Properties* properties, uint32_t index) {
     if (slot >= 0)
         Properties_Int(properties, "Slot", slot);
     Properties_Text(properties, "Package", package[0] != '\0' ? package : "none");
+    if (g_map.mapModelUnloaded != NULL && g_map.mapModelUnloaded[index]) {
+        uint32_t count = 0;
+        MAPINFO_ChunkValue(&g_map.file, "MAPR", &count);
+        Properties_Text(properties, "Loaded by the game", TextFormat("no: MAPR is %d", (int32_t)count));
+    }
     if (g_map.hasDate && g_mapOptions.date)
         Properties_Text(properties, "At the date", MAPINFODate_MapModelText(index));
     Properties_Section(properties, "Model");
@@ -95,9 +100,11 @@ static void LightProperties(Properties* properties, uint32_t index) {
     Properties_Int(properties, "Group", light->group);
     Properties_Int(properties, "ID", light->id);
     Properties_Hex(properties, "Flags", light->flags);
-    Properties_Int(properties, "Unknown", light->unknown);
+    Properties_Text(properties, "Switched on", light->on ? "yes" : "no");
     Properties_EditVector(properties, "Color", light->color, original->color, 3, 0.005f);
     Properties_EditFloat(properties, "Intensity", &light->intensity, &original->intensity, 0.01f);
+    Properties_EditFloat(properties, "Range", &light->range, &original->range, 0.05f);
+    Properties_EditFloat(properties, "Full part", &light->full, &original->full, 0.01f);
     Properties_EditVector(properties, "Position", light->position, original->position, 3, 0.01f);
     Properties_EditVector(properties, "Direction", light->direction, original->direction, 3, 0.01f);
     Properties_EditFloat(properties, "Angle", &light->angle, &original->angle, 0.5f);

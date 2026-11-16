@@ -55,6 +55,7 @@ MAPINFOView_Options g_mapOptions = {
     .layers = { [LAYER_MAP] = true, [LAYER_DOORS] = true, [LAYER_SHAPES] = true, [LAYER_CHARACTERS] = true },
     .expanded = { [LAYER_INFO] = true, [LAYER_CAMERAS] = true, [LAYER_CHARACTERS] = true, [LAYER_CUTSCENES] = true },
     .labels = true,
+    .lights = true,
     .date = true,
 };
 
@@ -214,11 +215,13 @@ void MAPINFOView_Close(void) {
     free(g_map.models);
     free(g_map.instances);
     free(g_map.visibleInstances);
+    free(g_map.renderLights);
     free(g_map.doorInstances);
     free(g_map.mapModelNames);
     free(g_map.mapModelSlots);
     free(g_map.mapModelPackages);
     free(g_map.mapModelVariants);
+    free(g_map.mapModelUnloaded);
     free((void*)g_map.doorErrors);
     free(g_map.originalDoors);
     free(g_map.originalLights);
@@ -415,6 +418,9 @@ void MAPINFOView_Toolbar(void) {
     GuiEnable();
     Toolbar_Separator();
     Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the names of the characters and the IDs of the cameras", KEY_L, &g_mapOptions.labels);
+    Toolbar_Toggle(ICON_STAR, "Lights", "Light the characters with the lights of the map (the group 0 of the LGHT chunk: its "
+        "ambient color and its point lights), else from the camera. The exteriors are always lit from the camera: the game "
+        "also lights them by the hour and the weather", KEY_I, &g_mapOptions.lights);
     Toolbar_Separator();
     // The date: the program of the map shows its models then
     if (!g_map.hasDate)
@@ -467,18 +473,36 @@ static void UpdateInput(Rectangle scene) {
 }
 
 // The visible instances: the models of the map, the doors and the characters (only the visible ones have an instance),
-// without the characters for which hidden returns true if it isn't NULL
-static void DrawModels(Camera3D camera, bool (*hidden)(const char* id)) {
+// with the changes of another view if it isn't NULL
+static void DrawModels(Camera3D camera, const MAPINFOView_Changes* changes) {
     if (g_map.visibleInstances == NULL)
         return;
     uint32_t count = 0;
     for (uint32_t i = 0; i < g_map.mapModelCount && g_mapOptions.layers[LAYER_MAP]; i++) {
-        if (MAPINFOView_IsItemVisible(ITEM_MAP_MODEL, i) && !MAPINFODate_IsHidden(i))
-            g_map.visibleInstances[count++] = g_map.instances[i];
+        if (!MAPINFOView_IsItemVisible(ITEM_MAP_MODEL, i))
+            continue;
+        bool shown = !MAPINFODate_IsHidden(i);
+        float fade = 0.0f;
+        int slot = g_map.mapModelSlots != NULL ? g_map.mapModelSlots[i] : -1;
+        if (changes != NULL && changes->mapModel != NULL && slot >= 0)
+            changes->mapModel(slot, &shown, &fade);
+        if (!shown || fade >= 1.0f)
+            continue;
+        g_map.visibleInstances[count] = g_map.instances[i];
+        g_map.visibleInstances[count++].fade = fade;
     }
     for (uint32_t i = 0; i < g_map.file.doorCount && g_mapOptions.layers[LAYER_DOORS]; i++) {
         if (g_map.doorInstances[i] >= 0 && MAPINFOView_IsItemVisible(ITEM_DOOR, i))
             g_map.visibleInstances[count++] = g_map.instances[g_map.doorInstances[i]];
+    }
+    // The characters lit by the lights of the other view, or of the map
+    const MT5Render_Lighting* lighting = NULL;
+    if (changes != NULL)
+        lighting = changes->lighting;
+    else if (g_mapOptions.lights && g_map.renderLights != NULL && !MAPINFOView_IsOutdoorGroup(0)) {
+        g_map.lighting.lightCount = MAPINFOView_GroupLights(0, g_map.lighting.ambient, g_map.renderLights, NULL, g_map.file.lightCount);
+        g_map.lighting.lights = g_map.renderLights;
+        lighting = &g_map.lighting;
     }
     // In the order of MAPINFOModels_ShowCharacters, which gives an instance to the shown characters with a model
     uint32_t instance = g_map.characterInstances;
@@ -486,21 +510,62 @@ static void DrawModels(Camera3D camera, bool (*hidden)(const char* id)) {
         const MapCharacter* character = &g_map.characters[i];
         if (!character->shown || character->model < 0 || !MAPINFOView_IsItemVisible(ITEM_CHARACTER, i))
             continue;
-        if (hidden == NULL || !hidden(character->info.id))
-            g_map.visibleInstances[count++] = g_map.instances[instance];
+        float fade = changes != NULL && changes->characterFade != NULL ? changes->characterFade(character->info.id) : 0.0f;
+        if (fade < 1.0f) {
+            g_map.visibleInstances[count] = g_map.instances[instance];
+            g_map.visibleInstances[count].lighting = lighting;
+            g_map.visibleInstances[count++].fade = fade;
+        }
         instance++;
     }
     if (count > 0)
         MT5Render_DrawInstances(&g_map.render, g_map.visibleInstances, count, camera);
 }
 
+bool MAPINFOView_LightsShown(void) {
+    return g_mapOptions.lights;
+}
+
+uint32_t MAPINFOView_LightCount(void) {
+    return g_map.open ? g_map.file.lightCount : 0;
+}
+
+bool MAPINFOView_IsOutdoorGroup(uint32_t group) {
+    return g_map.open && group < g_map.file.lightGroupCount && g_map.file.lightGroups[group].mode == MAPINFO_LIGHTS_OUTDOOR;
+}
+
+// The ambient color is the last 3 values of the group
+uint32_t MAPINFOView_GroupLights(uint32_t group, float ambient[3], MT5Render_Light* lights, uint16_t* ids, uint32_t max) {
+    const MAPINFO_File* file = &g_map.file;
+    for (int c = 0; c < 3; c++)
+        ambient[c] = g_map.open && group < file->lightGroupCount ? file->lightGroups[group].ambient[c + 1] : 1.0f;
+    uint32_t count = 0;
+    for (uint32_t i = 0; g_map.open && i < file->lightCount && count < max; i++) {
+        const MAPINFO_Light* light = &file->lights[i];
+        if (light->group != group || !light->on)
+            continue;
+        MT5Render_Light* l = &lights[count];
+        for (int c = 0; c < 3; c++) {
+            l->position[c] = light->position[c];
+            l->color[c] = light->color[c];
+        }
+        l->intensity = light->intensity;
+        l->fullRange = light->range * light->full;
+        l->range = light->range;
+        if (ids != NULL)
+            ids[count] = light->id;
+        count++;
+    }
+    return count;
+}
+
 const char* MAPINFOView_Path(void) {
     return g_map.open ? g_map.filename : NULL;
 }
 
-void MAPINFOView_DrawMap(Camera3D camera, bool (*hidden)(const char* id)) {
+void MAPINFOView_DrawMap(Camera3D camera, const MAPINFOView_Changes* changes) {
     if (g_map.open)
-        DrawModels(camera, hidden);
+        DrawModels(camera, changes);
 }
 
 static void DrawShape(const MAPINFO_Shape* shape, Color color) {

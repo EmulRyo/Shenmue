@@ -32,17 +32,32 @@ typedef struct {
     AUTH_Curve  curves[AUTH_CAMERA_CURVES]; // AUTH_CameraCurve order
 } MAPINFO_Camera;
 
+// A light of a group of lights (an inner LGHT chunk), which the game keeps by its ID
 typedef struct {
     uint32_t    group;      // Index of the inner LGHT chunk
     uint16_t    id;
-    uint16_t    unknown;    // 0 or 1
-    uint16_t    flags;      // Unknown: 11, 3, 2, 4, 12, 10
+    uint16_t    on;         // Probably 1 switched on, 0 off
+    uint16_t    flags;      // The type in the low bits (3 for the lamps, 2, 4) and an unknown bit 0x8
     float       color[3];   // RGB, 0 to 1
-    float       intensity;  // Probably
+    float       intensity;
+    float       range;      // Distance where the light ends
+    float       full;       // Part of the range that it lights fully (0.65: up to 65% of it), then less and less
     float       position[3];
     float       direction[3];
     float       angle;      // Degrees
 } MAPINFO_Light;
+
+#define MAPINFO_LIGHT_GROUPS    24  // Groups that the game keeps
+
+#define MAPINFO_LIGHTS_OUTDOOR   3   // MAPINFO_LightGroup.mode of the exteriors (d000, jd00, jomo, ju00, mfsy...)
+
+// A group of lights: an inner LGHT chunk, chosen by the program with LightGroup (0x10F)
+typedef struct {
+    float       unknown;    // 1.2 or 1.1
+    uint16_t    mode;       // 3 in the exteriors, which the game also lights by the hour and the weather; 2 in the
+                            // interiors (shops, houses), 1 in a few
+    float       ambient[4]; // Probably the ambient color: 0.3, then red, green and blue
+} MAPINFO_LightGroup;
 
 typedef enum {
     MAPINFO_GROUP_COLI,     // Collision walls and obstacles
@@ -121,6 +136,8 @@ typedef struct {
     MAPINFO_Camera*     cameras;
     uint32_t            lightCount;
     MAPINFO_Light*      lights;
+    uint32_t            lightGroupCount;
+    MAPINFO_LightGroup  lightGroups[MAPINFO_LIGHT_GROUPS];
     uint32_t            shapeCount;
     MAPINFO_Shape*      shapes;
     uint32_t            bankCount;

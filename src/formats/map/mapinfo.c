@@ -97,12 +97,19 @@ static bool ReadLights(MAPINFO_File* file, const MAPINFO_Chunk* chunk) {
         uint32_t count = Bytes_ReadU16(file->data + pos + 0x0C);
         if (size < 0x18 || size > end - pos || count > (size - 0x18) / MAPINFO_LIGHT_SIZE)
             return false;
+        if (file->lights != NULL && file->lightGroupCount < MAPINFO_LIGHT_GROUPS) {
+            MAPINFO_LightGroup* lights = &file->lightGroups[file->lightGroupCount++];
+            lights->unknown = ReadFloat(file->data + pos + 0x08);
+            lights->mode = Bytes_ReadU16(file->data + pos + 0x0E);
+            for (int c = 0; c < 4; c++)
+                lights->ambient[c] = Bytes_ReadF16(file->data + pos + 0x10 + c * 2);
+        }
         for (uint32_t i = 0; i < count && file->lights != NULL; i++) {
             const uint8_t* p = file->data + pos + 0x18 + i * MAPINFO_LIGHT_SIZE;
             MAPINFO_Light* light = &file->lights[file->lightCount + i];
             light->group = group;
             light->id = Bytes_ReadU16(p);
-            light->unknown = Bytes_ReadU16(p + 2);
+            light->on = Bytes_ReadU16(p + 2);
             light->flags = Bytes_ReadU16(p + 4);
             for (int c = 0; c < 3; c++) {
                 light->color[c] = Bytes_ReadF16(p + 0x06 + c * 2);
@@ -110,6 +117,8 @@ static bool ReadLights(MAPINFO_File* file, const MAPINFO_Chunk* chunk) {
                 light->direction[c] = Bytes_ReadF16(p + 0x18 + c * 2);
             }
             light->intensity = Bytes_ReadF16(p + 0x0C);
+            light->range = Bytes_ReadF16(p + 0x0E);
+            light->full = Bytes_ReadF16(p + 0x10);
             light->angle = Bytes_ReadU16(p + 0x1E) * 360.0f / 65536.0f;
         }
         file->lightCount += count;
@@ -327,7 +336,7 @@ static void ReadDoors(MAPINFO_File* file, const MAPINFO_Chunk* chunk) {
 
 // Reads the chunks that have arrays, or only counts their items if the arrays are NULL
 static void ReadArrays(MAPINFO_File* file, const char* filepath) {
-    file->cameraCount = file->lightCount = file->shapeCount = file->bankCount = file->doorCount = 0;
+    file->cameraCount = file->lightCount = file->shapeCount = file->bankCount = file->doorCount = file->lightGroupCount = 0;
     for (uint32_t i = 0; i < file->chunkCount; i++) {
         const MAPINFO_Chunk* chunk = &file->chunks[i];
         uint32_t cameras = file->cameraCount, lights = file->lightCount, shapes = file->shapeCount;

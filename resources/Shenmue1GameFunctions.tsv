@@ -99,9 +99,9 @@ id	handler	arguments	name	description	character
 061	0x0C156230	5			
 062	0x0C164DAC	1			
 063	0x0C164D9E	1			
-064	0x0C164C74	1			
+064	0x0C164C74	1	AmbientColor	The ambient color: the 4 floats pointed by argument 0, as in the LGHT chunks (0.3, red, green, blue; the first one replaced by the luminance of the color)	
 065	0x0C164C82	2			
-066	0x0C164CD0	3			
+066	0x0C164CD0	3	LightControl	Changes the light of the current group whose ID is argument 0 (0x44 bytes each) with the operation of argument 1 (0 to 11) and the value of argument 2: 0 sets its type (below 5), 2 its color, 4 its intensity, 5 its range, 7 its position, 8 its direction	
 067	0x0C164DBA				
 068	0x0C164DCA	2			
 069	0x0C164DDA	2			
@@ -270,7 +270,7 @@ id	handler	arguments	name	description	character
 10C	0x0C160914				
 10D	0x0C1578D2	2			
 10E	0x0C165F70	2			
-10F	0x0C164EE6	1			
+10F	0x0C164EE6	1	LightGroup	Lights the map with the group of lights of argument 0 (below 24): the inner LGHT chunk of that number, with its ambient color and its lights	
 110	0x0C09C288	3			yes
 111	0x0C1578FE				
 112	0x0C164EF4	3			
@@ -313,7 +313,7 @@ id	handler	arguments	name	description	character
 137	0x0C16C0C0				
 138	0x0C16BC5C	3			
 139	0x0C165D38	1-3			yes
-13A	0x0C158CA4	2			yes
+13A	0x0C158CA4	2	CharacterOpacity	The opacity of the character of ID argument 0: the float of argument 1 (1.0 opaque, 0.0 invisible), stored at 0x48 of the character; called frame after frame to fade characters in and out	yes
 13B	0x0C190B08	2-5			
 13C	0x0C15FC78	2-5	Package	Packages (PKF/PKS files), in a table of 32 loaded ones, the operation in arguments 0 and 1. (0, 0): starts loading the package named in argument 3 from the folder of argument 2 (e.g. "scene/01/JOMO", "COMMON01"), returning 0 if it is already loaded; (0, 2): returns the state of the loading (the programs wait while it isn't 0); (0, 5): returns 1 if the package of argument 2 is loaded; (0, 6): frees it; (0, 8): loads the PKF and PKS pair of entries argument 3 and 4 of the AFS file of argument 2 (OP99.afs). (2, 2) and (2, 3) take a package by name too	
 13D	0x0C16951C	2, 3, 7			yes
@@ -418,7 +418,7 @@ id	handler	arguments	name	description	character
 1A0	0x0C1608E0	3			yes
 1A1	0x0C16B728	1, 10			
 1A2	0x0C15B022	1, 3			
-1A3	0x0C165352	2			
+1A3	0x0C165352	2	MapModelOpacity	The opacity of the MAP model of the slot of argument 0 (see 0x098): the float of argument 1, limited to 1.0, stored at 0x58 of the slot (table 0x0C21E328, 0x60 bytes each)		
 1A4	0x0C158D4E				
 1A5	0x0C16C0D2	1, 4			
 1A6	0x0C164082	4			

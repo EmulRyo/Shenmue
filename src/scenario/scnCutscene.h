@@ -50,6 +50,21 @@
 //                 (3 floats) and angles (3 integers, 0x10000 = 360°) relative to it: the can CAN1 in the hand (node 18)
 //                 of Ryo, then of YKHI, and the letter MALS in the hand of Ryo in the cutscene 22 of scene/01/d000
 //   Detach        (0x01B): (character) detaches it: it stays where it was
+//   CharacterOpacity (0x13A): (character, opacity) the opacity of a character (a float, 1 opaque, 0 invisible: the float
+//                 at 0x48 of the character): the characters of the map that fade out and those of the vision that fade
+//                 in (the stars HOSI to 0.8, the constellations SEZ1 and SEZ2 to 0.3) in the cutscene of seqdata0.bin of
+//                 scene/02/toki
+//   MapModelDisplay (0x098): (slot, 1 / 0) shows or hides the MAP model of the slot (scnDisplay.h), and MapModelOpacity
+//                 (0x1A3): (slot, opacity) its opacity (a float, at most 1, at 0x58 of the 0x60 bytes of the slot): the
+//                 map of scene/02/toki fades out from the frame 1800 to 1900 of that cutscene, is hidden, and fades in
+//                 from 2520 to 2580. The calls that don't change the value are not kept
+//   LightGroup    (0x10F): (group) lights the map with the group of lights of that number, the inner LGHT chunk of
+//                 the MAPINFO file; LightControl (0x066): (light, operation, value) changes a light of the group (0 its
+//                 type, 4 a float of the light, e.g. faded out from 0.97 to 0); AmbientColor (0x064): (&values) the 4
+//                 floats of the ambient color, as in the header of the LGHT chunks (0.3, then red, green and blue). In
+//                 the cutscene of seqdata0.bin of scene/02/toki the group 1 lights the vision from the frame 1900, the
+//                 ambient color goes from blue to the brown of the shop and the light 4 fades out from 2501 to 2530,
+//                 and the group 0 is back at 2640. The calls that leave the same values are not kept
 // The packages of the characters: a function of the program that loads a package (0x13C (0, 0, folder, name)) named by
 // one of its parameters until the character named by another one exists (0x166 (1, character)), called with the values
 // of two variables of the program (e.g. func(var_118, var_11C) of scenario/act01_d000.scn, the can CAN1 of the drink
@@ -75,6 +90,13 @@
 #define SCNCUTSCENE_ACTIVE      0x0A8   // (character, 1 wakes, 0 puts to sleep)
 #define SCNCUTSCENE_ATTACH      0x0E6   // (character, to character, node, &position, &angles)
 #define SCNCUTSCENE_DETACH      0x01B   // (character)
+#define SCNCUTSCENE_OPACITY     0x13A   // (character, opacity)
+#define SCNCUTSCENE_MAP_DISPLAY 0x098   // (slot, 1 / 0)
+#define SCNCUTSCENE_MAP_OPACITY 0x1A3   // (slot, opacity)
+#define SCNCUTSCENE_LIGHT_GROUP 0x10F   // (group)
+#define SCNCUTSCENE_LIGHT       0x066   // (light, operation, value)
+#define SCNCUTSCENE_AMBIENT     0x064   // (&values)
+#define SCNCUTSCENE_LIGHT_INTENSITY 4   // Operation of LightControl: the intensity of the light (its float at 0x18)
 #define SCNCUTSCENE_PACKAGE     0x13C   // (0, 0, folder, name): loads a package
 #define SCNCUTSCENE_EXISTS      0x166   // (1, character): the character exists
 #define SCNCUTSCENE_FOLDER_SIZE 48
@@ -141,6 +163,32 @@ typedef struct {
     uint8_t     known;      // Bit i: position[i] is known, bit 3 + i: angles[i] (an unknown value is 0)
 } SCNCutscene_Attach;
 
+// A call that sets the opacity of a character or of a MAP model, or shows or hides a MAP model
+typedef enum {
+    SCNCUTSCENE_FADE_CHARACTER,     // CharacterOpacity: target is the ID of the character
+    SCNCUTSCENE_FADE_MAP_MODEL,     // MapModelOpacity: target is the slot
+    SCNCUTSCENE_SHOW_MAP_MODEL,     // MapModelDisplay: value 1 shows it, 0 hides it
+} SCNCutscene_FadeKind;
+
+typedef struct {
+    uint32_t    frame;
+    uint32_t    address;
+    uint8_t     kind;       // SCNCutscene_FadeKind
+    uint32_t    target;
+    float       value;      // Opacity, from 0 to 1
+} SCNCutscene_Fade;
+
+// A call that changes the lights: LightGroup, LightControl or AmbientColor
+typedef struct {
+    uint32_t    frame;
+    uint32_t    address;
+    uint32_t    function;   // SCNCUTSCENE_LIGHT_GROUP, SCNCUTSCENE_LIGHT or SCNCUTSCENE_AMBIENT
+    uint32_t    light;      // Group, or light of the group
+    uint32_t    operation;  // Of LightControl
+    float       values[4];  // Value of LightControl, the ambient color
+    uint8_t     known;      // Bit i: values[i] is known
+} SCNCutscene_Light;
+
 // A package that the program loads for a character, with the values of its variables at the start of the cutscene
 typedef struct {
     uint32_t    character;
@@ -187,6 +235,10 @@ typedef struct {
     SCNCutscene_Attach* attaches;   // In the order of the calls
     uint32_t            packageCount;
     SCNCutscene_Package* packages;
+    uint32_t            fadeCount;
+    SCNCutscene_Fade*   fades;      // In the order of the calls
+    uint32_t            lightCount;
+    SCNCutscene_Light*  lights;     // In the order of the calls
     uint32_t            levels;     // Functions run before the function of the call that plays the slot
     uint32_t            start;      // Function from which the emulation got to the call
 } SCNCutscene;
@@ -225,6 +277,11 @@ bool SCNCutscene_DisplaysCharacter(const SCNCutscene* cutscene, uint32_t charact
 // Whether the character is drawn at a frame (included) by the calls up to it: shown and awake. Returns false if no call
 // sets one of its flags up to it (shown is then left)
 bool SCNCutscene_ShownAt(const SCNCutscene* cutscene, uint32_t character, uint32_t frame, bool* shown);
+// The opacity of a character at a frame (CharacterOpacity), returns false if the program doesn't set it up to the frame
+bool SCNCutscene_OpacityAt(const SCNCutscene* cutscene, uint32_t character, uint32_t frame, float* opacity);
+// Whether the program shows the MAP model of a slot at a frame, and its opacity: returns false if it doesn't change
+// them up to the frame (the values not changed are left)
+bool SCNCutscene_MapModelAt(const SCNCutscene* cutscene, uint32_t slot, uint32_t frame, bool* shown, float* opacity);
 // The program attaches the character to another one
 bool SCNCutscene_AttachesCharacter(const SCNCutscene* cutscene, uint32_t character);
 // The last call that attaches or detaches the character up to a frame (included), NULL if none

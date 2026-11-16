@@ -352,8 +352,12 @@ bool MAPINFOItems_Create(void) {
     g_map.firstItems[ITEM_INFO] = g_map.itemCount;
     AddInfoItems();
     g_map.firstItems[ITEM_MAP_MODEL] = g_map.itemCount;
-    for (uint32_t i = 0; i < g_map.mapModelCount; i++)
-        AddItem(ITEM_MAP_MODEL, i, g_map.mapModelNames[i], false);
+    for (uint32_t i = 0; i < g_map.mapModelCount; i++) {
+        bool unloaded = g_map.mapModelUnloaded != NULL && g_map.mapModelUnloaded[i];
+        AddItem(ITEM_MAP_MODEL, i, TextFormat("%s%s", g_map.mapModelNames[i], unloaded ? "  (not loaded by the game)" : ""), false);
+        // Hidden, as in the game, until its eye is clicked
+        g_map.visibleItems[g_map.itemCount - 1] = !unloaded;
+    }
     g_map.firstItems[ITEM_DOOR] = g_map.itemCount;
     for (uint32_t i = 0; i < file->doorCount; i++) {
         const MAPINFO_Door* door = &file->doors[i];

@@ -11,13 +11,39 @@
 // searched in the folder of the model, where the PKF of the scene is extracted (tex_<index>_<texture ID>.pvr files),
 // or in the files of the PKF loaded in memory
 
+#define MT5RENDER_LIGHTS    8   // Lights that light an instance at most: the nearest ones that reach it
+
 // Shader and material shared by the models
 typedef struct {
     Shader      shader;
     int         lightDirLoc;
     int         modeLoc;
+    int         opacityLoc;
+    int         litLoc;
+    int         ambientLoc;
+    int         lightCountLoc;
+    int         lightPositionLoc;
+    int         lightColorLoc;
+    int         lightRangeLoc;
     Material    material;
 } MT5Render;
+
+// A point light of the scene (the lights of the LGHT chunks of the maps): it lights fully up to fullRange from its
+// position, and less and less up to range
+typedef struct {
+    float       position[3];
+    float       color[3];
+    float       intensity;  // Multiplies the color
+    float       fullRange;
+    float       range;
+} MT5Render_Light;
+
+// The lights that light some instances: an ambient color and point lights
+typedef struct {
+    float                   ambient[3];
+    uint32_t                lightCount;
+    const MT5Render_Light*  lights;
+} MT5Render_Lighting;
 
 typedef struct {
     uint32_t    nodeCount;
@@ -36,6 +62,8 @@ typedef struct {
     Matrix              transform;
     Vector3             center;   // Of the bounding sphere of the model in the scene, to sort the instances
     uint32_t            frame;    // Animation frame
+    float               fade;     // 0 opaque, up to 1 invisible: the whole model is blended with an opacity of 1 - fade
+    const MT5Render_Lighting* lighting; // Lit by these lights (the nearest ones that reach it), NULL: from the camera
 } MT5Render_Instance;
 
 void MT5Render_Init(MT5Render* render);
@@ -68,7 +96,7 @@ void MT5Render_DrawOpaque(MT5Render* render, const MT5Render_Model* model, Matri
 // called after drawing the opaque part of all the models, from the farthest model to the nearest one
 void MT5Render_DrawTranslucent(MT5Render* render, MT5Render_Model* model, Matrix transform, uint32_t frame, Camera3D camera);
 // Lights the instances from the camera and draws the opaque part of all of them, then the translucent part from the
-// farthest instance to the nearest one
+// farthest instance to the nearest one, with the faded instances among them (without writing the depth)
 void MT5Render_DrawInstances(MT5Render* render, const MT5Render_Instance* instances, uint32_t count, Camera3D camera);
 
 #endif

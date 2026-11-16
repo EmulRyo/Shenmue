@@ -62,6 +62,7 @@ typedef struct {
     bool            charactersShown;
     bool            labels;         // Name, sound and motion over the characters
     bool            map;            // The models of the map of the cutscene, as its view shows them
+    bool            lights;         // The characters are lit by the lights of the map, as the program changes them
 } AUTHView_Options;
 
 AUTHView_State g_auth;
@@ -69,6 +70,7 @@ static AUTHView_Options g_options = {
     .cutsceneCamera = true,
     .labels = true,
     .map = true,
+    .lights = true,
     .expanded = { true, true, true, true, true, true },
     .charactersShown = true,
 };
@@ -375,24 +377,97 @@ static void OpenMap(void) {
         Log_Error("[AUTHView_Open]: Failed to load the map %s\n", g_auth.mapinfoPath);
 }
 
+// The fade that the program of the map gives to a character at the current frame (CharacterOpacity): 0 if none
+static float ProgramFade(uint32_t idValue) {
+    float opacity = 1.0f;
+    return SCNCutscene_OpacityAt(&g_auth.program, idValue, CurrentFrame(), &opacity) ? 1.0f - opacity : 0.0f;
+}
+
 // The characters of the map that are in the cutscene aren't drawn with the map: the cutscene places them; nor those that
 // the program of the map has placed at the current frame, drawn by the cutscene, nor those that it hides or puts to
-// sleep (e.g. the machine VM_0 of scene/01/d000, replaced by JIHN for the cutscene 22 of its vending machine)
-static bool IsCutsceneCharacter(const char* id) {
+// sleep (e.g. the machine VM_0 of scene/01/d000, replaced by JIHN for the cutscene 22 of its vending machine). The
+// others are drawn with the opacity that the program gives them (e.g. the picture GAKU and the doors DOOR and DOR2 of
+// scene/02/toki, which fade out from the frame 1800 to 1900 of the cutscene of seqdata0.bin)
+static float MapCharacterFade(const char* id) {
     for (uint32_t i = 0; i < g_auth.sequence.characterCount; i++) {
         if (strcmp(g_auth.sequence.characters[i].id, id) == 0)
-            return true;
+            return 1.0f;
     }
     uint32_t idValue = 0;
     memcpy(&idValue, id, strlen(id) < 4 ? strlen(id) : 4);
     bool shown = true;
     if (SCNCutscene_ShownAt(&g_auth.program, idValue, CurrentFrame(), &shown) && !shown)
-        return true;
+        return 1.0f;
     for (uint32_t i = 0; i < g_auth.placedCount; i++) {
         if (strcmp(g_auth.placed[i].id, id) == 0 && g_auth.placed[i].model >= 0 && AUTHPose_PlacedDrawn(&g_auth.placed[i], CurrentFrame()))
-            return true;
+            return 1.0f;
     }
-    return false;
+    return ProgramFade(idValue);
+}
+
+// The MAP models that the program of the map shows or hides (MapModelDisplay) and fades (MapModelOpacity) up to the
+// current frame (e.g. map.mt5 of scene/02/toki, faded out from the frame 1800 to 1900 of the cutscene of seqdata0.bin,
+// hidden until 2520 and faded in up to 2580)
+static void MapModelChange(int slot, bool* shown, float* fade) {
+    float opacity = 1.0f - *fade;
+    if (SCNCutscene_MapModelAt(&g_auth.program, (uint32_t)slot, CurrentFrame(), shown, &opacity))
+        *fade = 1.0f - opacity;
+}
+
+static MAPINFOView_Changes g_mapChanges = { MapCharacterFade, MapModelChange, NULL };
+
+// The lights of the map at the current frame, as the program of the map changes them
+static struct {
+    uint32_t            capacity;
+    MT5Render_Light*    lights;
+    uint16_t*           ids;
+    MT5Render_Lighting  lighting;
+} g_lights;
+
+// The lights that light the characters at the current frame, NULL if from the camera (the Lights toggle is off, the
+// map has no lights, or they are of an exterior, which the game also lights by the hour and the weather): the group of lights of the map chosen by the last call to LightGroup (0 before), with the ambient
+// color and the intensities that the calls to AmbientColor and LightControl after it give (e.g. the blue light 4 of
+// the group 1 of scene/02/toki, which fades out from the frame 2501 to 2530 of the cutscene of seqdata0.bin)
+static const MT5Render_Lighting* CutsceneLighting(void) {
+    uint32_t total = MAPINFOView_LightCount();
+    if (!g_options.lights || !AUTHView_UsesMap() || total == 0)
+        return NULL;
+    if (total > g_lights.capacity) {
+        MT5Render_Light* lights = realloc(g_lights.lights, total * sizeof(MT5Render_Light));
+        if (lights != NULL)
+            g_lights.lights = lights;
+        uint16_t* ids = realloc(g_lights.ids, total * sizeof(uint16_t));
+        if (ids != NULL)
+            g_lights.ids = ids;
+        if (lights == NULL || ids == NULL)
+            return NULL;
+        g_lights.capacity = total;
+    }
+    const SCNCutscene* program = &g_auth.program;
+    uint32_t frame = CurrentFrame(), group = 0, first = 0;
+    for (uint32_t i = 0; i < program->lightCount && program->lights[i].frame <= frame; i++) {
+        if (program->lights[i].function == SCNCUTSCENE_LIGHT_GROUP) {
+            group = program->lights[i].light;
+            first = i + 1;
+        }
+    }
+    if (MAPINFOView_IsOutdoorGroup(group))
+        return NULL;
+    MT5Render_Lighting* lighting = &g_lights.lighting;
+    lighting->lightCount = MAPINFOView_GroupLights(group, lighting->ambient, g_lights.lights, g_lights.ids, total);
+    lighting->lights = g_lights.lights;
+    for (uint32_t i = first; i < program->lightCount && program->lights[i].frame <= frame; i++) {
+        const SCNCutscene_Light* call = &program->lights[i];
+        if (call->function == SCNCUTSCENE_AMBIENT && (call->known & 0x0E) == 0x0E)
+            memcpy(lighting->ambient, &call->values[1], sizeof(lighting->ambient));
+        else if (call->function == SCNCUTSCENE_LIGHT && call->operation == SCNCUTSCENE_LIGHT_INTENSITY && (call->known & 1)) {
+            for (uint32_t l = 0; l < lighting->lightCount; l++) {
+                if (g_lights.ids[l] == call->light)
+                    g_lights.lights[l].intensity = call->values[0];
+            }
+        }
+    }
+    return lighting;
 }
 
 static bool ShowsMap(void) {
@@ -490,6 +565,9 @@ void AUTHView_Toolbar(void) {
         g_options.cutsceneCamera = false;
     }
     Toolbar_Toggle(ICON_TEXT_A, "Labels", "Show the name, sound and motion over the characters", KEY_L, &g_options.labels);
+    Toolbar_Toggle(ICON_STAR, "Lights", "Light the characters with the lights of the map, as the program of the map changes "
+        "them (LightGroup, AmbientColor, LightControl), else from the camera. The exteriors are always lit from the camera: "
+        "the game also lights them by the hour and the weather", KEY_I, &g_options.lights);
     if (!g_auth.hasMapinfo)
         GuiDisable();
     if (Toolbar_Toggle(ICON_MAPS, "Map", "Show the models of the map of the cutscene, as its view shows them", KEY_M, &g_options.map) &&
@@ -550,9 +628,14 @@ static Vector3 CharacterForward(const AUTH_Character* character) {
     return (Vector3) { -sinf(yaw), 0.0f, -cosf(yaw) };
 }
 
-// With movement, and shown in the tree
+// With movement, shown in the tree, and not hidden nor put to sleep by the program of the map at the current frame (e.g.
+// SINF, HOSI, SEZ1, SEZ2 and PNXM, hidden at the frame 1 of the cutscene of seqdata0.bin of scene/02/toki), nor made
+// invisible by it (CharacterOpacity 0)
 bool AUTHView_IsCharacterShown(uint32_t character) {
-    return HasMovement(&g_auth.sequence.characters[character]) && g_options.charactersShown && g_auth.shownCharacters[character];
+    const AUTH_Character* c = &g_auth.sequence.characters[character];
+    bool shown = true;
+    return HasMovement(c) && g_options.charactersShown && g_auth.shownCharacters[character] &&
+        (!SCNCutscene_ShownAt(&g_auth.program, c->idValue, CurrentFrame(), &shown) || shown) && ProgramFade(c->idValue) < 1.0f;
 }
 
 static void DrawCameraGizmo(void) {
@@ -583,7 +666,8 @@ static void DrawCharacters(Camera3D camera) {
         AUTHPose_PoseCharacter(i);
         Matrix transform = AUTHPose_CharacterTransform(i);
         MT5Render_Model* instanced = &g_auth.models[model].model;
-        g_auth.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0 };
+        g_auth.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0,
+            ProgramFade(g_auth.sequence.characters[i].idValue), g_mapChanges.lighting };
     }
     for (uint32_t i = 0; i < g_auth.placedCount && g_options.charactersShown; i++) {
         const AUTHView_Placed* placed = &g_auth.placed[i];
@@ -592,8 +676,13 @@ static void DrawCharacters(Camera3D camera) {
         if (placed->model < 0 || (SCNCutscene_ShownAt(&g_auth.program, placed->idValue, CurrentFrame(), &shown) && !shown) ||
             !AUTHPose_ProgramTransform(placed, &transform))
             continue;
+        float fade = ProgramFade(placed->idValue);
+        if (fade >= 1.0f)
+            continue;
+        AUTHPose_PosePlaced(placed);
         MT5Render_Model* instanced = &g_auth.models[placed->model].model;
-        g_auth.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0 };
+        g_auth.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0,
+            fade, g_mapChanges.lighting };
     }
     MT5Render_DrawInstances(&g_auth.render, g_auth.instances, count, camera);
 
@@ -692,8 +781,9 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     else
         camera = FreeCamera_Begin3D(&g_auth.camera, view);
 
+    g_mapChanges.lighting = CutsceneLighting();
     if (map)
-        MAPINFOView_DrawMap(camera, IsCutsceneCharacter);
+        MAPINFOView_DrawMap(camera, &g_mapChanges);
     else
         DrawGround();
     if (!g_options.cutsceneCamera) {

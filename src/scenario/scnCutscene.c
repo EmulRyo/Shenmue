@@ -60,6 +60,8 @@ typedef struct {
     struct LoaderCall*  loaders;    // Calls to the functions that load the package of a character
     bool                packagesRead; // At the first call of the run with time
     uint32_t            bankCapacity;
+    uint32_t            fadeCapacity;
+    uint32_t            lightCapacity;
 } Context;
 
 // A call to a function of the program that loads the package of a character (SCNCUTSCENE_PACKAGE until
@@ -448,6 +450,104 @@ static void AddDisplay(Context* c, const SCNCutscene_Display* display) {
     cutscene->displays[cutscene->displayCount++] = *display;
 }
 
+// A call that sets an opacity or shows a MAP model, unless the last call for the same target leaves the same value
+static void AddFade(Context* c, const SCNCutscene_Fade* fade) {
+    SCNCutscene* cutscene = c->cutscene;
+    for (uint32_t i = cutscene->fadeCount; i-- > 0;) {
+        const SCNCutscene_Fade* last = &cutscene->fades[i];
+        if (last->target == fade->target && last->kind == fade->kind) {
+            if (last->value == fade->value)
+                return;
+            break;
+        }
+    }
+    if (cutscene->fadeCount == c->fadeCapacity) {
+        uint32_t capacity = c->fadeCapacity == 0 ? 16 : c->fadeCapacity * 2;
+        SCNCutscene_Fade* fades = realloc(cutscene->fades, capacity * sizeof(SCNCutscene_Fade));
+        if (fades == NULL) {
+            c->ok = false;
+            return;
+        }
+        cutscene->fades = fades;
+        c->fadeCapacity = capacity;
+    }
+    cutscene->fades[cutscene->fadeCount++] = *fade;
+}
+
+// CharacterOpacity, MapModelOpacity (at most 1, as the game keeps it) and MapModelDisplay with known arguments
+static void FadeCall(Context* c, uint32_t frame, const VM_Call* call) {
+    if (call->count < 2 || !Known(call, 0) || !Known(call, 1))
+        return;
+    SCNCutscene_Fade fade = { frame, call->address, SCNCUTSCENE_FADE_CHARACTER, call->values[0], 0.0f };
+    if (call->id == SCNCUTSCENE_MAP_DISPLAY) {
+        if (call->values[1] > 1)
+            return;
+        fade.kind = SCNCUTSCENE_SHOW_MAP_MODEL;
+        fade.value = (float)call->values[1];
+    } else {
+        memcpy(&fade.value, &call->values[1], sizeof(fade.value));
+        if (!isfinite(fade.value))
+            return;
+        fade.value = fminf(fmaxf(fade.value, 0.0f), 1.0f);
+        if (call->id == SCNCUTSCENE_MAP_OPACITY)
+            fade.kind = SCNCUTSCENE_FADE_MAP_MODEL;
+    }
+    AddFade(c, &fade);
+}
+
+// A call that changes the lights, unless the last one of the same function (and light and operation) leaves the same
+// values
+static void AddLight(Context* c, const SCNCutscene_Light* light) {
+    SCNCutscene* cutscene = c->cutscene;
+    for (uint32_t i = cutscene->lightCount; i-- > 0;) {
+        const SCNCutscene_Light* last = &cutscene->lights[i];
+        if (last->function == light->function && (light->function != SCNCUTSCENE_LIGHT ||
+            (last->light == light->light && last->operation == light->operation))) {
+            if (last->light == light->light && last->known == light->known &&
+                memcmp(last->values, light->values, sizeof(light->values)) == 0)
+                return;
+            break;
+        }
+    }
+    if (cutscene->lightCount == c->lightCapacity) {
+        uint32_t capacity = c->lightCapacity == 0 ? 16 : c->lightCapacity * 2;
+        SCNCutscene_Light* lights = realloc(cutscene->lights, capacity * sizeof(SCNCutscene_Light));
+        if (lights == NULL) {
+            c->ok = false;
+            return;
+        }
+        cutscene->lights = lights;
+        c->lightCapacity = capacity;
+    }
+    cutscene->lights[cutscene->lightCount++] = *light;
+}
+
+// LightGroup and LightControl with known arguments, AmbientColor with the values it points to
+static void LightCall(Context* c, uint32_t frame, const VM_Call* call, VM_Memory* memory) {
+    SCNCutscene_Light light = { frame, call->address, (uint32_t)call->id, 0, 0, { 0.0f }, 0 };
+    if (call->id == SCNCUTSCENE_LIGHT_GROUP && call->count >= 1 && Known(call, 0))
+        light.light = call->values[0];
+    else if (call->id == SCNCUTSCENE_LIGHT && call->count >= 3 && Known(call, 0) && Known(call, 1)) {
+        light.light = call->values[0];
+        light.operation = call->values[1];
+        if (Known(call, 2)) {
+            memcpy(&light.values[0], &call->values[2], sizeof(float));
+            light.known = 1;
+        }
+    } else if (call->id == SCNCUTSCENE_AMBIENT && call->count >= 1 && Known(call, 0)) {
+        for (int v = 0; v < 4; v++) {
+            bool known;
+            uint32_t value = ReadWord(memory, call->values[0] + 4 * (uint32_t)v, &known);
+            if (known) {
+                memcpy(&light.values[v], &value, sizeof(float));
+                light.known |= (uint8_t)(1 << v);
+            }
+        }
+    } else
+        return;
+    AddLight(c, &light);
+}
+
 // What the program has set of its characters before the cutscene, kept in the memory of the game of the snapshot: the
 // places and the flags at the frame 0
 static void AddSnapshotCharacters(Context* c, const VM_Snapshot* snapshot) {
@@ -759,6 +859,16 @@ static void OnTimedCall(void* context, uint32_t frame, uint32_t thread, const VM
     case SCNCUTSCENE_SOUND_BANKS:
         BankCall(c, frame, call);
         break;
+    case SCNCUTSCENE_OPACITY:
+    case SCNCUTSCENE_MAP_DISPLAY:
+    case SCNCUTSCENE_MAP_OPACITY:
+        FadeCall(c, frame, call);
+        break;
+    case SCNCUTSCENE_LIGHT_GROUP:
+    case SCNCUTSCENE_LIGHT:
+    case SCNCUTSCENE_AMBIENT:
+        LightCall(c, frame, call, memory);
+        break;
     case SCNCUTSCENE_DISPLAY:
     case SCNCUTSCENE_ACTIVE: {
         int on = SetsDisplay(memory, call);
@@ -779,6 +889,8 @@ static void ClearCalls(SCNCutscene* cutscene) {
     cutscene->placeCount = 0;
     cutscene->displayCount = 0;
     cutscene->attachCount = 0;
+    cutscene->fadeCount = 0;
+    cutscene->lightCount = 0;
 }
 
 // The run of a function that places a character
@@ -990,6 +1102,8 @@ void SCNCutscene_Free(SCNCutscene* cutscene) {
     free(cutscene->displays);
     free(cutscene->attaches);
     free(cutscene->packages);
+    free(cutscene->fades);
+    free(cutscene->lights);
     memset(cutscene, 0, sizeof(*cutscene));
 }
 
@@ -1040,6 +1154,33 @@ bool SCNCutscene_ShownAt(const SCNCutscene* cutscene, uint32_t character, uint32
     }
     if (found)
         *shown = display && active;
+    return found;
+}
+
+bool SCNCutscene_OpacityAt(const SCNCutscene* cutscene, uint32_t character, uint32_t frame, float* opacity) {
+    bool found = false;
+    for (uint32_t i = 0; i < cutscene->fadeCount && cutscene->fades[i].frame <= frame; i++) {
+        const SCNCutscene_Fade* f = &cutscene->fades[i];
+        if (f->kind == SCNCUTSCENE_FADE_CHARACTER && f->target == character) {
+            *opacity = f->value;
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool SCNCutscene_MapModelAt(const SCNCutscene* cutscene, uint32_t slot, uint32_t frame, bool* shown, float* opacity) {
+    bool found = false;
+    for (uint32_t i = 0; i < cutscene->fadeCount && cutscene->fades[i].frame <= frame; i++) {
+        const SCNCutscene_Fade* f = &cutscene->fades[i];
+        if (f->kind == SCNCUTSCENE_FADE_CHARACTER || f->target != slot)
+            continue;
+        if (f->kind == SCNCUTSCENE_SHOW_MAP_MODEL)
+            *shown = f->value != 0.0f;
+        else
+            *opacity = f->value;
+        found = true;
+    }
     return found;
 }
 

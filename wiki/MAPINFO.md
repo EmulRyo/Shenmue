@@ -171,6 +171,8 @@ The functions with a known meaning (*probably*: inferred from the values passed 
 | `0x050` | Cutscene       | 1,465  | 1 to 3 | Plays the cutscene of a slot of the [table of cutscenes](#table-of-cutscenes) (argument 0, 0 to 69). Negative values of argument 0 are other operations: -1 returns the state of the cutscene being played (the programs wait while it isn't 0), -4 and -5 set and clear a flag of it, -6 stops it, -8 returns a flag of the slot of argument 1 and -12 sets it to argument 2 |
 | `0x051` | GameFlags      | 7,554  | 1 to 3 | [Flags of the game](#flags-of-the-game), the operation in argument 0: 11 returns the flag of argument 1 (0 to 1023) and 12 sets it to argument 2; 15 returns the byte of argument 1 (0 to 31) and 16 sets it; 13 and 14 the same for 64 other flags. Other values of argument 0 are other operations |
 | `0x059` | GetDate        | 784    | 1 | Copies the date and the hour of the game to the 7 bytes pointed by argument 0: the year minus 1900 (86 for 1986), the month, the day, the day of the week, the hour, the minute and the second. See [Date, weather and variants of the map](#date-weather-and-variants-of-the-map) |
+| `0x064` | AmbientColor   | 83     | 1 | The ambient color of the lights: copies the 4 floats pointed by argument 0 for the graphics library of the game, in the form of the ambient color of the [LGHT](#lght--lights) chunks (0.3, then red, green and blue; the game replaces the first one by the luminance of the color): the cutscene of `seqdata0.bin` of `scene/02/toki` goes frame after frame from (0.3, 0.17, 0.21, 0.35), blue, to (0.3, 0.21, 0.17, 0.12), brown, from its frame 2501 to 2530 |
+| `0x066` | LightControl   | 965    | 3 | Changes the light of the current group whose ID (`id` of the [LGHT](#lght--lights) light) is argument 0, in a table of lights of 0x44 bytes, with an operation in argument 1 (0 to 11) and a value in argument 2: 0 sets its type (below 5), 2 its color, 4 its intensity, 5 its range, 7 its position and 8 its direction. The light 4 of the group 1 of `scene/02/toki` fades out from 0.97 to 0 with the ambient color |
 | `0x06C` | SoundCommand   | 6,031  | 3 | A command to the sound driver (see [sound commands](#sound-commands)): argument 0 is the command, its operation in the low byte, arguments 1 and 2 a slot of the [sound banks](#sndd--sound-banks) and a value (masked with `0x7F`). `0xA8` plays a music sequence and `0xA9` or `0xAB` an effect sequence, by the ID of their group and their index in it, as the sound IDs of the [AUTH](AUTH#sound-bank) files (e.g. `0x1D04A9`, see [Code run with the cutscenes](#code-run-with-the-cutscenes)); `0xA0` sets the volume of the bank of a slot or fades it out |
 | `0x06D` | PlayVoice      | 14,339 | 1 | *Probably* plays the voice clip named in argument 0 (e.g. `"SY11A006"`) |
 | `0x084` | LoadMotionBank | 258    | 3 | Loads a [motion](MOTN) file `m_*.bin` (argument 2, e.g. `"M_TPIN.BIN"`) from `scene/NN/<folder>`, `NN` being argument 0 and the folder the 4-character ID of argument 1 (`'FREE'`, `'D000'`...); `"M_MOBJ.BIN"` and `"M_MDOR.BIN"` are loaded from `misc` |
@@ -184,12 +186,15 @@ The functions with a known meaning (*probably*: inferred from the values passed 
 | `0x0CA` | VoiceArchive   | 1,312  | 2 | *Probably* opens (argument 0: 1) or closes (0) the archive of voices of argument 1 (e.g. `"E1032"`) |
 | `0x0DD` | LoadHmotFile   | 70     | 3 | Loads a `HMOT_*.BIN` file (argument 2, e.g. `"HMOT_CAN.BIN"`) of the loaded package of argument 1, or else from `scene/NN/<folder>` as LoadMotionBank (e.g. `scene/01/d000/hmot_can.bin`) |
 | `0x0F3` | SoundBanks     | 77     | 8 | The [sound banks](#sndd--sound-banks) of the 8 slots at once, a name per argument (e.g. `"system1.snd"`, `"amb022.snd"`), `"FREE"` to empty a slot, `"SELECT"` for the music chosen by the game and 0 to keep the slot |
+| `0x10F` | LightGroup     | 329    | 1 | Lights the map with the group of lights of argument 0 (0 to 23): the inner chunk of that number of the [LGHT](#lght--lights) chunk, whose ambient color (`0x10`) and lights the game reads (its value at `0x0E` equal to 3 sets a flag of the game). The cutscene of `seqdata0.bin` of `scene/02/toki` switches to the group 1 at its frame 1900, for a vision, and back to the group 0 at 2640 |
 | `0x12C` | DebugMessage   | 361    | 1, 2 | Does nothing in this version: the programs pass it error messages (e.g. `"Don't make BOX Buffer!!\n"`) |
+| `0x13A` | CharacterOpacity | 278 | 2 | The opacity of the character of ID argument 0: the float of argument 1 (1.0 opaque, 0.0 invisible), stored at `0x48` of the character. The programs call it frame after frame to fade characters in and out: in the cutscene of `seqdata0.bin` of `scene/02/toki`, the picture `GAKU`, the doors `DOOR` and `DOR2` and Ryo fade out from the frame 1800 to 1900 and back in from 2521 to 2580, while the stars `HOSI` fade in to 0.8 and the constellations `SEZ1` and `SEZ2` to 0.3 |
 | `0x13C` | Package        | 1,875  | 2 to 5 | The packages ([PKF](PKF)/[PKS](PKS) pairs), in a table of 32 loaded ones, the operation in arguments 0 and 1. `(0, 0, folder, name)` starts loading the package (e.g. `"scene/01/JOMO"`, `"COMMON01"`: the `PKF` or `PKS` extension is added), and returns 0 if it is already loaded; `(0, 2)` returns the state of the loading (the programs wait while it isn't 0); `(0, 5, name)` returns 1 if the package is loaded; `(0, 6, name)` frees it; `(0, 8, afs, entry, entry)` loads the PKF and PKS of two entries of an [AFS](AFS) (`OP99.afs` in `scene/01/op00`). `(2, 2, name)` and `(2, 3, name)` also take a package by name |
 | `0x13E` | SequenceData   | 584    | 2, 4 | Loads a cutscene in a slot of the [table of cutscenes](#table-of-cutscenes) (argument 1, 0 to 69): with argument 0 equal to 0, the [AUTH](AUTH) file named in argument 2 (`"seqdata1.bin"` is `SEQDATA1.AUTH`) of the package of argument 3 (`"D0W0"`: `d0w0.pks` of the folder of the map) |
 | `0x16D` | SoundBank      | 1,372  | 4 | Sound banks in slots: with argument 0 equal to 0, loads the bank of argument 2 (or `"FREE"`, or `"SELECT"`) in the slot of argument 1 |
 | `0x176` | Weather        | 208    | 2, 4 to 7 | The weather of the game ([WEATHER](WEATHER)), the operation in argument 0: 12 returns the `events` of the `FCAS` chunk of the current date with argument 1 equal to 0, whether one of their bits 0 to 3 is set with 2 to 5, and whether the day has no event with 1; 11 returns the low byte of the `FCAS` entry of a date (arguments 1 to 3: year, month, day). The operations 4 to 10 take a date (arguments 1 to 5: year, month, day, hour, minute) and *probably* return values of the curves of the clouds, the rain and the snow (10 returns 3, 2, 1 or 0 from three of them) |
 | `0x193` | LoadingScreen  | 387    | 2 | *Probably* the loading screen (its code uses `LOADNUM.GZ`, `LSCN` and the `sprite` folder): argument 0 equal to 1 shows it, 0 and 2 another operation, with a map ID in argument 1 for 2 |
+| `0x1A3` | MapModelOpacity | 1 | 2 | The opacity of the MAP model of the slot of argument 0 (see `0x098`, MapModelDisplay): the float of argument 1, limited to 1.0, stored at `0x58` of the 0x60 bytes of the slot. Its only call is in `scene/02/toki`, called frame after frame in the cutscene of `seqdata0.bin`: `map.mt5` (slot 0) fades out from the frame 1800 to 1900, MapModelDisplay hides it at 1900 and shows it at 2520, and it fades in from 2521 to 2580 |
 
 The function of `ctx[0x2C]` (`0x0C0BB318`) copies the arguments to the thread and calls `0x0C155DB4` with the ID; that of `ctx[0x30]` (`0x0C0BB32E`) calls `0x0C16110C`.
 
@@ -504,7 +509,7 @@ The [scene program](#functions-of-the-game) shows the cameras with the function 
 
 ## LGHT — Lights
 
-The chunk contains 1 to 17 inner `LGHT` chunks (74 files have one, 26 have two), one after the other. One file (`scene/03/mb9q`) has bytes `0xFF` after its inner chunks, up to the end of the outer chunk. Most of the values of the lights are **half floats** (IEEE 754 binary16).
+The chunk contains 1 to 17 inner `LGHT` chunks (74 files have one, 26 have two), one after the other. Each one is a group of lights: the program of the map chooses the group that lights the map with the game function `0x10F` (LightGroup), by its number, and changes the lights of the group with `0x066` (LightControl) and the ambient color with `0x064` (AmbientColor). One file (`scene/03/mb9q`) has bytes `0xFF` after its inner chunks, up to the end of the outer chunk. Most of the values of the lights are **half floats** (IEEE 754 binary16).
 
 ### Inner LGHT
 
@@ -513,8 +518,8 @@ The chunk contains 1 to 17 inner `LGHT` chunks (74 files have one, 26 have two),
 | 0x00   | 8     | —        | header    | [Chunk header](#chunk-header-8-bytes) (`LGHT`) |
 | 0x08   | 4     | float    | `unknown` | 1.2 or 1.1 |
 | 0x0C   | 2     | uint16   | `count`   | Number of lights |
-| 0x0E   | 2     | uint16   | `unknown` | 1, 2 or 3 |
-| 0x10   | 8     | half[4]  | `unknown` | *Probably* the ambient color (0.3 in most chunks) |
+| 0x0E   | 2     | uint16   | `mode`    | 3 in the 18 groups 0 of the exteriors (`d000`, `jd00`, `jomo`, `ju00`, `mfsy`, `mksg`, `mbqc`...), 2 in the 99 of the other maps (the shops, the houses, but also `jhd0`), 1 in 5 (`op02`, `yd01`, `m3fb`, `ma00`, `msbs`). LightGroup sets a flag of the game when it is 3: *probably* the exteriors are also lit by the hour and the weather |
+| 0x10   | 8     | half[4]  | `ambient` | The ambient color: 0.3, then red, green and blue (0.3 for the 4 values in most chunks). The game replaces the first value by the luminance of the color (0.3 � red + 0.59 � green + 0.11 � blue); `0x064` (AmbientColor) takes the 4 values in the same form |
 | 0x18   | 32×N  | Light[N] | lights    | `count` lights |
 | —      | —     | —        | unused    | In 11 chunks the size is bigger than `0x18 + 32 × count`. The rest is unused: zeros, `0xFF` bytes or leftover lights |
 
@@ -522,13 +527,13 @@ The chunk contains 1 to 17 inner `LGHT` chunks (74 files have one, 26 have two),
 
 | Offset | Size | Type    | Name        | Description |
 |-------:|-----:|---------|-------------|-------------|
-| 0x00   | 2    | uint16  | `id`        | Number of the light |
-| 0x02   | 2    | uint16  | `unknown`   | 1 (2728 lights) or 0 (334) |
-| 0x04   | 2    | uint16  | `flags`     | Unknown: 11 (1680), 3 (1151), 2, 4, 12 or 10 |
+| 0x00   | 2    | uint16  | `id`        | Number of the light: the game keeps the lights of the group by it, and `0x066` (LightControl) changes the light of that number |
+| 0x02   | 2    | uint16  | `on`        | 1 (2728 lights) or 0 (334). *Probably* the light is switched on: the group 1 of `scene/02/toki`, the vision of its cutscene, has the lamps 1, 2, 3 and 16 of the group 0 at 0 and only its blue light 4 at 1 |
+| 0x04   | 2    | uint16  | `flags`     | The type of the light in the low bits (3 in the lamps, 2, 4) and an unknown bit `0x08`: 11 (1680), 3 (1151), 2, 4, 12 or 10. `0x066` operation 0 sets it |
 | 0x06   | 6    | half[3] | `color`     | Red, green and blue, from 0 to 1 |
-| 0x0C   | 2    | half    | `intensity` | *Probably* the intensity: usually 1 (0.5 to 1.3) |
-| 0x0E   | 2    | half    | `unknown`   | Usually 2 to 6 (*probably* a distance) |
-| 0x10   | 2    | half    | `unknown`   | Usually about 0.65 |
+| 0x0C   | 2    | half    | `intensity` | The intensity: usually 1 (0.5 to 1.3). `0x066` operation 4 sets it |
+| 0x0E   | 2    | half    | `range`     | The distance where the light ends: usually 2 to 6. The game keeps it with its square and its inverse |
+| 0x10   | 2    | half    | `full`      | The part of the range that the light lights fully, usually about 0.65 (65% of it); the game keeps it with `1 / (1 - full)`, the slope of the light from there to the range |
 | 0x12   | 6    | half[3] | `position`  | Position X, Y, Z. Y is the height, usually 1 to 4 |
 | 0x18   | 6    | half[3] | `direction` | `(0, -1, 0)` (pointing down) in 2776 of 3062 lights |
 | 0x1E   | 2    | uint16  | `angle`     | Angle in units of 1/65536 of a turn: `0x071C` (10°) in 2922 lights |
@@ -686,7 +691,7 @@ Chunks of 0xC bytes: the header and one 4-byte value.
 
 | Chunk  | Type   | Probable meaning | Description |
 |--------|--------|------------------|-------------|
-| `MAPR` | int32  | number of MAP models | 1 (97 files), -1 (19), 0 (6), or 2 to 22. In the 26 folders with loose `MAP.MT5`, `MAP01.MT5`, `MAP02.MT5`... models and no `mpk*.pkf` packages, *probably* the number of numbered models: equal to it in 17 (0 with only `MAP.MT5`, 11 in `betd`, 22 in `nbik`...), lower in 6 (12 of 13 in `dnoz`, 15 of 17 in `mbqc` and `mc5q`, 0 of 1 in `toki` of `scene/02`), and -1 in `jhd0` (1). -1 in the folders without map models (`yd01`, `op00`, `ms08`...) and in `jomo`. 1 in all the files with `MAPT`. The number of a model is its slot for the function `0x098` of the game (MapModelDisplay), which shows or hides it: see [Date, weather and variants of the map](#date-weather-and-variants-of-the-map) |
+| `MAPR` | int32  | number of MAP models | 1 (97 files), -1 (19), 0 (6), or 2 to 22. In the 26 folders with loose `MAP.MT5`, `MAP01.MT5`, `MAP02.MT5`... models and no `mpk*.pkf` packages, the number of numbered models that the game loads: without the chunks `MAPE` and `MAPT`, the map loader of the game reads `MAPR` (at most 31) and loads `MAP.MT5` in the slot 0 and `MAP01.MT5` to `MAPnn.MT5` in the slots 1 to `nn`, and none with a negative value (`MAPT` makes it load the packages `MPKnn` instead, `MAPR` of them, at least one). It is equal to the number of numbered models in 17 folders (0 with only `MAP.MT5`, 11 in `betd`, 22 in `nbik`...) and lower in 6, whose last models the game never loads: `map13.mt5` of `dnoz` (12), `map08.mt5` of `scene/01/mf99` (7), `map16.mt5` and `map17.mt5` of `mbqc` and `mc5q` (15), and `map01.mt5` of `scene/02/toki` (0), the street in front of the shop, which its cutscenes never show. It is -1 in `jhd0` (1), whose `map.mt5` and `map01.mt5` are *probably* loaded otherwise. -1 in the folders without map models (`yd01`, `op00`, `ms08`...) and in `jomo`. 1 in all the files with `MAPT`. The number of a model is its slot for the function `0x098` of the game (MapModelDisplay), which shows or hides it: see [Date, weather and variants of the map](#date-weather-and-variants-of-the-map) |
 | `MAPT` | int32  | MAP Type | Always 1. Present in 93 of the 96 folders whose map models are in `mpk*.pkf` packages (all but the 3 `jomo`), and in no other |
 | `DIRT` | int32  | DIRecTion | *Probably* a direction in degrees: 0 to 343 (90, 220, 335, 260, 180...). The same in a map of every disc |
 | `SCRL` | int32  | SCRoLl | Unknown: -1 (57 files), 0, 1 or 23 |

@@ -69,10 +69,11 @@ typedef struct {
 // A character that the AUTH file doesn't declare, placed by the program of the map before or while the cutscene plays
 // (SetPosition and SetAngle, e.g. the phone books TBK1 and TBK2 of the cutscene of scene/01/d000/auth.pks, or the
 // vending machine JIHN of scene/01/stream/vend.pkf of its cutscene 22) or attached to a character of the cutscene
-// (Attach, e.g. the can CAN1 and the letter MALS in the hands of Ryo and YKHI in that cutscene): a character of the
-// package that the program loads for it (CAN1 of scene/01/stream/sprt.pkf), of the map, of the package of the cutscene
-// or of a package of the stream folder of the scene, drawn by the cutscene from the first call that places or attaches
-// it while the program doesn't hide it (CharacterDisplay) nor puts it to sleep (CharacterActive)
+// (Attach, e.g. the can CAN1 and the letter MALS in the hands of Ryo and YKHI in that cutscene), or whose nodes it moves
+// (NodeTransform, e.g. the flaps of MALS): a character of the package that the program loads for it (CAN1 of
+// scene/01/stream/sprt.pkf), of the map, of the package of the cutscene or of a package of the stream folder of the
+// scene, drawn by the cutscene from the first call that places or attaches it (from the frame 0 if the program only
+// moves its nodes) while the program doesn't hide it (CharacterDisplay) nor puts it to sleep (CharacterActive)
 typedef struct {
     uint32_t        idValue;
     char            id[5];
@@ -86,7 +87,9 @@ typedef struct {
 
 // What the program of the map does while the cutscene plays (scnCutscene.h), in the tree: the calls that move a node of
 // a character, place a character, show, hide, wake or put to sleep one, or attach or detach one, grouped while they follow each other frame
-// after frame, the sound commands and the sound banks loaded. Those before the cutscene are at its frame 0
+// after frame, the sound commands and the sound banks loaded, and the calls that fade a character or a MAP model (grouped
+// as the nodes) or show or hide a MAP model, and those that change the lights (grouped as the nodes). Those before the
+// cutscene are at its frame 0
 typedef enum {
     PROGRAM_NODE,
     PROGRAM_PLACE,
@@ -94,6 +97,8 @@ typedef enum {
     PROGRAM_ATTACH,
     PROGRAM_SOUND,
     PROGRAM_BANK,
+    PROGRAM_FADE,
+    PROGRAM_LIGHT,
 } ProgramKind;
 
 typedef struct {
@@ -181,7 +186,7 @@ static inline bool HasMovement(const AUTH_Character* character) {
     return character->curves[AUTH_CHARACTER_X].count > 0 || character->curves[AUTH_CHARACTER_Z].count > 0;
 }
 
-// authView.c: with movement, and shown in the tree
+// authView.c: with movement, shown in the tree, and not hidden by the program of the map at the current frame
 bool AUTHView_IsCharacterShown(uint32_t character);
 
 // authMotions.c: the MOTN banks and the motions that the commands play
@@ -200,6 +205,7 @@ Matrix AUTHPose_CharacterTransform(uint32_t index);
 float AUTHPose_CharacterHeight(uint32_t index);
 bool AUTHPose_PlacedDrawn(const AUTHView_Placed* placed, uint32_t frame);
 bool AUTHPose_ProgramTransform(const AUTHView_Placed* placed, Matrix* transform);
+void AUTHPose_PosePlaced(const AUTHView_Placed* placed);
 
 // authProgram.c: what the program of the map does with the cutscene, and its items in the tree
 bool AUTHProgram_Run(int cutscene, const char* file);

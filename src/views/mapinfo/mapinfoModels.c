@@ -193,6 +193,19 @@ Matrix MAPINFOModels_DoorTransform(const MAPINFO_Door* door) {
     return MatrixMultiply(transform, MatrixTranslate(door->position[0], door->position[1], door->position[2]));
 }
 
+// Whether the game loads a MAP model of the folder of the map: without the chunks MAPE (a table of the models) and MAPT
+// (the packages MPKnn), it loads MAP.MT5 in the slot 0 and MAP01.MT5 to MAPnn.MT5 in the slots 1 to nn, nn being the
+// value of the chunk MAPR (at most 31). True if not known: without MAPR, or with a negative MAPR, for which it loads
+// none but the maps have models loaded otherwise (map.mt5 and map01.mt5 of scene/0N/jhd0)
+static bool IsLoadedMapModel(const MapFile* file, int slot) {
+    const MAPINFO_File* mapinfo = &g_map.file;
+    uint32_t count;
+    if (file->package[0] != '\0' || slot < 0 || MAPINFO_FindChunk(mapinfo, "MAPE") != NULL ||
+        MAPINFO_FindChunk(mapinfo, "MAPT") != NULL || !MAPINFO_ChunkValue(mapinfo, "MAPR", &count) || (int32_t)count < 0)
+        return true;
+    return slot <= ((int32_t)count < 31 ? (int32_t)count : 31);
+}
+
 // The instances of the models of the map, of the doors at their placements and of the shown characters in the map. The
 // characters whose model isn't in the map are drawn with the model of the folder of the scene
 static void PlaceModels(const char* folder, const MapFile* files, uint32_t count, int* fileModels, const IPAC_FileList* packed) {
@@ -202,6 +215,7 @@ static void PlaceModels(const char* folder, const MapFile* files, uint32_t count
             snprintf(g_map.mapModelNames[g_map.instanceCount], MAPINFOVIEW_LABEL_SIZE, "%s%s%s", files[i].name,
                 files[i].package[0] != '\0' ? "  " : "", files[i].package);
             g_map.mapModelSlots[g_map.instanceCount] = SCNDisplay_SlotOfFile(files[i].name);
+            g_map.mapModelUnloaded[g_map.instanceCount] = !IsLoadedMapModel(&files[i], g_map.mapModelSlots[g_map.instanceCount]);
             snprintf(g_map.mapModelPackages[g_map.instanceCount], IPAC_FILENAME_SIZE, "%s", files[i].package);
             AddInstance((uint32_t)fileModels[i], MatrixIdentity());
         }
@@ -316,9 +330,10 @@ void MAPINFOModels_Load(const char* folder) {
     g_map.mapModelSlots = calloc(count + 1, sizeof(int));
     g_map.mapModelPackages = calloc(count + 1, sizeof(*g_map.mapModelPackages));
     g_map.mapModelVariants = calloc(count + 1, sizeof(bool));
+    g_map.mapModelUnloaded = calloc(count + 1, sizeof(bool));
     if (fileModels != NULL && g_map.scripts != NULL && g_map.doorErrors != NULL && g_map.doorInstances != NULL &&
         g_map.mapModelNames != NULL && g_map.mapModelSlots != NULL && g_map.mapModelPackages != NULL &&
-        g_map.mapModelVariants != NULL) {
+        g_map.mapModelVariants != NULL && g_map.mapModelUnloaded != NULL) {
         for (uint32_t i = 0; i < count; i++)
             fileModels[i] = -1;
 
@@ -327,6 +342,7 @@ void MAPINFOModels_Load(const char* folder) {
         g_map.models = calloc(count + g_map.characterCount + 1, sizeof(MT5Render_Model));
         g_map.instances = calloc(count + file->doorCount + g_map.characterCount + 1, sizeof(MT5Render_Instance));
         g_map.visibleInstances = calloc(count + file->doorCount + g_map.characterCount + 1, sizeof(MT5Render_Instance));
+        g_map.renderLights = calloc(file->lightCount + 1, sizeof(MT5Render_Light));
         if (g_map.models != NULL && g_map.instances != NULL && g_map.visibleInstances != NULL)
             PlaceModels(folder, files, count, fileModels, &mapFiles.packed);
     }

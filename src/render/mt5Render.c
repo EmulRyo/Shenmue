@@ -20,7 +20,7 @@ typedef struct {
     uint32_t    index;  // Of the triangle or the instance
 } MT5Render_SortEntry;
 
-// Default raylib attributes; lit from the camera, with both faces lit for when the back faces are drawn
+// Default raylib attributes, and the position in the scene for the lights
 static const char* g_vertexShader =
     "#version 330\n"
     "in vec3 vertexPosition;\n"
@@ -28,41 +28,75 @@ static const char* g_vertexShader =
     "in vec3 vertexNormal;\n"
     "in vec4 vertexColor;\n"
     "uniform mat4 mvp;\n"
+    "uniform mat4 matModel;\n"
     "uniform mat4 matNormal;\n"
     "out vec2 fragTexCoord;\n"
     "out vec3 fragNormal;\n"
     "out vec4 fragColor;\n"
+    "out vec3 fragPosition;\n"
     "void main() {\n"
     "    fragTexCoord = vertexTexCoord;\n"
     "    fragNormal = (matNormal * vec4(vertexNormal, 0.0)).xyz;\n"
     "    fragColor = vertexColor;\n"
+    "    fragPosition = (matModel * vec4(vertexPosition, 1.0)).xyz;\n"
     "    gl_Position = mvp * vec4(vertexPosition, 1.0);\n"
     "}\n";
 
 // mode: 0 opaque (alpha ignored), 1 punch-through (alpha test), 2 opaque pixels of translucent polygons, 3 the rest of
-// the pixels of translucent polygons (alpha blending), see MT5Render_DrawOpaque and MT5Render_DrawTranslucent
+// the pixels of translucent polygons (alpha blending), see MT5Render_DrawOpaque and MT5Render_DrawTranslucent; and for
+// a faded instance (MT5Render_Instance.fade), with the opacity of the instance: 4 opaque, 5 punch-through, 6 translucent.
+// Lit from the camera, with both faces lit for when the back faces are drawn; or, for an instance with lights (lit), by
+// the ambient color and the point lights, the light of each one decreasing from its full range to its range
 static const char* g_fragmentShader =
     "#version 330\n"
+    "#define LIGHTS 8\n"
     "in vec2 fragTexCoord;\n"
     "in vec3 fragNormal;\n"
     "in vec4 fragColor;\n"
+    "in vec3 fragPosition;\n"
     "uniform sampler2D texture0;\n"
     "uniform vec4 colDiffuse;\n"
     "uniform vec3 lightDir;\n"
     "uniform int mode;\n"
+    "uniform float opacity;\n"
+    "uniform int lit;\n"
+    "uniform vec3 ambient;\n"
+    "uniform int lightCount;\n"
+    "uniform vec3 lightPosition[LIGHTS];\n"
+    "uniform vec3 lightColor[LIGHTS];\n"
+    "uniform vec2 lightRange[LIGHTS];\n"
     "out vec4 finalColor;\n"
     "void main() {\n"
     "    vec4 color = texture(texture0, fragTexCoord) * fragColor * colDiffuse;\n"
     "    if ((mode == 1 && color.a < 0.5) || (mode == 2 && color.a < 0.99) ||\n"
-    "        (mode == 3 && (color.a >= 0.99 || color.a < 0.004))) discard;\n"
-    "    float light = 0.45 + 0.55 * abs(dot(normalize(fragNormal), lightDir));\n"
-    "    finalColor = vec4(color.rgb * light, mode == 0 ? 1.0 : color.a);\n"
+    "        (mode == 3 && (color.a >= 0.99 || color.a < 0.004)) || (mode == 5 && color.a < 0.5) ||\n"
+    "        (mode == 6 && color.a < 0.004)) discard;\n"
+    "    vec3 normal = normalize(fragNormal);\n"
+    "    vec3 light = vec3(0.45 + 0.55 * abs(dot(normal, lightDir)));\n"
+    "    if (lit == 1) {\n"
+    "        light = ambient;\n"
+    "        for (int i = 0; i < lightCount; i++) {\n"
+    "            vec3 toLight = lightPosition[i] - fragPosition;\n"
+    "            float distance = length(toLight);\n"
+    "            float reach = clamp((lightRange[i].y - distance) / max(lightRange[i].y - lightRange[i].x, 0.001), 0.0, 1.0);\n"
+    "            light += lightColor[i] * reach * max(dot(normal, toLight / max(distance, 0.001)), 0.0);\n"
+    "        }\n"
+    "    }\n"
+    "    float alpha = mode == 0 ? 1.0 : mode == 4 || mode == 5 ? opacity : mode == 6 ? color.a * opacity : color.a;\n"
+    "    finalColor = vec4(color.rgb * light, alpha);\n"
     "}\n";
 
 void MT5Render_Init(MT5Render* render) {
     render->shader = LoadShaderFromMemory(g_vertexShader, g_fragmentShader);
     render->lightDirLoc = GetShaderLocation(render->shader, "lightDir");
     render->modeLoc = GetShaderLocation(render->shader, "mode");
+    render->opacityLoc = GetShaderLocation(render->shader, "opacity");
+    render->litLoc = GetShaderLocation(render->shader, "lit");
+    render->ambientLoc = GetShaderLocation(render->shader, "ambient");
+    render->lightCountLoc = GetShaderLocation(render->shader, "lightCount");
+    render->lightPositionLoc = GetShaderLocation(render->shader, "lightPosition");
+    render->lightColorLoc = GetShaderLocation(render->shader, "lightColor");
+    render->lightRangeLoc = GetShaderLocation(render->shader, "lightRange");
     render->material = LoadMaterialDefault();
     render->material.shader = render->shader;
 }
@@ -379,7 +413,9 @@ void MT5Render_DrawOpaque(MT5Render* render, const MT5Render_Model* model, Matri
     }
 }
 
-void MT5Render_DrawTranslucent(MT5Render* render, MT5Render_Model* model, Matrix transform, uint32_t frame, Camera3D camera) {
+// The translucent groups from back to front, in a mode
+static void DrawSortedTranslucent(MT5Render* render, MT5Render_Model* model, Matrix transform, uint32_t frame, Camera3D camera,
+    int mode) {
     SortTranslucent(model, transform, camera);
     rlDisableDepthMask();
 
@@ -400,11 +436,73 @@ void MT5Render_DrawTranslucent(MT5Render* render, MT5Render_Model* model, Matrix
         }
         if (next == UINT32_MAX)
             break;
-        DrawGroup(render, model, &mesh->groups[next], 3, transform, frame);
+        DrawGroup(render, model, &mesh->groups[next], mode, transform, frame);
         lastDepth = mesh->groups[next].depth;
         lastGroup = next;
     }
     rlEnableDepthMask();
+}
+
+void MT5Render_DrawTranslucent(MT5Render* render, MT5Render_Model* model, Matrix transform, uint32_t frame, Camera3D camera) {
+    DrawSortedTranslucent(render, model, transform, frame, camera, 3);
+}
+
+// A faded instance, blended over what is drawn without writing the depth: its opaque and punch-through groups, then its
+// translucent ones from back to front
+static void DrawFaded(MT5Render* render, const MT5Render_Instance* instance, Camera3D camera) {
+    float opacity = 1.0f - instance->fade;
+    SetShaderValue(render->shader, render->opacityLoc, &opacity, SHADER_UNIFORM_FLOAT);
+    const MT5Mesh* mesh = &instance->model->mesh;
+    rlDisableDepthMask();
+    for (uint32_t i = 0; i < mesh->groupCount; i++) {
+        if (mesh->groups[i].listType != MT5_LIST_TRANSLUCENT)
+            DrawGroup(render, instance->model, &mesh->groups[i], mesh->groups[i].listType == MT5_LIST_PUNCH_THROUGH ? 5 : 4,
+                instance->transform, instance->frame);
+    }
+    rlEnableDepthMask();
+    DrawSortedTranslucent(render, instance->model, instance->transform, instance->frame, camera, 6);
+}
+
+// The lights of an instance, or from the camera: of its lights, the MT5RENDER_LIGHTS nearest ones whose range reaches its
+// bounding sphere
+static void SetLighting(MT5Render* render, const MT5Render_Instance* instance) {
+    int lit = instance->lighting != NULL ? 1 : 0;
+    SetShaderValue(render->shader, render->litLoc, &lit, SHADER_UNIFORM_INT);
+    if (!lit)
+        return;
+    const MT5Render_Lighting* lighting = instance->lighting;
+    float radius = instance->model->mesh.radius;
+    const MT5Render_Light* nearest[MT5RENDER_LIGHTS];
+    float distances[MT5RENDER_LIGHTS];
+    int count = 0;
+    for (uint32_t i = 0; i < lighting->lightCount; i++) {
+        const MT5Render_Light* light = &lighting->lights[i];
+        float distance = Vector3Distance(instance->center, (Vector3) { light->position[0], light->position[1], light->position[2] });
+        if (distance > light->range + radius || (count == MT5RENDER_LIGHTS && distance >= distances[count - 1]))
+            continue;
+        // Inserted in the order of the distances
+        int j = count < MT5RENDER_LIGHTS ? count++ : count - 1;
+        for (; j > 0 && distances[j - 1] > distance; j--) {
+            nearest[j] = nearest[j - 1];
+            distances[j] = distances[j - 1];
+        }
+        nearest[j] = light;
+        distances[j] = distance;
+    }
+    Vector3 positions[MT5RENDER_LIGHTS], colors[MT5RENDER_LIGHTS];
+    Vector2 ranges[MT5RENDER_LIGHTS];
+    for (int i = 0; i < count; i++) {
+        positions[i] = (Vector3) { nearest[i]->position[0], nearest[i]->position[1], nearest[i]->position[2] };
+        colors[i] = Vector3Scale((Vector3) { nearest[i]->color[0], nearest[i]->color[1], nearest[i]->color[2] }, nearest[i]->intensity);
+        ranges[i] = (Vector2) { nearest[i]->fullRange, nearest[i]->range };
+    }
+    SetShaderValue(render->shader, render->ambientLoc, lighting->ambient, SHADER_UNIFORM_VEC3);
+    SetShaderValue(render->shader, render->lightCountLoc, &count, SHADER_UNIFORM_INT);
+    if (count > 0) {
+        SetShaderValueV(render->shader, render->lightPositionLoc, positions, SHADER_UNIFORM_VEC3, count);
+        SetShaderValueV(render->shader, render->lightColorLoc, colors, SHADER_UNIFORM_VEC3, count);
+        SetShaderValueV(render->shader, render->lightRangeLoc, ranges, SHADER_UNIFORM_VEC2, count);
+    }
 }
 
 void MT5Render_DrawInstances(MT5Render* render, const MT5Render_Instance* instances, uint32_t count, Camera3D camera) {
@@ -413,13 +511,25 @@ void MT5Render_DrawInstances(MT5Render* render, const MT5Render_Instance* instan
         return;
     MT5Render_SetCamera(render, camera);
     for (uint32_t i = 0; i < count; i++) {
-        MT5Render_DrawOpaque(render, instances[i].model, instances[i].transform, instances[i].frame);
+        if (instances[i].fade <= 0.0f) {
+            SetLighting(render, &instances[i]);
+            MT5Render_DrawOpaque(render, instances[i].model, instances[i].transform, instances[i].frame);
+        }
         order[i] = (MT5Render_SortEntry) { Vector3DistanceSqr(instances[i].center, camera.position), i };
     }
     qsort(order, count, sizeof(MT5Render_SortEntry), CompareDepth);
     for (uint32_t i = 0; i < count; i++) {
         const MT5Render_Instance* instance = &instances[order[i].index];
-        MT5Render_DrawTranslucent(render, instance->model, instance->transform, instance->frame, camera);
+        if (instance->fade >= 1.0f)
+            continue;
+        SetLighting(render, instance);
+        if (instance->fade > 0.0f)
+            DrawFaded(render, instance, camera);
+        else
+            MT5Render_DrawTranslucent(render, instance->model, instance->transform, instance->frame, camera);
     }
+    // The models drawn after these are lit from the camera
+    int lit = 0;
+    SetShaderValue(render->shader, render->litLoc, &lit, SHADER_UNIFORM_INT);
     free(order);
 }

@@ -338,17 +338,20 @@ static bool IsDeclared(uint32_t idValue) {
     return false;
 }
 
-// The characters placed or attached by the program that the AUTH file doesn't declare, with their model and the
-// position and angle of their script
+// The characters placed or attached by the program that the AUTH file doesn't declare, or whose nodes it moves, with
+// their model and the position and angle of their script
 bool AUTHModels_LoadPlaced(void) {
     const SCNCutscene* program = &g_auth.program;
-    if (program->placeCount + program->attachCount == 0)
+    uint32_t calls = program->placeCount + program->attachCount + program->nodeCount;
+    if (calls == 0)
         return true;
-    g_auth.placed = calloc(program->placeCount + program->attachCount, sizeof(AUTHView_Placed));
+    g_auth.placed = calloc(calls, sizeof(AUTHView_Placed));
     if (g_auth.placed == NULL)
         return false;
-    for (uint32_t i = 0; i < program->placeCount + program->attachCount; i++) {
-        uint32_t idValue = i < program->placeCount ? program->places[i].character : program->attaches[i - program->placeCount].character;
+    for (uint32_t i = 0; i < calls; i++) {
+        uint32_t idValue = i < program->placeCount ? program->places[i].character :
+            i < program->placeCount + program->attachCount ? program->attaches[i - program->placeCount].character :
+            program->nodes[i - program->placeCount - program->attachCount].character;
         bool known = IsDeclared(idValue);
         for (uint32_t p = 0; p < g_auth.placedCount && !known; p++)
             known = g_auth.placed[p].idValue == idValue;

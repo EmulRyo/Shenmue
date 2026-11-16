@@ -140,6 +140,8 @@ typedef struct {
                                         // MAP.MT5, n for MAPnn.MT5), -1 if none
     char                (*mapModelPackages)[IPAC_FILENAME_SIZE]; // Package of each model of the map, empty if none
     bool*               mapModelVariants; // The program loads the package of the model: a variant of the map
+    bool*               mapModelUnloaded; // The game doesn't load the model: MAPnn.MT5 with nn above the MAPR chunk (0+)
+                                        // (e.g. map01.mt5 of scene/02/toki, whose MAPR is 0), hidden in the tree
     bool                hasDate;        // The program can be emulated at a date (mapDate.h)
     uint32_t            instanceCount;
     MT5Render_Instance* instances;      // Each model of the map (mapModelCount), then each door with its model
@@ -148,6 +150,8 @@ typedef struct {
     uint32_t            loadedDoors;    // Doors with their model
     uint32_t            characterInstances;
     MT5Render_Instance* visibleInstances; // The instances drawn, filled before drawing them
+    MT5Render_Light*    renderLights;   // The lights of the group 0 for the characters, filled before drawing them
+    MT5Render_Lighting  lighting;
     int32_t*            doorInstances;  // Instance of each door, -1 if its model couldn't be loaded
     const char**        doorErrors;     // Why the model of each door couldn't be loaded, NULL if it was
     MAPINFO_Door*       originalDoors;  // The doors and the lights as read from the file, to restore the edits
@@ -178,6 +182,7 @@ typedef struct {
     bool                layers[LAYER_COUNT];    // Visible
     bool                expanded[LAYER_COUNT];  // In the tree
     bool                labels;
+    bool                lights;                 // The characters are lit by the lights of the group 0 of the LGHT chunk
     bool                fly;
     bool                date;                   // The models of the map are those that the program shows at the date
     bool                dateSet;                // The date is set (at the first map with weather)

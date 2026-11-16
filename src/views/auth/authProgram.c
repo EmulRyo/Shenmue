@@ -43,10 +43,58 @@ static const char* SoundText(uint32_t index) {
     return TextFormat("Sound 0x%08X", sound->command);
 }
 
+// The target of a call that fades a character or a MAP model, or shows or hides a MAP model
+static const char* FadeTarget(const SCNCutscene_Fade* fade) {
+    return fade->kind == SCNCUTSCENE_FADE_CHARACTER ? IDText(fade->target) : TextFormat("map model %u", fade->target);
+}
+
+// The label of the calls of an item that fade a character or a MAP model: the opacity of the first one and of the last
+static const char* FadeText(const AUTHView_ProgramItem* item) {
+    const SCNCutscene_Fade* first = &g_auth.program.fades[item->first];
+    const SCNCutscene_Fade* last = &g_auth.program.fades[item->last];
+    if (first->kind == SCNCUTSCENE_SHOW_MAP_MODEL)
+        return TextFormat("%s %s", first->value != 0.0f ? "Show" : "Hide", FadeTarget(first));
+    if (item->count > 1)
+        return TextFormat("Opacity %s %.2g-%.2g", FadeTarget(first), first->value, last->value);
+    return TextFormat("Opacity %s %.2g", FadeTarget(first), first->value);
+}
+
+// The values of a call that changes the lights, into text: the value of LightControl, the 4 values of AmbientColor
+static void LightValues(const SCNCutscene_Light* light, char* text, size_t size) {
+    int length = 0;
+    for (int v = 0; v < (light->function == SCNCUTSCENE_AMBIENT ? 4 : 1) && length < (int)size; v++) {
+        length += (light->known & (1 << v)) ? snprintf(text + length, size - length, "%s%.2f", v > 0 ? ", " : "", light->values[v]) :
+            snprintf(text + length, size - length, "%s?", v > 0 ? ", " : "");
+    }
+}
+
+// The label of the calls of an item that change the lights (in its own buffer: the label of the frames is a TextFormat)
+static const char* LightText(const AUTHView_ProgramItem* item) {
+    static char text[AUTHVIEW_LABEL_SIZE];
+    const SCNCutscene_Light* first = &g_auth.program.lights[item->first];
+    const SCNCutscene_Light* last = &g_auth.program.lights[item->last];
+    char what[32], values[2][48];
+    if (first->function == SCNCUTSCENE_LIGHT_GROUP) {
+        snprintf(text, sizeof(text), "Light group %u", first->light);
+        return text;
+    }
+    if (first->function == SCNCUTSCENE_AMBIENT)
+        snprintf(what, sizeof(what), "Ambient color");
+    else
+        snprintf(what, sizeof(what), "Light %u operation %u", first->light, first->operation);
+    LightValues(first, values[0], sizeof(values[0]));
+    LightValues(last, values[1], sizeof(values[1]));
+    if (item->count > 1)
+        snprintf(text, sizeof(text), "%s %s to %s", what, values[0], values[1]);
+    else
+        snprintf(text, sizeof(text), "%s %s", what, values[0]);
+    return text;
+}
+
 static bool CreateProgramItems(void) {
     const SCNCutscene* program = &g_auth.program;
     uint32_t capacity = program->nodeCount + program->placeCount + program->displayCount + program->attachCount +
-        program->soundCount + program->bankCount;
+        program->soundCount + program->bankCount + program->fadeCount + program->lightCount;
     if (capacity == 0)
         return true;
     g_auth.programItems = malloc(capacity * sizeof(AUTHView_ProgramItem));
@@ -90,6 +138,42 @@ static bool CreateProgramItems(void) {
         item->lastFrame = place->frame;
         item->count++;
     }
+    for (uint32_t i = 0; i < program->fadeCount; i++) {
+        const SCNCutscene_Fade* fade = &program->fades[i];
+        AUTHView_ProgramItem* item = NULL;
+        for (uint32_t j = count; j-- > 0 && item == NULL && fade->kind != SCNCUTSCENE_SHOW_MAP_MODEL;) {
+            AUTHView_ProgramItem* other = &g_auth.programItems[j];
+            const SCNCutscene_Fade* last = &program->fades[other->last];
+            if (other->kind == PROGRAM_FADE && last->kind == fade->kind && last->target == fade->target &&
+                fade->frame <= other->lastFrame + 1)
+                item = other;
+        }
+        if (item == NULL) {
+            item = &g_auth.programItems[count++];
+            *item = (AUTHView_ProgramItem) { PROGRAM_FADE, i, i, 0, fade->frame, fade->frame };
+        }
+        item->last = i;
+        item->lastFrame = fade->frame;
+        item->count++;
+    }
+    for (uint32_t i = 0; i < program->lightCount; i++) {
+        const SCNCutscene_Light* light = &program->lights[i];
+        AUTHView_ProgramItem* item = NULL;
+        for (uint32_t j = count; j-- > 0 && item == NULL && light->function != SCNCUTSCENE_LIGHT_GROUP;) {
+            AUTHView_ProgramItem* other = &g_auth.programItems[j];
+            const SCNCutscene_Light* last = &program->lights[other->last];
+            if (other->kind == PROGRAM_LIGHT && last->function == light->function && last->light == light->light &&
+                last->operation == light->operation && light->frame <= other->lastFrame + 1)
+                item = other;
+        }
+        if (item == NULL) {
+            item = &g_auth.programItems[count++];
+            *item = (AUTHView_ProgramItem) { PROGRAM_LIGHT, i, i, 0, light->frame, light->frame };
+        }
+        item->last = i;
+        item->lastFrame = light->frame;
+        item->count++;
+    }
     for (uint32_t i = 0; i < program->displayCount; i++)
         g_auth.programItems[count++] = (AUTHView_ProgramItem) { PROGRAM_DISPLAY, i, i, 1, program->displays[i].frame,
             program->displays[i].frame };
@@ -114,6 +198,10 @@ static bool CreateProgramItems(void) {
         else if (item->kind == PROGRAM_BANK)
             snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  Bank %u %s", frames, program->banks[item->first].slot,
                 program->banks[item->first].name);
+        else if (item->kind == PROGRAM_FADE)
+            snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  %s", frames, FadeText(item));
+        else if (item->kind == PROGRAM_LIGHT)
+            snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  %s", frames, LightText(item));
         else if (item->kind == PROGRAM_DISPLAY) {
             const SCNCutscene_Display* display = &program->displays[item->first];
             snprintf(label, AUTHVIEW_LABEL_SIZE, "%5s  %s %s", frames, display->active ? (display->on ? "Wake" : "Sleep") :
@@ -255,6 +343,49 @@ void AUTHProgram_Properties(Properties* properties, uint32_t index) {
         Properties_Int(properties, "Slot", (int)bank->slot);
         Properties_Text(properties, "Bank", bank->name);
         Properties_Hex(properties, "Address", bank->address);
+    } else if (item->kind == PROGRAM_LIGHT) {
+        const SCNCutscene_Light* first = &program->lights[item->first];
+        const SCNCutscene_Light* last = &program->lights[item->last];
+        if (first->function == SCNCUTSCENE_LIGHT_GROUP) {
+            Properties_Text(properties, "Function", TextFormat("LightGroup (0x%03X)", SCNCUTSCENE_LIGHT_GROUP));
+            Properties_Int(properties, "Group", (int)first->light);
+        } else {
+            bool ambient = first->function == SCNCUTSCENE_AMBIENT;
+            Properties_Text(properties, "Function", ambient ? TextFormat("AmbientColor (0x%03X)", SCNCUTSCENE_AMBIENT) :
+                TextFormat("LightControl (0x%03X)", SCNCUTSCENE_LIGHT));
+            if (!ambient) {
+                Properties_Int(properties, "Light", (int)first->light);
+                Properties_Int(properties, "Operation", (int)first->operation);
+            }
+            char values[48];
+            LightValues(first, values, sizeof(values));
+            Properties_Text(properties, "First", values);
+            if (item->count > 1) {
+                LightValues(last, values, sizeof(values));
+                Properties_Text(properties, "Last", values);
+            }
+        }
+        Properties_Hex(properties, "Address", first->address);
+    } else if (item->kind == PROGRAM_FADE) {
+        const SCNCutscene_Fade* first = &program->fades[item->first];
+        const SCNCutscene_Fade* last = &program->fades[item->last];
+        if (first->kind == SCNCUTSCENE_SHOW_MAP_MODEL) {
+            Properties_Text(properties, "Function", TextFormat("MapModelDisplay (0x%03X)", SCNCUTSCENE_MAP_DISPLAY));
+            Properties_Int(properties, "Slot", (int)first->target);
+            Properties_Text(properties, "Value", first->value != 0.0f ? "shown" : "hidden");
+        } else {
+            bool character = first->kind == SCNCUTSCENE_FADE_CHARACTER;
+            Properties_Text(properties, "Function", character ? TextFormat("CharacterOpacity (0x%03X)", SCNCUTSCENE_OPACITY) :
+                TextFormat("MapModelOpacity (0x%03X)", SCNCUTSCENE_MAP_OPACITY));
+            if (character)
+                Properties_Text(properties, "Character", GameDB_CharacterDisplay(IDText(first->target)));
+            else
+                Properties_Int(properties, "Slot", (int)first->target);
+            Properties_Text(properties, "First", TextFormat("%g", first->value));
+            if (item->count > 1)
+                Properties_Text(properties, "Last", TextFormat("%g", last->value));
+        }
+        Properties_Hex(properties, "Address", first->address);
     } else if (item->kind == PROGRAM_DISPLAY) {
         const SCNCutscene_Display* display = &program->displays[item->first];
         Properties_Text(properties, "Function", display->active ? TextFormat("CharacterActive (0x%03X)", SCNCUTSCENE_ACTIVE) :
