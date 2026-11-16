@@ -128,6 +128,14 @@ const char* MAPINFODate_SkyFile(void) {
     }
 }
 
+// The fog and the light that the weather module sets in the map at the date, if it sets some (g_map.sky.air)
+bool MAPINFODate_Air(SCNSky_Air* air) {
+    if ((g_map.sky.air & (SCNSKY_AIR_FOG | SCNSKY_AIR_LIGHT)) == 0)
+        return false;
+    SCNSky_AirAt(MapDate_Weather(), &g_mapOptions.gameDate, air);
+    return true;
+}
+
 // e.g. "SCROLL64.SPR (rain or snowfall), chosen by the hour and the weather"
 const char* MAPINFODate_SkyText(void) {
     switch (g_map.sky.source) {
@@ -210,6 +218,17 @@ void MAPINFODate_Properties(Properties* properties) {
     }
     if (g_map.sky.source == SCNSKY_WEATHER)
         Properties_Text(properties, "Sky", MAPINFODate_SkyText());
+    SCNSky_Air air;
+    if (MAPINFODate_Air(&air)) {
+        Properties_Text(properties, "Tables of the hours", TextFormat("clear %.0f%%, clouds %.0f%%, rain %.0f%%, snowfall %.0f%%",
+            air.weights[SCNSKY_TABLE_CLEAR] * 100.0f, air.weights[SCNSKY_TABLE_CLOUDS] * 100.0f,
+            air.weights[SCNSKY_TABLE_RAIN] * 100.0f, air.weights[SCNSKY_TABLE_SNOW] * 100.0f));
+        if (g_map.sky.air & SCNSKY_AIR_FOG)
+            Properties_Text(properties, "Fog", TextFormat("%.1f to %.0f, density %.2f, #%06X", air.fog.nearDistance,
+                air.fog.farDistance, air.fog.density, air.fog.color));
+        if (g_map.sky.air & SCNSKY_AIR_LIGHT)
+            Properties_Text(properties, "Light", TextFormat("ambient %.2f, light 0 %.2f", air.ambient, air.intensity));
+    }
     const SCNDisplay* display = g_map.hasDate ? MapDate_Display() : NULL;
     if (!MapDate_Current())
         Properties_Text(properties, "Program", MapDate_Busy() ? "emulating..." : "not emulated");

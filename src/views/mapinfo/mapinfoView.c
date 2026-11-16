@@ -429,7 +429,8 @@ void MAPINFOView_Toolbar(void) {
     if (g_map.sky.source == SCNSKY_NONE)
         GuiDisable();
     Toolbar_Toggle(ICON_FILETYPE_IMAGE, "Sky", "Draw the sky of the map behind it (SCROLLnn.SPR of the sprite folder): the one of its "
-        "SCRL chunk or of its program, or the one that the game chooses by the hour and the weather of the date", KEY_Y,
+        "SCRL chunk or of its program, or the one that the game chooses by the hour and the weather of the date. With it, the "
+        "fog and the light that the game sets by the hour and the weather in the maps whose program lets it", KEY_Y,
         &g_mapOptions.sky);
     GuiEnable();
     Toolbar_Separator();
@@ -507,10 +508,24 @@ static void DrawModels(Camera3D camera, const MAPINFOView_Changes* changes) {
         if (g_map.doorInstances[i] >= 0 && MAPINFOView_IsItemVisible(ITEM_DOOR, i))
             g_map.visibleInstances[count++] = g_map.instances[g_map.doorInstances[i]];
     }
-    // The characters lit by the lights of the other view, or of the map
+    // The fog and the light of the weather module, with the sky
+    SCNSky_Air air = { 0 };
+    bool hasAir = g_mapOptions.sky && MAPINFODate_Air(&air);
+    MT5Render_Fog fog = { hasAir && (g_map.sky.air & SCNSKY_AIR_FOG), air.fog.nearDistance, air.fog.farDistance, air.fog.density,
+        { ((air.fog.color >> 16) & 0xFF) / 255.0f, ((air.fog.color >> 8) & 0xFF) / 255.0f, (air.fog.color & 0xFF) / 255.0f } };
+    MT5Render_SetFog(&g_map.render, &fog);
+    // The characters lit by the lights of the other view, by the weather module (its ambient light and the intensity of
+    // its light 0, shown with the direction and the color of its tables, which the game doesn't set), or by the map
     const MT5Render_Lighting* lighting = NULL;
     if (changes != NULL)
         lighting = changes->lighting;
+    else if (g_mapOptions.lights && hasAir && (g_map.sky.air & SCNSKY_AIR_LIGHT)) {
+        MT5Render_Lighting* airLighting = &g_map.airLighting;
+        Vector3 direction = Vector3Normalize((Vector3) { air.direction[0], air.direction[1], -air.direction[2] });
+        *airLighting = (MT5Render_Lighting) { { air.ambient, air.ambient, air.ambient }, 0, NULL, { direction.x, direction.y, direction.z },
+            { air.light[0] * air.intensity, air.light[1] * air.intensity, air.light[2] * air.intensity } };
+        lighting = airLighting;
+    }
     else if (g_mapOptions.lights && g_map.renderLights != NULL && !MAPINFOView_IsOutdoorGroup(0)) {
         g_map.lighting.lightCount = MAPINFOView_GroupLights(0, g_map.lighting.ambient, g_map.renderLights, NULL, g_map.file.lightCount);
         g_map.lighting.lights = g_map.renderLights;

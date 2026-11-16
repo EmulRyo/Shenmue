@@ -70,7 +70,7 @@ The keys are in order, but for 2 keys of `CLUD` (30 December 1986 and 18 January
 | `RAIN` | 344      | 298    | 323      | 64    |
 | `SNOW` | 162      | 153    | 85       | 37    |
 
-The weather module of the game reads the three curves at the date and the hour of the game to choose the [sky](MAPINFO#sky) of the maps that let it (Dobuita, Sakuragaoka, the Hazuki house...): rain or snowfall of 0.1 or more (26/255) give a sky of grey clouds, clouds above 0.25 (64/255) an overcast sky, and otherwise the sky of the hour. It also mixes its tables of the light and the fog of the hours by them.
+The weather module of the game reads the three curves at the date and the hour of the game to choose the [sky](MAPINFO#sky) of the maps that let it (Dobuita, Sakuragaoka, the Hazuki house...): rain or snowfall of 0.1 or more (26/255) give a sky of grey clouds, clouds above 0.25 (64/255) an overcast sky, and otherwise the sky of the hour. It also mixes its tables of the light and the fog of the hours by them: each curve counts three times its intensity, and by day the rain or the snowfall replace the clouds (see [the sky](MAPINFO#sky)).
 
 ## FCAS — events of the days
 

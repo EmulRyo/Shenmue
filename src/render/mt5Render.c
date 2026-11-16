@@ -46,7 +46,10 @@ static const char* g_vertexShader =
 // the pixels of translucent polygons (alpha blending), see MT5Render_DrawOpaque and MT5Render_DrawTranslucent; and for
 // a faded instance (MT5Render_Instance.fade), with the opacity of the instance: 4 opaque, 5 punch-through, 6 translucent.
 // Lit from the camera, with both faces lit for when the back faces are drawn; or, for an instance with lights (lit), by
-// the ambient color and the point lights, the light of each one decreasing from its full range to its range
+// the ambient color, a directional light and the point lights, the light of each one decreasing from its full range to
+// its range. Then the fog, by the depth from the camera (fog: start, end and density, 0 for none): as the fog table of
+// the PowerVR that the game fills, indexed by the logarithm of the depth, it goes linearly with the logarithm of the
+// depth from the start to the end, times the density, at most 1
 static const char* g_fragmentShader =
     "#version 330\n"
     "#define LIGHTS 8\n"
@@ -65,6 +68,12 @@ static const char* g_fragmentShader =
     "uniform vec3 lightPosition[LIGHTS];\n"
     "uniform vec3 lightColor[LIGHTS];\n"
     "uniform vec2 lightRange[LIGHTS];\n"
+    "uniform vec3 sunDirection;\n"
+    "uniform vec3 sunColor;\n"
+    "uniform vec3 eye;\n"
+    "uniform vec3 forward;\n"
+    "uniform vec3 fog;\n"
+    "uniform vec3 fogColor;\n"
     "out vec4 finalColor;\n"
     "void main() {\n"
     "    vec4 color = texture(texture0, fragTexCoord) * fragColor * colDiffuse;\n"
@@ -74,7 +83,7 @@ static const char* g_fragmentShader =
     "    vec3 normal = normalize(fragNormal);\n"
     "    vec3 light = vec3(0.45 + 0.55 * abs(dot(normal, lightDir)));\n"
     "    if (lit == 1) {\n"
-    "        light = ambient;\n"
+    "        light = ambient + sunColor * max(dot(normal, -sunDirection), 0.0);\n"
     "        for (int i = 0; i < lightCount; i++) {\n"
     "            vec3 toLight = lightPosition[i] - fragPosition;\n"
     "            float distance = length(toLight);\n"
@@ -83,7 +92,13 @@ static const char* g_fragmentShader =
     "        }\n"
     "    }\n"
     "    float alpha = mode == 0 ? 1.0 : mode == 4 || mode == 5 ? opacity : mode == 6 ? color.a * opacity : color.a;\n"
-    "    finalColor = vec4(color.rgb * light, alpha);\n"
+    "    vec3 rgb = color.rgb * light;\n"
+    "    if (fog.z > 0.0) {\n"
+    "        float depth = dot(fragPosition - eye, forward);\n"
+    "        float amount = clamp(log(max(depth, 0.001) / fog.x) / log(max(fog.y / fog.x, 1.001)), 0.0, 1.0) * fog.z;\n"
+    "        rgb = mix(rgb, fogColor, min(amount, 1.0));\n"
+    "    }\n"
+    "    finalColor = vec4(rgb, alpha);\n"
     "}\n";
 
 void MT5Render_Init(MT5Render* render) {
@@ -97,8 +112,15 @@ void MT5Render_Init(MT5Render* render) {
     render->lightPositionLoc = GetShaderLocation(render->shader, "lightPosition");
     render->lightColorLoc = GetShaderLocation(render->shader, "lightColor");
     render->lightRangeLoc = GetShaderLocation(render->shader, "lightRange");
+    render->sunDirectionLoc = GetShaderLocation(render->shader, "sunDirection");
+    render->sunColorLoc = GetShaderLocation(render->shader, "sunColor");
+    render->eyeLoc = GetShaderLocation(render->shader, "eye");
+    render->forwardLoc = GetShaderLocation(render->shader, "forward");
+    render->fogLoc = GetShaderLocation(render->shader, "fog");
+    render->fogColorLoc = GetShaderLocation(render->shader, "fogColor");
     render->material = LoadMaterialDefault();
     render->material.shader = render->shader;
+    MT5Render_SetFog(render, NULL);
 }
 
 void MT5Render_Free(MT5Render* render) {
@@ -303,6 +325,21 @@ Vector3* MT5Render_InstanceVertices(const MT5Render_Instance* instances, uint32_
 void MT5Render_SetCamera(MT5Render* render, Camera3D camera) {
     Vector3 lightDir = Vector3Normalize(Vector3Subtract(camera.position, camera.target));
     SetShaderValue(render->shader, render->lightDirLoc, &lightDir, SHADER_UNIFORM_VEC3);
+    Vector3 forward = Vector3Negate(lightDir);
+    SetShaderValue(render->shader, render->eyeLoc, &camera.position, SHADER_UNIFORM_VEC3);
+    SetShaderValue(render->shader, render->forwardLoc, &forward, SHADER_UNIFORM_VEC3);
+}
+
+void MT5Render_SetFog(MT5Render* render, const MT5Render_Fog* fog) {
+    float values[3] = { 0.0f, 0.0f, 0.0f }, color[3] = { 0.0f, 0.0f, 0.0f };
+    if (fog != NULL && fog->on) {
+        values[0] = fog->nearDistance;
+        values[1] = fog->farDistance;
+        values[2] = fog->density;
+        memcpy(color, fog->color, sizeof(color));
+    }
+    SetShaderValue(render->shader, render->fogLoc, values, SHADER_UNIFORM_VEC3);
+    SetShaderValue(render->shader, render->fogColorLoc, color, SHADER_UNIFORM_VEC3);
 }
 
 // The clamp takes priority over the flip
@@ -497,6 +534,8 @@ static void SetLighting(MT5Render* render, const MT5Render_Instance* instance) {
         ranges[i] = (Vector2) { nearest[i]->fullRange, nearest[i]->range };
     }
     SetShaderValue(render->shader, render->ambientLoc, lighting->ambient, SHADER_UNIFORM_VEC3);
+    SetShaderValue(render->shader, render->sunDirectionLoc, lighting->sunDirection, SHADER_UNIFORM_VEC3);
+    SetShaderValue(render->shader, render->sunColorLoc, lighting->sunColor, SHADER_UNIFORM_VEC3);
     SetShaderValue(render->shader, render->lightCountLoc, &count, SHADER_UNIFORM_INT);
     if (count > 0) {
         SetShaderValueV(render->shader, render->lightPositionLoc, positions, SHADER_UNIFORM_VEC3, count);

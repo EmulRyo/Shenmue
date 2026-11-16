@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +9,7 @@
 #include "scenario/scnSky.h"
 #include "test.h"
 
-// WEATHER.BIN, the skies that the weather chooses, and the display of the maps by the scene programs at a date: the files have the 4 chunks, the events of
+// WEATHER.BIN, the skies, the fog and the light that the weather chooses, and the display of the maps by the scene programs at a date: the files have the 4 chunks, the events of
 // FCAS are those of the wiki (snow on the ground, Christmas and New Year), and the emulation of the 136 SCN files at
 // the dates of the events gives the variants of the maps that the wiki describes (e.g. MAPY with snow in
 // scene/01/jd00, MAP04 hidden in betd)
@@ -78,6 +79,60 @@ static void CheckSkies(const char* content) {
         "files of the skies");
 }
 
+static bool Near(float a, float b) {
+    return fabsf(a - b) < 0.001f;
+}
+
+// The tables of the hours of the weather module (scnSky.h): 12, 10, 9 and 9 entries in the order of the hours from 0:00,
+// the fog and the light of an entry at its hour, interpolated between two entries, the mix of the tables by the weather
+static void CheckAir(const char* content) {
+    static const uint32_t counts[SCNSKY_TABLE_COUNT] = { 12, 10, 9, 9 };
+    for (int t = 0; t < SCNSKY_TABLE_COUNT; t++) {
+        uint32_t count;
+        const SCNSky_Key* keys = SCNSky_TableKeys((SCNSky_Table)t, &count);
+        CHECK_EQ(count, counts[t], "entries of a table of the hours");
+        for (uint32_t k = 0; k < count; k++) {
+            CHECK(keys[k].time < 86400 && (k == 0 ? keys[k].time == 0 : keys[k].time > keys[k - 1].time), "table %d: hour of the entry %u", t, k);
+            CHECK(keys[k].fog[1].density >= keys[k].fog[0].density && keys[k].fog[0].nearDistance < keys[k].fog[0].farDistance &&
+                (keys[k].fog[0].color >> 24) == 0, "table %d: fog of the entry %u", t, k);
+        }
+    }
+    // Without weather, the clear sky: at 12:00 its entry, at 10:00 halfway from 8:00 to 12:00
+    uint32_t count;
+    const SCNSky_Key* clear = SCNSky_TableKeys(SCNSKY_TABLE_CLEAR, &count);
+    SCNSky_Air air;
+    SCNSky_AirAt(NULL, &(WEATHER_Date) { 1986, 12, 3, 12, 0 }, &air);
+    CHECK(Near(air.weights[SCNSKY_TABLE_CLEAR], 1.0f) && Near(air.fog.nearDistance, clear[5].fog[0].nearDistance) &&
+        Near(air.fog.density, clear[5].fog[0].density) && air.fog.color == clear[5].fog[0].color && Near(air.ambient, clear[5].ambient),
+        "clear sky at 12:00");
+    SCNSky_AirAt(NULL, &(WEATHER_Date) { 1986, 12, 3, 10, 0 }, &air);
+    CHECK(clear[4].time == 8 * 3600 && Near(air.intensity, (clear[4].intensity + clear[5].intensity) / 2.0f) &&
+        Near(air.fog.density, (clear[4].fog[0].density + clear[5].fog[0].density) / 2.0f), "clear sky at 10:00");
+    SCNSky_AirAt(NULL, &(WEATHER_Date) { 1986, 12, 3, 23, 30 }, &air);
+    CHECK(Near(air.ambient, (clear[11].ambient + clear[0].ambient) / 2.0f), "clear sky at 23:30, from the last entry to the first");
+    // With the weather: overcast (clouds 1) on 2 December, rain by day on 8 December (clouds 0.79, rain 0.66: the clouds
+    // replaced by the rain), and clouds and rain at 21:00 on 12 December (0.82 and 0.51), when the rain doesn't replace
+    // the clouds
+    char path[CORPUS_PATH_SIZE];
+    snprintf(path, sizeof(path), "%s/misc/coldinit/WEATHER.bin", content);
+    WEATHER_File file;
+    if (!WEATHER_Load(path, &file)) {
+        CHECK(false, "misc/coldinit/WEATHER.bin: not read");
+        return;
+    }
+    SCNSky_AirAt(&file, &(WEATHER_Date) { 1986, 12, 2, 10, 0 }, &air);
+    CHECK(Near(air.weights[SCNSKY_TABLE_CLOUDS], 1.0f), "clouds on 2 December: %g", air.weights[SCNSKY_TABLE_CLOUDS]);
+    SCNSky_AirAt(&file, &(WEATHER_Date) { 1986, 12, 8, 10, 0 }, &air);
+    CHECK(Near(air.weights[SCNSKY_TABLE_RAIN], 1.0f), "rain by day on 8 December: %g", air.weights[SCNSKY_TABLE_RAIN]);
+    SCNSky_AirAt(&file, &(WEATHER_Date) { 1986, 12, 12, 21, 0 }, &air);
+    float sum = 0.0f;
+    for (int t = 0; t < SCNSKY_TABLE_COUNT; t++)
+        sum += air.weights[t];
+    CHECK(Near(sum, 1.0f) && air.weights[SCNSKY_TABLE_CLOUDS] > 0.0f && air.weights[SCNSKY_TABLE_RAIN] > 0.0f,
+        "clouds and rain at night on 12 December: %g and %g", air.weights[SCNSKY_TABLE_CLOUDS], air.weights[SCNSKY_TABLE_RAIN]);
+    WEATHER_Free(&file);
+}
+
 // The dates of the checks: a day without event, with snow, Christmas without snow, and New Year with snow
 static const SCNDisplay_Time g_times[] = {
     { 1986, 12, 3, 12, 0, 0 },
@@ -140,6 +195,7 @@ void Test_Display(const TestContext* context) {
     CheckWeather(context->content, "misc/coldinit/WEATHER.bin", 153, 4, 30);
     CheckWeather(context->content, "misc/cold_s/WEATHER.bin", 143, 4, 20);
     CheckSkies(context->content);
+    CheckAir(context->content);
     CHECK(SCNDisplay_SlotOfFile("MAP.MT5") == 0 && SCNDisplay_SlotOfFile("scene/01/betd/map04.mt5") == 4 &&
         SCNDisplay_SlotOfFile("MAP22.mt5") == 22 && SCNDisplay_SlotOfFile("MAPM.mt5") == -1 &&
         SCNDisplay_SlotOfFile("map01.chrm") == -1, "slots of the MAP model files");

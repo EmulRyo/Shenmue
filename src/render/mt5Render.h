@@ -25,8 +25,24 @@ typedef struct {
     int         lightPositionLoc;
     int         lightColorLoc;
     int         lightRangeLoc;
+    int         sunDirectionLoc;
+    int         sunColorLoc;
+    int         eyeLoc;
+    int         forwardLoc;
+    int         fogLoc;
+    int         fogColorLoc;
     Material    material;
 } MT5Render;
+
+// Fog over the models drawn: linear with the logarithm of the depth from nearDistance to farDistance, times density, at
+// most 1 (the fog table of the PowerVR filled by the game, indexed by the logarithm of the depth)
+typedef struct {
+    bool        on;
+    float       nearDistance;
+    float       farDistance;
+    float       density;
+    float       color[3];
+} MT5Render_Fog;
 
 // A point light of the scene (the lights of the LGHT chunks of the maps): it lights fully up to fullRange from its
 // position, and less and less up to range
@@ -43,6 +59,8 @@ typedef struct {
     float                   ambient[3];
     uint32_t                lightCount;
     const MT5Render_Light*  lights;
+    float                   sunDirection[3];    // A directional light: where it goes (normalized)
+    float                   sunColor[3];        // Its color times its intensity, 0 for none
 } MT5Render_Lighting;
 
 typedef struct {
@@ -87,8 +105,10 @@ float MT5Render_Top(const MT5Render_Model* model);
 // memory error
 Vector3* MT5Render_InstanceVertices(const MT5Render_Instance* instances, uint32_t count, uint32_t extra, uint32_t* vertexCount);
 
-// Lights the next models from the camera
+// Lights the next models from the camera, and gives it to the fog
 void MT5Render_SetCamera(MT5Render* render, Camera3D camera);
+// The fog of the next models, NULL for none
+void MT5Render_SetFog(MT5Render* render, const MT5Render_Fog* fog);
 // Opaque and punch-through triangles, and the opaque pixels of the translucent ones. The frame is the animation frame
 // of animated models
 void MT5Render_DrawOpaque(MT5Render* render, const MT5Render_Model* model, Matrix transform, uint32_t frame);

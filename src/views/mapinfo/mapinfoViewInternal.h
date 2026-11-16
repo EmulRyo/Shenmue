@@ -144,7 +144,8 @@ typedef struct {
     bool*               mapModelUnloaded; // The game doesn't load the model: MAPnn.MT5 with nn above the MAPR chunk (0+)
                                         // (e.g. map01.mt5 of scene/02/toki, whose MAPR is 0), hidden in the tree
     bool                hasDate;        // The program can be emulated at a date (mapDate.h)
-    SCNSky_Map          sky;            // Where the sky of the map comes from
+    SCNSky_Map          sky;            // Where the sky of the map comes from, and what the weather module sets
+    MT5Render_Lighting  airLighting;    // The light of the weather module for the characters, filled before drawing them
     uint32_t            instanceCount;
     MT5Render_Instance* instances;      // Each model of the map (mapModelCount), then each door with its model
                                         // (loadedDoors), then the shown characters with their model (from
@@ -239,6 +240,7 @@ const char* MAPINFODate_MapModelText(uint32_t model);
 void MAPINFODate_Properties(Properties* properties);
 const char* MAPINFODate_SkyFile(void);
 const char* MAPINFODate_SkyText(void);
+bool MAPINFODate_Air(SCNSky_Air* air);
 
 // mapinfoItems.c
 uint32_t MAPINFOItems_ProgramCount(SD_Kind kind, int32_t number, const char* name);
