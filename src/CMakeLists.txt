@@ -86,6 +86,8 @@ set(SRC_CORE
     src/scenario/scnGoal.h
     src/scenario/scnPair.c
     src/scenario/scnPair.h
+    src/scenario/scnSky.c
+    src/scenario/scnSky.h
     src/scenario/scnVm.c
     src/scenario/scnVm.h
 
@@ -149,6 +151,8 @@ set(SRC
     src/render/mt5Render.h
     src/render/scene3D.c
     src/render/scene3D.h
+    src/render/skyRender.c
+    src/render/skyRender.h
 
     src/ui/input.c
     src/ui/input.h

@@ -72,9 +72,9 @@ id	handler	arguments	name	description	character
 046	0x0C158FD0	2			yes
 047	0x0C1606A2	1-4, 6			
 048	0x0C16088A				
-049	0x0C16B7E6	1			
-04A	0x0C16B86C				
-04B	0x0C16B8A2	1			
+049	0x0C16B7E6	1	Fog	Sets the fog from the 4 values pointed by argument 0: the distance where it starts, the distance where it is complete, its density and its color (ARGB), and enables it	
+04A	0x0C16B86C		GetFog	Copies the 4 values of the fog (as Fog takes them) to argument 0	
+04B	0x0C16B8A2	1	FogEnable	Enables (argument 0 not 0) or disables the fog	
 04C	0x0C172E1C	2, 3, 5, 7			
 04D	0x0C173EBA	2	CharacterKill	Calls on the character of ID argument 0 the function of the flag KILL of the CHRT scripts (0x0C0AACE4), with argument 1 (always 1)	yes
 04E	0x0C166254	2	MotionSpeed	*Probably* the speed of the motions of the character of ID argument 0: sets the float of argument 1 (1.0, 1.3...) in the field of its motion module that PlayMotion (0x028) sets from its argument 5, and in another one 0x38 bytes after it	yes
@@ -110,7 +110,7 @@ id	handler	arguments	name	description	character
 06C	0x0C16BA88	3	SoundCommand	A command to the sound driver: argument 0 is the command, its operation in the low byte (handled at 0x0C17B3CC), arguments 1 and 2 a slot of the sound banks and a value (masked with 0x7F). 0xA8 plays a music sequence and 0xA9 or 0xAB an effect sequence, by the ID of their group (low 16 bits, e.g. 0x3FA8, the music of the bank of the slot 2) and their index in it (high 16 bits), as the sound IDs of the AUTH files (e.g. 0x1D04A9); 0x4A0 sets the volume of the bank of the slot (0 to 127), 0xAA0 fades it out in value frames	
 06D	0x0C16BBF6	1	PlayVoice	Probably plays a voice clip, named in argument 0 (e.g. "SY11A006")	
 06E	0x0C1573B8	2, 4			
-06F	0x0C16B8B4	2			
+06F	0x0C16B8B4	2	BackColors	The 4 colors of the background of the sky (as the BACK chunk of the FOG chunk of mapinfo.bin), the operation in argument 0: 0 sets them from argument 1, 1 copies them to it, 2 sets the color the screen is cleared with; 3 to 5 other values of the sky	
 070	0x0C157E0E	4			yes
 071	0x0C1574D8	2			
 072	0x0C1586C8	2			yes
@@ -179,7 +179,7 @@ id	handler	arguments	name	description	character
 0B1	0x0C1561E4	2			
 0B2	0x0C16BC32	1	VoicePlaying	Returns 1 while the voice of argument 0 is playing (a value returned by PlayVoice, 0x06D), or with 0, while any of the 2 voices is: the programs wait after PlayVoice until it returns 0	
 0B3	0x0C159104				yes
-0B4	0x0C16B98E	2-4	ScrollSprite	*Probably* the sprites of the scrolls (SPR files of the sprite folder, e.g. sprite/scroll00.spr), the operation in argument 0: 0 loads the file of argument 2 from the folder of argument 1 ("sprite"); 1 to 5 other operations	
+0B4	0x0C16B98E	2-4	ScrollSprite	The sky of the map (SPR files of the sprite folder, e.g. sprite/scroll00.spr), the operation in argument 0: 0 loads the file of argument 2 from the folder of argument 1 ("sprite") as the sky, 1 loads it in the slot of argument 3 (0 to 2), 2 shows the sky of a slot, 3 shows it with a fade of argument 3 frames; 4 and 5 set two other values	
 0B5	0x0C16355C	2			
 0B6	0x0C1564E2	1			
 0B7	0x0C1564E8				
@@ -295,7 +295,7 @@ id	handler	arguments	name	description	character
 125					
 126	0x0C157976	2			
 127	0x0C157992	1			
-128	0x0C16BA1A	1			
+128	0x0C16BA1A	1	FogSet	Applies the set of argument 0 of the FOG chunk of mapinfo.bin (DEMO, FOG and BACK): the fog and the colors of the background	
 129	0x0C165CA0				yes
 12A	0x0C157F3C	3			yes
 12B	0x0C156588	2			
@@ -372,7 +372,7 @@ id	handler	arguments	name	description	character
 172	0x0C158D20	2			yes
 173	0x0C1579CA	1, 4			
 174	0x0C172E34	2			
-175	0x0C172E80	1, 2			
+175	0x0C172E80	1, 2	SkyWeather	The module of the sky and of the light of the weather (WAIR), the operation in argument 0: 1 starts it, 2 stops it, 27 loads the sky of the hour and the weather (SCROLL60 to SCROLL66.SPR of the sprite folder), 23, 24 and 25 (argument 1: 1 or 0) let it set the fog, the colors of the background and the light, or not; 10 to 13 replace its tables of the hours	
 176	0x0C1730C4	2, 4-7	Weather	The weather of the game (WEATHER.BIN), the operation in argument 0: 12 returns the events of the day of the FCAS chunk for argument 1 equal to 0 (bit 1: snow on the ground, 2: Christmas, 3: New Year), their bit 0 to 3 for 2 to 5, and for 1 whether the day has no event; 11 reads the low byte of the entry of a date (arguments 1 to 3). The operations 4 to 10 take a date (arguments 1 to 5) and probably return values of the curves of the clouds, the rain and the snow	
 177	0x0C1733E8				
 178	0x0C173504	1, 2, 7			

@@ -20,6 +20,7 @@
 #include "render/mt5Render.h"
 #include "render/freeCamera.h"
 #include "render/scene3D.h"
+#include "render/skyRender.h"
 #include "ui/properties.h"
 #include "ui/toolbar.h"
 #include "ui/tree.h"
@@ -51,12 +52,15 @@ static const Color g_selectedColor = { 255, 230, 60, 255 };
 static const Color g_characterColor = { 90, 170, 255, 255 };
 
 MAPINFOView_State g_map;
+static SkyRender g_skyRender;   // The sky drawn, kept from a map to the next (its shader is created at the first draw)
+static bool g_skyRenderInit;
 MAPINFOView_Options g_mapOptions = {
     .layers = { [LAYER_MAP] = true, [LAYER_DOORS] = true, [LAYER_SHAPES] = true, [LAYER_CHARACTERS] = true },
     .expanded = { [LAYER_INFO] = true, [LAYER_CAMERAS] = true, [LAYER_CHARACTERS] = true, [LAYER_CUTSCENES] = true },
     .labels = true,
     .lights = true,
     .date = true,
+    .sky = true,
 };
 
 // The eye of the item in the tree. All of them are visible before the tree is created
@@ -266,6 +270,7 @@ bool MAPINFOView_Open(const char* filepath) {
     // What the program does with the map, if it has one
     if (!MapProgram_Read(filepath, &g_map.file, &g_map.program))
         SD_FreeData(&g_map.program);
+    SCNSky_Find(&g_map.file, &g_map.program, &g_map.sky);
     // The models of the map at the date of the game, if its program can be emulated
     g_map.hasDate = MapDate_Open(filepath, &g_map.file);
     MAPINFODate_FindVariants();
@@ -421,6 +426,12 @@ void MAPINFOView_Toolbar(void) {
     Toolbar_Toggle(ICON_STAR, "Lights", "Light the characters with the lights of the map (the group 0 of the LGHT chunk: its "
         "ambient color and its point lights), else from the camera. The exteriors are always lit from the camera: the game "
         "also lights them by the hour and the weather", KEY_I, &g_mapOptions.lights);
+    if (g_map.sky.source == SCNSKY_NONE)
+        GuiDisable();
+    Toolbar_Toggle(ICON_FILETYPE_IMAGE, "Sky", "Draw the sky of the map behind it (SCROLLnn.SPR of the sprite folder): the one of its "
+        "SCRL chunk or of its program, or the one that the game chooses by the hour and the weather of the date", KEY_Y,
+        &g_mapOptions.sky);
+    GuiEnable();
     Toolbar_Separator();
     // The date: the program of the map shows its models then
     if (!g_map.hasDate)
@@ -436,8 +447,9 @@ void MAPINFOView_Toolbar(void) {
         MAPINFODate_NextEvents();
     if (Toolbar_Button(ICON_ARROW_RIGHT, NULL, "Next day", KEY_PERIOD | TOOLBAR_REPEAT))
         MAPINFODate_Move(1);
-    if (Toolbar_Choice(MAPINFOVIEW_HOURS, "Hour of the date", KEY_H, &g_mapOptions.hour))
-        MAPINFODate_Set(g_mapOptions.gameDate);
+    if (Toolbar_Button(ICON_ALARM, TextFormat("%d:%02d", g_mapOptions.gameDate.hour, g_mapOptions.gameDate.minute),
+        TextFormat("Next hour of the date: %s", MAPINFODate_Hours()), KEY_H))
+        MAPINFODate_NextHour();
     GuiEnable();
     Toolbar_Separator();
     if (!IsAnyEdited())
@@ -703,6 +715,35 @@ static void DrawLabels(Camera3D camera, Rectangle area, Font font, float fontSiz
     }
 }
 
+// The file of a sky: in the folder of the map (e.g. scroll69.spr of scene/03/mend), else in the sprite folder of the
+// content folder. Returns false if it isn't found
+static bool SkyPath(const char* name, char* path, size_t size) {
+    char lower[SCNSKY_FILE_SIZE];
+    snprintf(lower, sizeof(lower), "%s", TextToLower(name));
+    snprintf(path, size, "%s/%s", GetDirectoryPath(g_map.filename), lower);
+    if (FileExists(path))
+        return true;
+    char content[1024];
+    if (!MapProgram_ContentFolder(g_map.filename, content, sizeof(content)))
+        return false;
+    snprintf(path, size, "%s/sprite/%s", content, lower);
+    return FileExists(path);
+}
+
+// The sky of the map seen from the camera, in the view, if it is shown
+static void DrawSky(Camera3D camera, Rectangle view) {
+    const char* name = g_mapOptions.sky ? MAPINFODate_SkyFile() : NULL;
+    char path[1200];
+    if (name == NULL || !SkyPath(name, path, sizeof(path)))
+        return;
+    if (!g_skyRenderInit) {
+        SkyRender_Init(&g_skyRender);
+        g_skyRenderInit = true;
+    }
+    if (SkyRender_Load(&g_skyRender, path))
+        SkyRender_Draw(&g_skyRender, camera, view);
+}
+
 static void DrawScene(Rectangle area, Font font, float fontSize) {
     const MAPINFO_Camera* source = g_map.mapCamera ? SelectedCamera() : NULL;
     Camera3D camera;
@@ -711,10 +752,13 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     if (source != NULL) {
         camera = MapCamera(source);
         view = Scene3D_Letterbox(area, SCENE3D_GAME_ASPECT);
+        DrawSky(camera, view);
         FreeCamera_BeginCamera3D(camera, view, 0.05, g_map.radius * 4.0 + 100.0);
     }
-    else
+    else {
+        DrawSky(FreeCamera_Camera3D(&g_map.camera), area);
         camera = FreeCamera_Begin3D(&g_map.camera, area);
+    }
 
     DrawModels(camera, NULL);
     DrawOverlays();

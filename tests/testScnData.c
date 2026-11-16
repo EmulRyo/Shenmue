@@ -8,6 +8,7 @@
 #include "formats/map/mapinfo.h"
 #include "formats/script/scn.h"
 #include "scenario/scnData.h"
+#include "scenario/scnSky.h"
 #include "scenario/scnVm.h"
 #include "test.h"
 
@@ -15,7 +16,8 @@
 // their map: the packages they load are PKF/PKS files of the scene folders, the cutscenes they play are TRCK chunks of
 // the map or AUTH files they load in the table of cutscenes, and the characters they wake, put to sleep or use are
 // defined in the files of the map, and the cameras they show are those of the ECAM chunk. The values computed at run
-// time are found by the emulation of the bytecode (scnVm.h): its paths never stop on an invalid instruction or stack
+// time are found by the emulation of the bytecode (scnVm.h): its paths never stop on an invalid instruction or stack.
+// The sky of each map (scnSky.h) comes from its program or its SCRL chunk, and its SCROLLnn.SPR file is in the game files
 
 #define LINE_SIZE 1024
 
@@ -55,7 +57,33 @@ typedef struct {
     uint64_t    relativeCameras;    // With the flag 0x200 (relative)
     uint64_t    relativeWithCharacter;  // Relative, shown with a character
     uint64_t    otherWithCharacter;     // Not relative, shown with a character
+    uint64_t    skies[SCNSKY_WEATHER + 1];  // Maps by the source of their sky (SCNSky_Source)
+    uint64_t    skyFilesFound;          // Of SCNSKY_CHUNK and SCNSKY_PROGRAM: in the folder of the map or in sprite/
+    char        weatherSkies[512];      // The maps whose sky is chosen by the weather
 } DataStats;
+
+// The sky of a map: its source, and its file in the folder of the map or in the sprite folder
+static void CheckSky(const TestContext* context, const CorpusFile* map, const MAPINFO_File* file, const SD_Data* data,
+    DataStats* stats) {
+    SCNSky_Map sky;
+    SCNSky_Find(file, data, &sky);
+    stats->skies[sky.source]++;
+    if (sky.source == SCNSKY_WEATHER) {
+        size_t length = strlen(stats->weatherSkies);
+        snprintf(stats->weatherSkies + length, sizeof(stats->weatherSkies) - length, " %d/%s", map->disc, map->map);
+    }
+    if (sky.source != SCNSKY_CHUNK && sky.source != SCNSKY_PROGRAM)
+        return;
+    char lower[SCNSKY_FILE_SIZE], path[CORPUS_PATH_SIZE];
+    for (size_t c = 0; c < sizeof(lower); c++)
+        lower[c] = (char)tolower((unsigned char)sky.file[c]);
+    snprintf(path, sizeof(path), "%s/scene/%02d/%s/%s", context->content, map->disc, map->map, lower);
+    bool found = FileExists(path);
+    snprintf(path, sizeof(path), "%s/sprite/%s", context->content, lower);
+    found = found || FileExists(path);
+    CHECK(found, "%s: the sky %s isn't found", map->name, sky.file);
+    stats->skyFilesFound += found;
+}
 
 // The folder of the scene of a folder argument ("scene/01/JOMO", "/scene/01/D000/"), lowercase. The map folder if it
 // isn't one
@@ -284,6 +312,7 @@ void Test_ScnData(const TestContext* context) {
         if (read) {
             programs++;
             CheckData(context, map, &file, &data, &stats);
+            CheckSky(context, map, &file, &data, &stats);
             SD_FreeData(&data);
         }
         MAPINFO_Free(&file);
@@ -311,6 +340,16 @@ void Test_ScnData(const TestContext* context) {
     CHECK_EQ(stats.kinds[SD_FLAG_SET], 1951, "flags set");
     CHECK_EQ(stats.kinds[SD_BYTE_READ], 123, "bytes read");
     CHECK_EQ(stats.kinds[SD_BYTE_SET], 281, "bytes set");
+    // The skies: the weather module chooses those of Dobuita, Sakuragaoka, the Hazuki house (seen from its rooms), the
+    // harbour of the ending and the Hazuki residence of the third disc
+    CHECK_EQ(stats.kinds[SD_SKY], 488, "calls to the sky and the light of the weather");
+    CHECK_EQ(stats.skies[SCNSKY_WEATHER], 10, "maps whose sky the weather chooses");
+    CHECK_EQ(stats.skies[SCNSKY_PROGRAM], 13, "maps whose sky the program loads");
+    CHECK_EQ(stats.skies[SCNSKY_CHUNK], 5, "maps whose sky is in the SCRL chunk");
+    CHECK_EQ(stats.skyFilesFound, stats.skies[SCNSKY_PROGRAM] + stats.skies[SCNSKY_CHUNK], "files of the skies found");
+    Test_Info("skies: %llu maps by the weather (%s), %llu loaded by the program, %llu of the SCRL chunk, %llu without",
+        (unsigned long long)stats.skies[SCNSKY_WEATHER], stats.weatherSkies, (unsigned long long)stats.skies[SCNSKY_PROGRAM],
+        (unsigned long long)stats.skies[SCNSKY_CHUNK], (unsigned long long)stats.skies[SCNSKY_NONE]);
     CHECK_EQ(stats.completePrograms, 125, "programs whose threads are all emulated");
     CHECK_EQ(stats.emulationErrors, 0, "paths of the emulation stopped by an invalid instruction or stack");
     Test_Info("emulation: %llu threads run (%llu stopped by a limit, %llu not run), all of them in %llu programs",

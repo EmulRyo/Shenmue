@@ -1,9 +1,10 @@
 // The date at which the view of the maps shows a map: the events of the day and what the program of the map shows then
 #include "views/mapinfo/mapinfoViewInternal.h"
 
-// The hours of the date: morning and afternoon (the shops are open from 8:30 to 18:30 in scene/01/d000), evening (the
-// lights are on from 19:00) and night
-static const int g_hours[][2] = { { 10, 0 }, { 15, 0 }, { 19, 30 }, { 23, 0 } };
+// The hours of the date: dawn (the sky of 5:30 to 7:30), morning and afternoon (the shops are open from 8:30 to 18:30 in
+// scene/01/d000), sunset (the sky of 16:30 to 18:00), evening (the lights are on from 19:00) and night
+static const int g_hours[][2] = { { 6, 30 }, { 10, 0 }, { 15, 0 }, { 17, 0 }, { 19, 30 }, { 23, 0 } };
+#define MAPINFODATE_DEFAULT_HOUR 1  // 10:00
 
 static const char* const g_weekdays[7] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 static const char* const g_months[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
@@ -48,12 +49,29 @@ void MAPINFODate_Init(void) {
             for (date = first; WEATHER_CompareDays(&date, &last) < 0 && MapDate_Events(&date) != 0;)
                 WEATHER_AddDays(&date, 1);
         }
-        g_mapOptions.hour = 0;
+        g_mapOptions.hour = MAPINFODATE_DEFAULT_HOUR;
         g_mapOptions.dateSet = true;
         MAPINFODate_Set(date);
         return;
     }
     RequestDate();
+}
+
+#define MAPINFODATE_HOURS (int)(sizeof(g_hours) / sizeof(g_hours[0]))
+
+void MAPINFODate_NextHour(void) {
+    g_mapOptions.hour = (g_mapOptions.hour + 1) % MAPINFODATE_HOURS;
+    MAPINFODate_Set(g_mapOptions.gameDate);
+}
+
+// e.g. "6:30, 10:00, 15:00, 17:00, 19:30 and 23:00"
+const char* MAPINFODate_Hours(void) {
+    static char text[96];
+    int length = 0;
+    for (int i = 0; i < MAPINFODATE_HOURS && length < (int)sizeof(text); i++)
+        length += snprintf(text + length, sizeof(text) - length, "%s%d:%02d", i == 0 ? "" : i == MAPINFODATE_HOURS - 1 ?
+            " and " : ", ", g_hours[i][0], g_hours[i][1]);
+    return text;
 }
 
 void MAPINFODate_Move(int days) {
@@ -94,6 +112,35 @@ const char* MAPINFODate_Text(const WEATHER_Date* date) {
     const char* events = EventsText(MapDate_Events(date), true);
     return TextFormat("%s %d %s %d%s%s", g_weekdays[WEATHER_Weekday(date)], date->day,
         g_months[date->month >= 1 && date->month <= 12 ? date->month - 1 : 0], date->year, events[0] != '\0' ? ", " : "", events);
+}
+
+// The file of the sky of the map (e.g. "SCROLL61.SPR"), at the date for those whose sky the weather chooses. NULL if
+// it has none
+const char* MAPINFODate_SkyFile(void) {
+    switch (g_map.sky.source) {
+    case SCNSKY_WEATHER:
+        return SCNSky_WeatherFile(SCNSky_WeatherSky(MapDate_Weather(), &g_mapOptions.gameDate));
+    case SCNSKY_CHUNK:
+    case SCNSKY_PROGRAM:
+        return g_map.sky.file;
+    default:
+        return NULL;
+    }
+}
+
+// e.g. "SCROLL64.SPR (rain or snowfall), chosen by the hour and the weather"
+const char* MAPINFODate_SkyText(void) {
+    switch (g_map.sky.source) {
+    case SCNSKY_WEATHER:
+        return TextFormat("%s (%s), chosen by the hour and the weather", MAPINFODate_SkyFile(),
+            SCNSky_WeatherName(SCNSky_WeatherSky(MapDate_Weather(), &g_mapOptions.gameDate)));
+    case SCNSKY_CHUNK:
+        return TextFormat("%s, of the SCRL chunk", g_map.sky.file);
+    case SCNSKY_PROGRAM:
+        return TextFormat("%s, loaded by the program", g_map.sky.file);
+    default:
+        return "none";
+    }
 }
 
 // The display of the program at the date, if it is applied. While the display of a new date is computed, the one of
@@ -161,6 +208,8 @@ void MAPINFODate_Properties(Properties* properties) {
         Properties_Text(properties, "Rain", TextFormat("%.0f%%", WEATHER_Intensity(weather, WEATHER_RAIN, date) * 100.0f));
         Properties_Text(properties, "Snowfall", TextFormat("%.0f%%", WEATHER_Intensity(weather, WEATHER_SNOW, date) * 100.0f));
     }
+    if (g_map.sky.source == SCNSKY_WEATHER)
+        Properties_Text(properties, "Sky", MAPINFODate_SkyText());
     const SCNDisplay* display = g_map.hasDate ? MapDate_Display() : NULL;
     if (!MapDate_Current())
         Properties_Text(properties, "Program", MapDate_Busy() ? "emulating..." : "not emulated");

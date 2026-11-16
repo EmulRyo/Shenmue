@@ -4,7 +4,7 @@
 #include "sh4/sh4Listing.h"
 
 static const char* const g_kindNames[SD_KIND_COUNT] = {
-    "package", "AFS package", "cutscene", "sequence", "wake", "sleep", "character", "sound bank", "camera", "flag read", "flag set", "byte read", "byte set", "file",
+    "package", "AFS package", "cutscene", "sequence", "wake", "sleep", "character", "sound bank", "camera", "flag read", "flag set", "byte read", "byte set", "sky", "file",
 };
 
 const char* SD_KindName(SD_Kind kind) {
@@ -172,6 +172,10 @@ static bool ReadCall(SD_Data* data, uint32_t* capacity, const Source* source, co
         if (a[2].constant && SD_IsCharacterId(a[2].value))
             IdText(a[2].value, second);
         ok &= Add(data, capacity, source, SD_CAMERA, (int32_t)a[0].value, first, second);
+    } else if (id == SD_GAME_SKY && a[0].constant) {
+        ok &= Add(data, capacity, source, SD_SKY, (int32_t)a[0].value, NULL, NULL);
+        if (ok && count > 1 && a[1].constant)
+            data->references[data->count - 1].value = (int32_t)a[1].value;
     } else if (id == SD_GAME_SOUND_BANKS) {
         for (uint32_t i = 0; i < count && i < 8; i++) {
             if (a[i].string != NULL)

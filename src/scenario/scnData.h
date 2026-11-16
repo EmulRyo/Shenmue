@@ -31,6 +31,7 @@
 #define SD_GAME_PACKAGE     0x13C   // (0, 0, folder, name): loads a package; (0, 8, AFS, entry, entry): one of an AFS
 #define SD_GAME_SEQUENCE    0x13E   // (0, slot, file, package): loads an AUTH file in a slot of the table of cutscenes
 #define SD_GAME_SOUND_BANK  0x16D   // (0, slot, name, 0): loads a sound bank in a slot
+#define SD_GAME_SKY         0x175   // (operation, value): the sky and the light of the weather (scnSky.h)
 
 typedef enum {
     SD_PACKAGE,         // name, folder (as given, e.g. "scene/01/JOMO" or "/scene/01/DCBN/", empty if not constant)
@@ -47,6 +48,8 @@ typedef enum {
     SD_FLAG_SET,        // number: a flag of the game set, value: the value (SD_UNKNOWN if not constant)
     SD_BYTE_READ,       // number: a byte value of the game read (0 to 31)
     SD_BYTE_SET,        // number: a byte value of the game set, value: the value (SD_UNKNOWN if not constant)
+    SD_SKY,             // number: an operation of the sky and the light of the weather (SD_GAME_SKY), value: its argument
+                        // (SD_UNKNOWN if it has none or it isn't constant)
     SD_FILE,            // name: another string with an extension (e.g. "M_MDOR.BIN", "SCROLL00.SPR")
     SD_KIND_COUNT
 } SD_Kind;

@@ -27,6 +27,7 @@
 #include "render/scene3D.h"
 #include "scenario/scnData.h"
 #include "scenario/scnDisplay.h"
+#include "scenario/scnSky.h"
 #include "ui/properties.h"
 #include "ui/tree.h"
 
@@ -143,6 +144,7 @@ typedef struct {
     bool*               mapModelUnloaded; // The game doesn't load the model: MAPnn.MT5 with nn above the MAPR chunk (0+)
                                         // (e.g. map01.mt5 of scene/02/toki, whose MAPR is 0), hidden in the tree
     bool                hasDate;        // The program can be emulated at a date (mapDate.h)
+    SCNSky_Map          sky;            // Where the sky of the map comes from
     uint32_t            instanceCount;
     MT5Render_Instance* instances;      // Each model of the map (mapModelCount), then each door with its model
                                         // (loadedDoors), then the shown characters with their model (from
@@ -185,12 +187,11 @@ typedef struct {
     bool                lights;                 // The characters are lit by the lights of the group 0 of the LGHT chunk
     bool                fly;
     bool                date;                   // The models of the map are those that the program shows at the date
+    bool                sky;                    // The sky of the map is drawn behind it
     bool                dateSet;                // The date is set (at the first map with weather)
     WEATHER_Date        gameDate;               // Its hour is one of g_hours
     int                 hour;                   // In g_hours
 } MAPINFOView_Options;
-// The hours of the date (g_hours of mapinfoDate.c), for the toolbar
-#define MAPINFOVIEW_HOURS "10:00;15:00;19:30;23:00"
 
 // The open map and the options of the view (mapinfoView.c)
 extern MAPINFOView_State g_map;
@@ -229,11 +230,15 @@ void MAPINFODate_FindVariants(void);
 void MAPINFODate_Set(WEATHER_Date date);
 void MAPINFODate_Init(void);
 void MAPINFODate_Move(int days);
+void MAPINFODate_NextHour(void);
+const char* MAPINFODate_Hours(void);
 void MAPINFODate_NextEvents(void);
 const char* MAPINFODate_Text(const WEATHER_Date* date);
 bool MAPINFODate_IsHidden(uint32_t model);
 const char* MAPINFODate_MapModelText(uint32_t model);
 void MAPINFODate_Properties(Properties* properties);
+const char* MAPINFODate_SkyFile(void);
+const char* MAPINFODate_SkyText(void);
 
 // mapinfoItems.c
 uint32_t MAPINFOItems_ProgramCount(SD_Kind kind, int32_t number, const char* name);

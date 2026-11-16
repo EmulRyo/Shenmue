@@ -62,6 +62,23 @@ The `scroll*.spr` files wrap each `TEXN` block in an `SCLn` block, after an `SCR
 
 The 7 `scroll*.spr` files (`sprite/scroll07.spr`, `scene/03/mend/scroll69.spr`...) have two `SCLn` blocks: a texture of 256×256 or 512×256 (`air07`) and a narrower one of the same width (`air07b`, 32 or 64 pixels high).
 
+## Scroll files (skies)
+
+The 31 `sprite/scroll*.spr` files and `scene/03/mend/scroll69.spr` are the skies of the maps (see [the sky](MAPINFO#sky)): their first texture, named `airNN` after the number of the file, is a panorama of 512×256 (or 256×256) pixels, RGB565, rectangle or twiddled. `scroll98.spr` and `scroll99.spr` have a texture of 8×8, white and black.
+
+The game draws it behind the map as its screen of 640×480 pixels would show it (code at `0x0C09A31C` of `1ST_READ.BIN` PAL): the texture is repeated four times around the camera, each one stretched over 960 pixels, that is 90 degrees (the angle of the camera, `0x10000` for a turn, times 3840/65536), and over 480 pixels high, that is 45 degrees, with its middle row on the horizon; it moves up and down with the angle of the camera from the horizon. Above and below it, the screen is cleared with the color of its first pixel and of its last one.
+
+| Files | Picture |
+|-------|---------|
+| `scroll00`, `scroll01`, `scroll02`, `scroll61` | Blue sky with white clouds (`scroll61` is the day of the weather) |
+| `scroll23`, `scroll24`, `scroll28`, `scroll30` | Clouds: lilac, with rays of sun, white, white on blue |
+| `scroll07`, `scroll10`, `scroll64`, `scroll65` | Grey clouds (`scroll64`, the rain of the weather) and overcast skies (`scroll65`) |
+| `scroll03`, `scroll05`, `scroll06`, `scroll12`, `scroll13`, `scroll18`, `scroll29`, `scroll53`, `scroll62`, `scroll66`, `scroll67` | Sunsets: orange, golden, pink or red (`scroll66` is the sunset of the weather) |
+| `scroll19`, `scroll60`, `scroll69` | Dawn and dusk: dark blue above, pink on the horizon (`scroll60`, the dawn of the weather) |
+| `scroll25`, `scroll27`, `scroll63` | Night (`scroll63`, the night of the weather) |
+
+The second texture of the files with two (`air07b`, `air30b`, `air64b`, `air65b`, `air67b`, `air69b`) is a band of clouds or stars of the same width, *probably* drawn above the first one, higher in the sky.
+
 ## Notes
 
 - 41 of the 267 `.spr` files and 19 of the 85 [GZ](GZ) files have several `TEXN` blocks: the menus, title screens and credits (e.g. `title/title3.spr`, 8 textures; `option*.gz`, 119 textures).

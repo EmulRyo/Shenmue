@@ -364,6 +364,9 @@ static const char* DataText(const SD_Reference* reference) {
         return reference->name[0] == '\0' ? TextFormat("Camera %04d", reference->number) : reference->folder[0] == '\0' ||
             strcmp(reference->folder, reference->name) == 0 ? TextFormat("Camera %04d, with %s", reference->number, reference->name) :
             TextFormat("Camera %04d, with %s and %s", reference->number, reference->name, reference->folder);
+    case SD_SKY:
+        return reference->value == SD_UNKNOWN ? TextFormat("Sky and weather light: operation %d", reference->number) :
+            TextFormat("Sky and weather light: operation %d, %d", reference->number, reference->value);
     default:
         return TextFormat("File %s", reference->name);
     }
@@ -880,7 +883,8 @@ static void DrawProperties(Rectangle bounds) {
         if (reference->number >= 0)
             Properties_Int(properties, reference->kind == SD_AFS_PACKAGE ? "Entry" : reference->kind == SD_CAMERA ? "Camera" :
                 reference->kind == SD_FLAG_READ || reference->kind == SD_FLAG_SET ? "Flag" :
-                reference->kind == SD_BYTE_READ || reference->kind == SD_BYTE_SET ? "Byte" : "Slot", reference->number);
+                reference->kind == SD_BYTE_READ || reference->kind == SD_BYTE_SET ? "Byte" :
+                reference->kind == SD_SKY ? "Operation" : "Slot", reference->number);
         if (reference->value != SD_UNKNOWN)
             Properties_Int(properties, "Value", reference->value);
         Properties_Text(properties, "Game function", name != NULL ? TextFormat("%s (0x%X)", name, reference->game) :

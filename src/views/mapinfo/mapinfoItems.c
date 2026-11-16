@@ -230,6 +230,10 @@ static void AddInfoItems(void) {
     if (file->fog.present)
         AddItem(ITEM_INFO, 0, TextFormat("Fog: %g to %g, density %g, color #%06X", file->fog.nearDistance, file->fog.farDistance,
             file->fog.density, file->fog.color & 0xFFFFFF), false);
+    if (g_map.sky.source == SCNSKY_WEATHER)
+        AddItem(ITEM_INFO, 0, "Sky: chosen by the hour and the weather (SCROLL60 to SCROLL66)", false);
+    else if (g_map.sky.source != SCNSKY_NONE)
+        AddItem(ITEM_INFO, 0, TextFormat("Sky: %s", MAPINFODate_SkyText()), false);
     uint32_t cutscenes = 0;
     for (uint32_t i = 0; i < file->cutsceneCount; i++)
         cutscenes += g_map.cutscenes[i].valid;

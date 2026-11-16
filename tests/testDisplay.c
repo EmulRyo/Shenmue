@@ -5,9 +5,10 @@
 #include "formats/map/weather.h"
 #include "formats/script/scn.h"
 #include "scenario/scnDisplay.h"
+#include "scenario/scnSky.h"
 #include "test.h"
 
-// WEATHER.BIN and the display of the maps by the scene programs at a date: the files have the 4 chunks, the events of
+// WEATHER.BIN, the skies that the weather chooses, and the display of the maps by the scene programs at a date: the files have the 4 chunks, the events of
 // FCAS are those of the wiki (snow on the ground, Christmas and New Year), and the emulation of the 136 SCN files at
 // the dates of the events gives the variants of the maps that the wiki describes (e.g. MAPY with snow in
 // scene/01/jd00, MAP04 hidden in betd)
@@ -42,6 +43,39 @@ static void CheckWeather(const char* content, const char* name, uint32_t days, i
     CHECK(WEATHER_Intensity(&file, WEATHER_SNOW, &(WEATHER_Date) { 1986, 11, 29, 6, 0 }) > 0.9f, "%s: snow on 29 November", name);
     CHECK_EQ(WEATHER_Weekday(&first), 6, "day of the week of 29 November 1986");
     WEATHER_Free(&file);
+}
+
+// The skies that the weather module chooses (scnSky.h): by the hour on a clear day (3 December 1986), cloudy on
+// 2 December, rain on 8 December and snowfall on 11 December at 10:00, and by the hour only without weather
+static void CheckSkies(const char* content) {
+    char path[CORPUS_PATH_SIZE];
+    snprintf(path, sizeof(path), "%s/misc/coldinit/WEATHER.bin", content);
+    WEATHER_File file;
+    if (!WEATHER_Load(path, &file)) {
+        CHECK(false, "misc/coldinit/WEATHER.bin: not read");
+        return;
+    }
+    static const struct { WEATHER_Date date; SCNSky_Weather sky; } checks[] = {
+        { { 1986, 12, 3, 6, 30 }, SCNSKY_DAWN }, { { 1986, 12, 3, 10, 0 }, SCNSKY_DAY },
+        { { 1986, 12, 3, 17, 0 }, SCNSKY_SUNSET }, { { 1986, 12, 3, 19, 30 }, SCNSKY_NIGHT },
+        { { 1986, 12, 2, 10, 0 }, SCNSKY_CLOUDY }, { { 1986, 12, 8, 10, 0 }, SCNSKY_RAIN }, { { 1986, 12, 11, 10, 0 }, SCNSKY_RAIN },
+    };
+    for (size_t i = 0; i < sizeof(checks) / sizeof(checks[0]); i++) {
+        const WEATHER_Date* date = &checks[i].date;
+        SCNSky_Weather sky = SCNSky_WeatherSky(&file, date);
+        CHECK(sky == checks[i].sky, "sky on %d-%d-%d at %d:%02d: %s, expected %s", date->year, date->month, date->day,
+            date->hour, date->minute, SCNSky_WeatherName(sky), SCNSky_WeatherName(checks[i].sky));
+    }
+    WEATHER_Free(&file);
+    // The limits of the hours: 5:30, 7:30, 16:30 and 18:00
+    static const int hours[][3] = { { 5, 29, SCNSKY_NIGHT }, { 5, 30, SCNSKY_DAWN }, { 7, 29, SCNSKY_DAWN }, { 7, 30, SCNSKY_DAY },
+        { 16, 29, SCNSKY_DAY }, { 16, 30, SCNSKY_SUNSET }, { 17, 59, SCNSKY_SUNSET }, { 18, 0, SCNSKY_NIGHT } };
+    for (size_t i = 0; i < sizeof(hours) / sizeof(hours[0]); i++) {
+        WEATHER_Date date = { 1986, 12, 3, hours[i][0], hours[i][1] };
+        CHECK(SCNSky_WeatherSky(NULL, &date) == (SCNSky_Weather)hours[i][2], "sky at %d:%02d", hours[i][0], hours[i][1]);
+    }
+    CHECK(strcmp(SCNSky_WeatherFile(SCNSKY_SUNSET), "SCROLL66.SPR") == 0 && strcmp(SCNSky_WeatherFile(SCNSKY_RAIN), "SCROLL64.SPR") == 0,
+        "files of the skies");
 }
 
 // The dates of the checks: a day without event, with snow, Christmas without snow, and New Year with snow
@@ -105,6 +139,7 @@ static void CheckDisplays(const char* name, const SCNDisplay displays[TIME_COUNT
 void Test_Display(const TestContext* context) {
     CheckWeather(context->content, "misc/coldinit/WEATHER.bin", 153, 4, 30);
     CheckWeather(context->content, "misc/cold_s/WEATHER.bin", 143, 4, 20);
+    CheckSkies(context->content);
     CHECK(SCNDisplay_SlotOfFile("MAP.MT5") == 0 && SCNDisplay_SlotOfFile("scene/01/betd/map04.mt5") == 4 &&
         SCNDisplay_SlotOfFile("MAP22.mt5") == 22 && SCNDisplay_SlotOfFile("MAPM.mt5") == -1 &&
         SCNDisplay_SlotOfFile("map01.chrm") == -1, "slots of the MAP model files");
