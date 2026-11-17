@@ -130,7 +130,7 @@ const char* MAPINFODate_SkyFile(void) {
 
 // The fog and the light that the weather module sets in the map at the date, if it sets some (g_map.sky.air)
 bool MAPINFODate_Air(SCNSky_Air* air) {
-    if ((g_map.sky.air & (SCNSKY_AIR_FOG | SCNSKY_AIR_LIGHT)) == 0)
+    if ((g_map.sky.air & (SCNSKY_AIR_FOG | SCNSKY_AIR_LIGHT | SCNSKY_AIR_BACK)) == 0)
         return false;
     SCNSky_AirAt(MapDate_Weather(), &g_mapOptions.gameDate, air);
     return true;
@@ -226,6 +226,9 @@ void MAPINFODate_Properties(Properties* properties) {
         if (g_map.sky.air & SCNSKY_AIR_FOG)
             Properties_Text(properties, "Fog", TextFormat("%.1f to %.0f, density %.2f, #%06X", air.fog.nearDistance,
                 air.fog.farDistance, air.fog.density, air.fog.color));
+        if (g_map.sky.air & SCNSKY_AIR_BACK)
+            Properties_Text(properties, "Background", TextFormat("#%08X at the top, #%08X at the bottom (ARGB)", air.fog.top,
+                air.fog.bottom));
         if (g_map.sky.air & SCNSKY_AIR_LIGHT)
             Properties_Text(properties, "Light", TextFormat("ambient %.2f, light 0 %.2f", air.ambient, air.intensity));
     }

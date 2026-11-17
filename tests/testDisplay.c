@@ -103,7 +103,8 @@ static void CheckAir(const char* content) {
     SCNSky_Air air;
     SCNSky_AirAt(NULL, &(WEATHER_Date) { 1986, 12, 3, 12, 0 }, &air);
     CHECK(Near(air.weights[SCNSKY_TABLE_CLEAR], 1.0f) && Near(air.fog.nearDistance, clear[5].fog[0].nearDistance) &&
-        Near(air.fog.density, clear[5].fog[0].density) && air.fog.color == clear[5].fog[0].color && Near(air.ambient, clear[5].ambient),
+        Near(air.fog.density, clear[5].fog[0].density) && air.fog.color == clear[5].fog[0].color && air.fog.top == clear[5].fog[0].top &&
+        air.fog.bottom == clear[5].fog[0].bottom && Near(air.ambient, clear[5].ambient),
         "clear sky at 12:00");
     SCNSky_AirAt(NULL, &(WEATHER_Date) { 1986, 12, 3, 10, 0 }, &air);
     CHECK(clear[4].time == 8 * 3600 && Near(air.intensity, (clear[4].intensity + clear[5].intensity) / 2.0f) &&
