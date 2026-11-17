@@ -62,6 +62,8 @@ typedef struct {
     char        weatherSkies[512];      // The maps whose sky is chosen by the weather
     uint64_t    airFog;                 // Maps whose fog the weather module sets
     uint64_t    airLight;               // Maps whose light the weather module sets
+    uint64_t    skyOffsets;             // Maps whose sky has an offset (SCOF chunk)
+    double      skyOffsetSum;
 } DataStats;
 
 // The sky of a map: its source, and its file in the folder of the map or in the sprite folder
@@ -72,6 +74,8 @@ static void CheckSky(const TestContext* context, const CorpusFile* map, const MA
     stats->skies[sky.source]++;
     stats->airFog += (sky.air & SCNSKY_AIR_FOG) != 0;
     stats->airLight += (sky.air & SCNSKY_AIR_LIGHT) != 0;
+    stats->skyOffsets += sky.offset != 0.0f;
+    stats->skyOffsetSum += sky.offset;
     if (sky.source == SCNSKY_WEATHER) {
         size_t length = strlen(stats->weatherSkies);
         snprintf(stats->weatherSkies + length, sizeof(stats->weatherSkies) - length, " %d/%s", map->disc, map->map);
@@ -353,6 +357,9 @@ void Test_ScnData(const TestContext* context) {
     CHECK_EQ(stats.skyFilesFound, stats.skies[SCNSKY_PROGRAM] + stats.skies[SCNSKY_CHUNK], "files of the skies found");
     CHECK_EQ(stats.airFog, 16, "maps whose fog the weather module sets");
     CHECK_EQ(stats.airLight, 15, "maps whose light the weather module sets");
+    // SCOF: -4 in Dobuita and Sakuragaoka (jd00), -6 at the Hazuki residence (jhd0), -2 in Yamanose (ju00), 3 discs
+    CHECK_EQ(stats.skyOffsets, 12, "maps whose sky has an offset");
+    CHECK(stats.skyOffsetSum == -48.0, "sum of the offsets of the skies: %g", stats.skyOffsetSum);
     Test_Info("skies: %llu maps by the weather (%s), %llu loaded by the program, %llu of the SCRL chunk, %llu without",
         (unsigned long long)stats.skies[SCNSKY_WEATHER], stats.weatherSkies, (unsigned long long)stats.skies[SCNSKY_PROGRAM],
         (unsigned long long)stats.skies[SCNSKY_CHUNK], (unsigned long long)stats.skies[SCNSKY_NONE]);

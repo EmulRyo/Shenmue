@@ -733,7 +733,7 @@ Chunks of 0xC bytes: the header and one 4-byte value.
 | `MAPT` | int32  | MAP Type | Always 1. Present in 93 of the 96 folders whose map models are in `mpk*.pkf` packages (all but the 3 `jomo`), and in no other |
 | `DIRT` | int32  | DIRecTion | *Probably* a direction in degrees: 0 to 343 (90, 220, 335, 260, 180...). The same in a map of every disc |
 | `SCRL` | int32  | SCRoLl | The [sky](#sky) of the map: the number `nn` of the file `sprite/SCROLLnn.SPR`, or -1 (57 files) for none; 0 (the three `betd`), 1 (`scene/01/0000`) or 23 (`scene/01/yd01`). The game also reads chunks `SHOF` and `SENT` with it, which no file has |
-| `SCOF` | float  | SCroll OFfset | *Probably* moves the [sky](#sky) up or down: the code of the sky converts it and adds it to the angle of the camera from the horizon (unit unknown). -4 (6 files), -6 (3) or -2 (3) |
+| `SCOF` | float  | SCroll OFfset | Degrees added to the angle of the camera from the horizon when the game places the [sky](#sky): it converts them to its angles (`0x10000` for a turn, times 8192/45, `0x0C09B478`) and adds them to that angle (`0x0C09A4C6`), so that a negative value raises the sky (the horizon of its picture appears higher). -4 in `d000` (Dobuita) and `jd00` (Sakuragaoka), -6 in `jhd0` (the Hazuki residence), -2 in `ju00` (Yamanose), in the three discs |
 | `BLKS` | float  | BLocKS | Unknown: 100 |
 
 ## List chunks

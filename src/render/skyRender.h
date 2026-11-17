@@ -29,6 +29,7 @@ typedef struct {
     int         backBottomLoc;
     int         bandLoc;
     int         hasBandLoc;
+    int         offsetLoc;
     Texture     texture;        // id 0 if none is loaded
     Texture     band;           // The second texture, id 0 if none
     float       below[3];       // Color of the first pixel of the first texture
@@ -44,8 +45,10 @@ void SkyRender_Free(SkyRender* sky);
 bool SkyRender_Load(SkyRender* sky, const char* path);
 void SkyRender_Unload(SkyRender* sky);
 // Draws the sky seen from the camera in area (pixels of the screen, with the aspect ratio of the camera), in 2D: before
-// the scene. backTop and backBottom are the ARGB colors of the background over the first texture, at its top and its
-// bottom as drawn (alpha 0: none)
-void SkyRender_Draw(const SkyRender* sky, Camera3D camera, Rectangle area, uint32_t backTop, uint32_t backBottom);
+// the scene. offset is added to the angle of the camera from the horizon (degrees, the SCOF chunk of the map: negative
+// values raise the sky). backTop and backBottom are the ARGB colors of the background over the first texture, at its
+// top and its bottom as drawn (alpha 0: none)
+void SkyRender_Draw(const SkyRender* sky, Camera3D camera, Rectangle area, float offset, uint32_t backTop,
+    uint32_t backBottom);
 
 #endif

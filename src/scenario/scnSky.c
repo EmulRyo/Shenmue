@@ -95,6 +95,11 @@ static bool IsScroll(const char* name) {
 
 void SCNSky_Find(const MAPINFO_File* file, const SD_Data* program, SCNSky_Map* sky) {
     memset(sky, 0, sizeof(*sky));
+    // The SCOF chunk, a float of degrees, which the game converts to its angles (0x0C09B478) and adds to the angle of the
+    // camera from the horizon when it places the sky (0x0C09A4C6)
+    uint32_t offset;
+    if (MAPINFO_ChunkValue(file, "SCOF", &offset))
+        memcpy(&sky->offset, &offset, sizeof(sky->offset));
     const SD_Reference* scroll = NULL;
     for (uint32_t i = 0; program != NULL && i < program->count; i++) {
         const SD_Reference* reference = &program->references[i];

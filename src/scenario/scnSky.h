@@ -43,6 +43,8 @@ typedef enum {
 typedef struct {
     SCNSky_Source   source;
     char            file[SCNSKY_FILE_SIZE];     // Of SCNSKY_CHUNK and SCNSKY_PROGRAM, e.g. "SCROLL23.SPR"
+    float           offset;                     // Degrees added to the angle of the camera from the horizon to place
+                                                // the sky (the SCOF chunk, 0 without it): the sky goes up when negative
     uint32_t        air;                        // SCNSKY_AIR_* that the weather module sets in the map: those that the
                                                 // program enables, all of them with the sky of the weather (the game
                                                 // keeps them from map to map: e.g. Dobuita from Sakuragaoka)

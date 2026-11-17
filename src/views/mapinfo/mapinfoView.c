@@ -759,7 +759,7 @@ static void DrawSky(Camera3D camera, Rectangle view) {
     SCNSky_Air air;
     bool back = (g_map.sky.air & SCNSKY_AIR_BACK) && MAPINFODate_Air(&air);
     if (SkyRender_Load(&g_skyRender, path))
-        SkyRender_Draw(&g_skyRender, camera, view, back ? air.fog.top : 0, back ? air.fog.bottom : 0);
+        SkyRender_Draw(&g_skyRender, camera, view, g_map.sky.offset, back ? air.fog.top : 0, back ? air.fog.bottom : 0);
 }
 
 static void DrawScene(Rectangle area, Font font, float fontSize) {
