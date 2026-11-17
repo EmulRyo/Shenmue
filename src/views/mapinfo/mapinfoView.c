@@ -426,11 +426,13 @@ void MAPINFOView_Toolbar(void) {
     Toolbar_Toggle(ICON_STAR, "Lights", "Light the characters with the lights of the map (the group 0 of the LGHT chunk: its "
         "ambient color and its point lights), else from the camera. The exteriors are always lit from the camera: the game "
         "also lights them by the hour and the weather", KEY_I, &g_mapOptions.lights);
-    if (g_map.sky.source == SCNSKY_NONE)
+    MAPINFO_Fog fog;
+    if (g_map.sky.source == SCNSKY_NONE && !MAPINFODate_Fog(&fog))
         GuiDisable();
     Toolbar_Toggle(ICON_FILETYPE_IMAGE, "Sky", "Draw the sky of the map behind it (SCROLLnn.SPR of the sprite folder): the one of its "
         "SCRL chunk or of its program, or the one that the game chooses by the hour and the weather of the date. With it, the "
-        "fog and the light that the game sets by the hour and the weather in the maps whose program lets it", KEY_Y,
+        "fog and the light that the game sets by the hour and the weather in the maps whose program lets it, or the fog of the "
+        "set of the FOG chunk that the program applies", KEY_Y,
         &g_mapOptions.sky);
     GuiEnable();
     Toolbar_Separator();
@@ -508,11 +510,14 @@ static void DrawModels(Camera3D camera, const MAPINFOView_Changes* changes) {
         if (g_map.doorInstances[i] >= 0 && MAPINFOView_IsItemVisible(ITEM_DOOR, i))
             g_map.visibleInstances[count++] = g_map.instances[g_map.doorInstances[i]];
     }
-    // The fog and the light of the weather module, with the sky
+    // The fog of the weather module or of the FOG chunk, and the light of the weather module, with the sky
     SCNSky_Air air = { 0 };
     bool hasAir = g_mapOptions.sky && MAPINFODate_Air(&air);
-    MT5Render_Fog fog = { hasAir && (g_map.sky.air & SCNSKY_AIR_FOG), air.fog.nearDistance, air.fog.farDistance, air.fog.density,
-        { ((air.fog.color >> 16) & 0xFF) / 255.0f, ((air.fog.color >> 8) & 0xFF) / 255.0f, (air.fog.color & 0xFF) / 255.0f } };
+    MAPINFO_Fog source = { 0 };
+    MT5Render_Fog fog = { 0 };
+    if (g_mapOptions.sky && MAPINFODate_Fog(&source))
+        fog = (MT5Render_Fog) { true, source.nearDistance, source.farDistance, source.density, { ((source.color >> 16) & 0xFF) / 255.0f,
+            ((source.color >> 8) & 0xFF) / 255.0f, (source.color & 0xFF) / 255.0f } };
     MT5Render_SetFog(&g_map.render, &fog);
     // The characters lit by the lights of the other view, by the weather module (its ambient light and the intensity of
     // its light 0, shown with the direction and the color of its tables, which the game doesn't set), or by the map

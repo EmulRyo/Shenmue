@@ -98,13 +98,17 @@ typedef struct {
     char        name[17]; // e.g. "bgm087.snd", "FREE" for an empty slot
 } MAPINFO_SoundBank;
 
+// A set of the FOG chunk (its FOG chunk), which the game applies with the function 0x128 (FogSet): the fog goes linearly
+// with the logarithm of the depth from nearDistance to farDistance, times density, at most 1
 typedef struct {
     bool        present;
     float       nearDistance;
     float       farDistance;
-    float       density;    // Probably
-    uint32_t    color;      // ARGB
+    float       density;
+    uint32_t    color;      // ARGB, the alpha is ignored
 } MAPINFO_Fog;
+
+#define MAPINFO_FOG_SETS    2   // Sets of DEMO, FOG and BACK chunks in a FOG chunk at most
 
 typedef enum {
     MAPINFO_DOOR_MODEL = 1, // A model that isn't a door: the dark boxes behind the doors (DR00 models), other objects
@@ -145,6 +149,8 @@ typedef struct {
     uint32_t            doorCount;
     MAPINFO_Door*       doors;
     MAPINFO_Fog         fog;    // The first set of the FOG chunk
+    uint32_t            fogSetCount;
+    MAPINFO_Fog         fogSets[MAPINFO_FOG_SETS]; // The fog of each set
     uint32_t            scnVersion;     // 0x20000: SH-4 code, 0x100: bytecode, 0 if there is no SCN3 chunk
     uint32_t            cutsceneCount;  // TRCK chunks of the SCEX chunk, the empty ones included
     MAPINFO_Cutscene*   cutscenes;

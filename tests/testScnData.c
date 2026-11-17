@@ -63,6 +63,8 @@ typedef struct {
     uint64_t    airFog;                 // Maps whose fog the weather module sets
     uint64_t    airLight;               // Maps whose light the weather module sets
     uint64_t    skyOffsets;             // Maps whose sky has an offset (SCOF chunk)
+    uint64_t    fogSets;                // Maps whose program applies a set of their FOG chunk
+    uint64_t    fogSetsMissing;         // Of them, those whose FOG chunk hasn't that set
     double      skyOffsetSum;
 } DataStats;
 
@@ -75,6 +77,13 @@ static void CheckSky(const TestContext* context, const CorpusFile* map, const MA
     stats->airFog += (sky.air & SCNSKY_AIR_FOG) != 0;
     stats->airLight += (sky.air & SCNSKY_AIR_LIGHT) != 0;
     stats->skyOffsets += sky.offset != 0.0f;
+    if (sky.fogSet >= 0) {
+        stats->fogSets++;
+        if ((uint32_t)sky.fogSet >= file->fogSetCount) {
+            stats->fogSetsMissing++;
+            Test_Info("%s: fog set %d applied, the FOG chunk has %u", map->name, sky.fogSet, file->fogSetCount);
+        }
+    }
     stats->skyOffsetSum += sky.offset;
     if (sky.source == SCNSKY_WEATHER) {
         size_t length = strlen(stats->weatherSkies);
@@ -359,6 +368,9 @@ void Test_ScnData(const TestContext* context) {
     CHECK_EQ(stats.airLight, 15, "maps whose light the weather module sets");
     // SCOF: -4 in Dobuita and Sakuragaoka (jd00), -6 at the Hazuki residence (jhd0), -2 in Yamanose (ju00), 3 discs
     CHECK_EQ(stats.skyOffsets, 12, "maps whose sky has an offset");
+    CHECK_EQ(stats.kinds[SD_FOG], 85, "calls applying a set of the FOG chunk");
+    CHECK_EQ(stats.fogSets, 71, "maps whose program applies a set of their FOG chunk");
+    CHECK_EQ(stats.fogSetsMissing, 0, "maps whose program applies a set that their FOG chunk hasn't");
     CHECK(stats.skyOffsetSum == -48.0, "sum of the offsets of the skies: %g", stats.skyOffsetSum);
     Test_Info("skies: %llu maps by the weather (%s), %llu loaded by the program, %llu of the SCRL chunk, %llu without",
         (unsigned long long)stats.skies[SCNSKY_WEATHER], stats.weatherSkies, (unsigned long long)stats.skies[SCNSKY_PROGRAM],

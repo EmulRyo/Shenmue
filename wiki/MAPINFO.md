@@ -665,8 +665,10 @@ Contains one set (78 chunks) or two sets (2 chunks, size `0xA8`: `scene/02/mksg`
 | Chunk  | Size | Data | Description |
 |--------|-----:|------|-------------|
 | `DEMO` | 0xC  | `uint32` | Unknown. Always 1 |
-| `FOG ` | 0x1C | `float near`, `float far`, `float density`, `uint32 color`, `uint32 unknown` | Fog: distance where it starts and where it is complete (e.g. 0.1 and 150), *probably* its density (0.08 to 1) and its color (ARGB, e.g. `0xFF605010`). The last value is always 1. The default values are `20, 800, 1, 0xFFFFFFFF` |
-| `BACK` | 0x28 | `uint32 colors[4]`, `uint32`, `uint32`, `uint32[2]` | *Probably* the colors of the background. The fifth value is always 0, the sixth 0 or 1, the last two 0 |
+| `FOG ` | 0x1C | `float near`, `float far`, `float density`, `uint32 color`, `uint32 unknown` | The fog, as `0x049` (Fog) sets it: the distance where it starts and where it is complete (e.g. 0.1 and 150), its density (0 to 1.06: 0 for none in `drme`) and its color (ARGB, the alpha ignored, e.g. `0xFF605010`); it grows with the logarithm of the distance (see `0x049`). The last value is always 1. The default values are `20, 800, 1, 0xFFFFFFFF` |
+| `BACK` | 0x28 | `uint32 colors[4]`, `uint32`, `uint32`, `uint32[2]` | The 4 colors of the background of the [sky](#sky) (ARGB, as `0x06F` sets them), then the color that the screen is cleared with instead of the color of the sky (always 0, black), a value 0 or 1 and two values at 0, which `0x128` gives to the code of the sky |
+
+The game applies a set with the function `0x128` (FogSet), by its number: 71 programs apply the set 0 of their map, 85 times (the shops, the houses and other interiors, which also stop the [weather module](#sky) from setting the fog, with `0x175` operations 23 and 25 at 0), and `scene/02/mksg` also its set 1. `djaz` and `ju00` have a chunk that their program doesn't apply: `ju00` sets its fog with `0x049` instead.
 
 ## SCEX — Cutscenes
 

@@ -227,9 +227,12 @@ static void AddInfoItems(void) {
     const MAPINFO_Chunk* scn = MAPINFO_FindChunk(file, "SCN3");
     if (scn != NULL)
         AddItem(ITEM_INFO, 0, TextFormat("SCN3: %s (0x%X), 0x%X bytes", ScnText(file->scnVersion), file->scnVersion, scn->size), false);
-    if (file->fog.present)
-        AddItem(ITEM_INFO, 0, TextFormat("Fog: %g to %g, density %g, color #%06X", file->fog.nearDistance, file->fog.farDistance,
-            file->fog.density, file->fog.color & 0xFFFFFF), false);
+    for (uint32_t i = 0; i < file->fogSetCount; i++) {
+        const MAPINFO_Fog* fog = &file->fogSets[i];
+        const char* use = (g_map.sky.air & SCNSKY_AIR_FOG) ? "" : g_map.sky.fogSet == (int)i ? ", applied by the program" : "";
+        AddItem(ITEM_INFO, 0, TextFormat("Fog %u: %g to %g, density %g, color #%06X%s", i, fog->nearDistance, fog->farDistance,
+            fog->density, fog->color & 0xFFFFFF, use), false);
+    }
     if (g_map.sky.source == SCNSKY_WEATHER)
         AddItem(ITEM_INFO, 0, "Sky: chosen by the hour and the weather (SCROLL60 to SCROLL66)", false);
     else if (g_map.sky.source != SCNSKY_NONE)

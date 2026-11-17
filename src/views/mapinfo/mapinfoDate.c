@@ -136,6 +136,19 @@ bool MAPINFODate_Air(SCNSky_Air* air) {
     return true;
 }
 
+// The fog of the map at the date: the one of the weather module if it sets it, or else the set of the FOG chunk that the
+// program applies (0x128). Returns false if none, or if it has no density
+bool MAPINFODate_Fog(MAPINFO_Fog* fog) {
+    SCNSky_Air air;
+    if ((g_map.sky.air & SCNSKY_AIR_FOG) && MAPINFODate_Air(&air))
+        *fog = (MAPINFO_Fog) { true, air.fog.nearDistance, air.fog.farDistance, air.fog.density, air.fog.color };
+    else if (g_map.sky.fogSet >= 0 && (uint32_t)g_map.sky.fogSet < g_map.file.fogSetCount)
+        *fog = g_map.file.fogSets[g_map.sky.fogSet];
+    else
+        return false;
+    return fog->density > 0.0f && fog->farDistance > fog->nearDistance;
+}
+
 // e.g. "SCROLL64.SPR (rain or snowfall), chosen by the hour and the weather"
 const char* MAPINFODate_SkyText(void) {
     switch (g_map.sky.source) {

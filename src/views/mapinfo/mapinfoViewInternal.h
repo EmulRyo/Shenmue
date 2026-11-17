@@ -241,6 +241,7 @@ void MAPINFODate_Properties(Properties* properties);
 const char* MAPINFODate_SkyFile(void);
 const char* MAPINFODate_SkyText(void);
 bool MAPINFODate_Air(SCNSky_Air* air);
+bool MAPINFODate_Fog(MAPINFO_Fog* fog);
 
 // mapinfoItems.c
 uint32_t MAPINFOItems_ProgramCount(SD_Kind kind, int32_t number, const char* name);

@@ -43,6 +43,8 @@ typedef enum {
 typedef struct {
     SCNSky_Source   source;
     char            file[SCNSKY_FILE_SIZE];     // Of SCNSKY_CHUNK and SCNSKY_PROGRAM, e.g. "SCROLL23.SPR"
+    int             fogSet;                     // The set of the FOG chunk that the program applies (0x128), the
+                                                // first one if several, -1 if none
     float           offset;                     // Degrees added to the angle of the camera from the horizon to place
                                                 // the sky (the SCOF chunk, 0 without it): the sky goes up when negative
     uint32_t        air;                        // SCNSKY_AIR_* that the weather module sets in the map: those that the

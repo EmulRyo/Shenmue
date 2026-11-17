@@ -244,10 +244,11 @@ static void ReadFog(MAPINFO_File* file, const MAPINFO_Chunk* chunk) {
         uint32_t size = Bytes_ReadU32(file->data + pos + 4);
         if (size < 8 || size > end - pos)
             return;
-        if (memcmp(file->data + pos, "FOG ", 4) == 0 && size >= 0x18) {
+        if (memcmp(file->data + pos, "FOG ", 4) == 0 && size >= 0x18 && file->fogSetCount < MAPINFO_FOG_SETS) {
             const uint8_t* p = file->data + pos + 8;
-            file->fog = (MAPINFO_Fog) { true, ReadFloat(p), ReadFloat(p + 4), ReadFloat(p + 8), Bytes_ReadU32(p + 12) };
-            return;
+            file->fogSets[file->fogSetCount++] = (MAPINFO_Fog) { true, ReadFloat(p), ReadFloat(p + 4), ReadFloat(p + 8),
+                Bytes_ReadU32(p + 12) };
+            file->fog = file->fogSets[0];
         }
         pos += size;
     }
