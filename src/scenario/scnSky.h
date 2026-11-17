@@ -8,9 +8,10 @@
 #include "scenario/scnData.h"
 
 // The sky of a map: a panorama of the sprite folder (SCROLLnn.SPR, whose texture airNN covers 90 degrees around the
-// camera and 45 degrees from the horizon down and up), drawn behind the map. The map gives it in its SCRL chunk, or its
-// program loads it (ScrollSprite, 0x0B4), or the program lets the game choose it by the hour and the weather of
-// WEATHER.BIN (0x175, operation 27): the weather module of the game (WAIR, "AppendWeatherAir()" in 1ST_READ.BIN).
+// camera and 45 degrees high, from just below the horizon, see skyRender.h), drawn behind the map. The map gives it in
+// its SCRL chunk, or its program loads it (ScrollSprite, 0x0B4), or the program lets the game choose it by the hour and
+// the weather of WEATHER.BIN (0x175, operation 27): the weather module of the game (WAIR, "AppendWeatherAir()" in
+// 1ST_READ.BIN).
 // Every frame, that module also sets the fog, the colors of the background and the light of the map from its tables of
 // the hours, mixed by the weather, when the program lets it (0x175, operations 23 to 28: SCNSKY_AIR_*)
 

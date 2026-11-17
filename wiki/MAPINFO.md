@@ -281,7 +281,7 @@ The sky of a map is drawn behind it: a panorama of an [SPR](SPR#scroll-files-ski
 |-----------|-----|---------|
 | Rain or snowfall of 0.1 or more | `SCROLL64` | Dark grey clouds |
 | Otherwise, clouds above 0.25 | `SCROLL65` | Overcast sky |
-| Otherwise, from 5:30 to 7:29 | `SCROLL60` | Dawn: dark blue above, pink on the horizon |
+| Otherwise, from 5:30 to 7:29 | `SCROLL60` | Dawn: pink near the horizon, blue above |
 | From 7:30 to 16:29 | `SCROLL61` | Day: blue with white clouds |
 | From 16:30 to 17:59 | `SCROLL66` | Sunset: orange with red clouds |
 | From 18:00 to 5:29 | `SCROLL63` | Night |

@@ -66,7 +66,7 @@ The 7 `scroll*.spr` files (`sprite/scroll07.spr`, `scene/03/mend/scroll69.spr`..
 
 The 31 `sprite/scroll*.spr` files and `scene/03/mend/scroll69.spr` are the skies of the maps (see [the sky](MAPINFO#sky)): their first texture, named `airNN` after the number of the file, is a panorama of 512×256 (or 256×256) pixels, RGB565, rectangle or twiddled. `scroll98.spr` and `scroll99.spr` have a texture of 8×8, white and black.
 
-The game draws it behind the map as its screen of 640×480 pixels would show it (code at `0x0C09A31C` of `1ST_READ.BIN` PAL): the texture is repeated four times around the camera, each one stretched over 960 pixels, that is 90 degrees (the angle of the camera, `0x10000` for a turn, times 3840/65536), and over 480 pixels high, that is 45 degrees, with its middle row on the horizon; it moves up and down with the angle of the camera from the horizon. Above it, the screen is cleared with the color of its first pixel (the game keeps the color of the last one too). Over the texture, the game draws a quad of the same size with the 4 colors of the background at its corners (see `0x06F` in [MAPINFO](MAPINFO#functions-of-the-game)): a gradient from the top to the bottom, blended by the alpha of the colors.
+The game draws it behind the map as its screen of 640×480 pixels would show it (code at `0x0C09A31C` of `1ST_READ.BIN` PAL, quads in the table at `0x0C28F4B8`, in pixels from the top left corner of the screen): the texture is repeated four times around the camera, each one stretched over 960 pixels, that is 90 degrees (the angle of the camera, `0x10000` for a turn, times 3840/65536), and over 480 pixels high, that is 45 degrees. It is drawn upside down, its first row at the bottom: the horizon of the pictures (the silhouettes of trees and mountains of `scroll03`, `scroll25` or `scroll60`) is near their first rows. The quad is 60 pixels lower than the middle of the screen, so that the texture covers from 5.6 degrees below the horizon (its first row) to 39.4 degrees above it (its last row), the horizon at an eighth of its height from its first row; it moves up and down with the angle of the camera from the horizon. Around it, the screen is cleared with the color of its first pixel (the game keeps the color of the last one too). Over the texture, the game draws a quad of the same size with the 4 colors of the background at its corners (see `0x06F` in [MAPINFO](MAPINFO#functions-of-the-game)): a gradient from the top to the bottom, blended by the alpha of the colors.
 
 | Files | Picture |
 |-------|---------|
@@ -74,10 +74,10 @@ The game draws it behind the map as its screen of 640×480 pixels would show it 
 | `scroll23`, `scroll24`, `scroll28`, `scroll30` | Clouds: lilac, with rays of sun, white, white on blue |
 | `scroll07`, `scroll10`, `scroll64`, `scroll65` | Grey clouds (`scroll64`, the rain of the weather) and overcast skies (`scroll65`) |
 | `scroll03`, `scroll05`, `scroll06`, `scroll12`, `scroll13`, `scroll18`, `scroll29`, `scroll53`, `scroll62`, `scroll66`, `scroll67` | Sunsets: orange, golden, pink or red (`scroll66` is the sunset of the weather) |
-| `scroll19`, `scroll60`, `scroll69` | Dawn and dusk: dark blue above, pink on the horizon (`scroll60`, the dawn of the weather) |
+| `scroll19`, `scroll60`, `scroll69` | Dawn and dusk: pink near the horizon, blue above (`scroll60`, the dawn of the weather; `scroll69` with stars) |
 | `scroll25`, `scroll27`, `scroll63` | Night (`scroll63`, the night of the weather) |
 
-The second texture of the files with two (`air07b`, `air30b`, `air64b`, `air65b`, `air67b`, `air69b`) is a band of clouds or stars of the same width, *probably* drawn above the first one, higher in the sky.
+The second texture of the files with two (`air07b`, `air30b`, `air64b`, `air65b`, `air67b`, `air69b`) is a band of clouds or stars of the same width, which goes on above the first one: the game draws it in quads of 960×1255.5 pixels (117.7 degrees) whose bottom is the top of the first texture, upside down too, with texture coordinates from 0 to 9 vertically (`0x0C09A284`), so that the band is repeated 9 times up to the top of the sky, every 139.5 pixels (13.1 degrees). The colors of the background are not drawn over it.
 
 ## Notes
 
