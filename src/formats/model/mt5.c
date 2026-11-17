@@ -96,7 +96,7 @@ static MT5_Corner ReadCorner(const uint8_t* entry, bool hasUV, bool hasColor, fl
     return corner;
 }
 
-static bool AddTriangle(MT5_Node* node, MT5_FaceState* state, MT5_Corner a, MT5_Corner b, MT5_Corner c) {
+static bool AddTriangle(MT5_Node* node, MT5_FaceState* state, MT5_Corner a, MT5_Corner b, MT5_Corner c, bool prelit) {
     if (a.vertex == b.vertex || a.vertex == c.vertex || b.vertex == c.vertex)
         return true; // Degenerate triangle
 
@@ -115,6 +115,7 @@ static bool AddTriangle(MT5_Node* node, MT5_FaceState* state, MT5_Corner a, MT5_
     triangle->texture = state->texture;
     triangle->listType = state->listType;
     triangle->uvFlags = state->uvFlags;
+    triangle->prelit = prelit;
     return true;
 }
 
@@ -143,7 +144,7 @@ static bool ReadStrips(const uint8_t* buffer, size_t pos, MT5_Node* node, MT5_Fa
             MT5_Corner c0 = ReadCorner(entry, hasUV, hasColor, state->uvScale, state->baseColor);
             MT5_Corner c1 = ReadCorner(entry + entrySize, hasUV, hasColor, state->uvScale, state->baseColor);
             MT5_Corner c2 = ReadCorner(entry + entrySize * 2, hasUV, hasColor, state->uvScale, state->baseColor);
-            bool added = (j & 1) == 0 ? AddTriangle(node, state, c0, c2, c1) : AddTriangle(node, state, c0, c1, c2);
+            bool added = (j & 1) == 0 ? AddTriangle(node, state, c0, c2, c1, hasColor) : AddTriangle(node, state, c0, c1, c2, hasColor);
             if (!added)
                 return false;
         }

@@ -48,10 +48,20 @@ bool MAPINFOView_IsOutdoorGroup(uint32_t group);
 // can be edited), into lights, with their IDs into ids (if not NULL), up to max, and its ambient color. Returns their
 // number
 uint32_t MAPINFOView_GroupLights(uint32_t group, float ambient[3], MT5Render_Light* lights, uint16_t* ids, uint32_t max);
+// The light that the game gives to each person of the map (MAPINFOVIEW_CHARACTER_LIGHT, a white light switched off in
+// most groups), from the camera: the gray that the game gives it times its intensity into color. Returns false if the
+// group hasn't it
+#define MAPINFOVIEW_CHARACTER_LIGHT 31
+#define MAPINFOVIEW_CHARACTER_LIGHT_COLOR 0.3f
+bool MAPINFOView_CharacterLight(uint32_t group, float color[3]);
 
 // Draws the visible models of the map, of the doors and of the characters, as the view shows them (its layers and the
 // eyes of its tree), from camera, inside a 3D mode begun by another view (the cutscenes of the map), with the changes of
 // that view (NULL for none). Does nothing if the view isn't open
 void MAPINFOView_DrawMap(Camera3D camera, const MAPINFOView_Changes* changes);
+// Draws the sky of the open map seen from camera in area (pixels of the screen, with the aspect ratio of the camera), as
+// the view shows it (its Sky toggle and its date), before a 3D mode begun by another view. Does nothing if the view isn't
+// open or the map has no sky
+void MAPINFOView_DrawSky(Camera3D camera, Rectangle area);
 
 #endif

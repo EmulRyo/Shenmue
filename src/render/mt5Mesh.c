@@ -135,7 +135,7 @@ static MT5Mesh_Group* FindGroup(MT5Mesh* result, const MT5_Triangle* triangle, i
     for (uint32_t i = 0; i < result->groupCount; i++) {
         const MT5Mesh_Group* group = &result->groups[i];
         if (group->texture == triangle->texture && group->listType == triangle->listType && group->uvFlags == triangle->uvFlags &&
-            group->frame == frame)
+            group->prelit == triangle->prelit && group->frame == frame)
             return &result->groups[i];
     }
     return NULL;
@@ -151,6 +151,7 @@ static bool AddGroup(MT5Mesh* result, const MT5_Triangle* triangle, int32_t fram
     group->texture = triangle->texture;
     group->listType = triangle->listType;
     group->uvFlags = triangle->uvFlags;
+    group->prelit = triangle->prelit;
     group->frame = frame;
     return true;
 }

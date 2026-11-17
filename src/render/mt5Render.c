@@ -15,6 +15,22 @@
 #include "render/mt5Mesh.h"
 #include "render/mt5Render.h"
 
+// OpenGL 1.1 functions that rlgl doesn't wrap, exported by the OpenGL library of every platform
+#if defined(_WIN32)
+#define MT5RENDER_GLAPI __stdcall
+#else
+#define MT5RENDER_GLAPI
+#endif
+#define MT5RENDER_GL_LEQUAL     0x0203
+#define MT5RENDER_GL_ALWAYS     0x0207
+#define MT5RENDER_GL_VIEWPORT   0x0BA2
+#define MT5RENDER_GL_TEXTURE_2D 0x0DE1
+void MT5RENDER_GLAPI glDepthFunc(unsigned int func);
+void MT5RENDER_GLAPI glGetIntegerv(unsigned int name, int* data);
+void MT5RENDER_GLAPI glBindTexture(unsigned int target, unsigned int texture);
+void MT5RENDER_GLAPI glCopyTexSubImage2D(unsigned int target, int level, int xOffset, int yOffset, int x, int y, int width,
+    int height);
+
 typedef struct {
     float       depth;
     uint32_t    index;  // Of the triangle or the instance
@@ -45,9 +61,11 @@ static const char* g_vertexShader =
 // mode: 0 opaque (alpha ignored), 1 punch-through (alpha test), 2 opaque pixels of translucent polygons, 3 the rest of
 // the pixels of translucent polygons (alpha blending), see MT5Render_DrawOpaque and MT5Render_DrawTranslucent; and for
 // a faded instance (MT5Render_Instance.fade), with the opacity of the instance: 4 opaque, 5 punch-through, 6 translucent.
-// Lit from the camera, with both faces lit for when the back faces are drawn; or, for an instance with lights (lit), by
-// the ambient color, a directional light and the point lights, the light of each one decreasing from its full range to
-// its range. Then the fog, by the depth from the camera (fog: start, end and density, 0 for none): as the fog table of
+// Lit from the camera, with both faces lit for when the back faces are drawn; or, for an instance with lights (lit), as
+// the game lights the vertices (code at 0x0C1F3AA0 in 1ST_READ.BIN PAL): the ambient color, a directional light and the
+// point lights, each one by the cosine of its angle with the normal, fully up to its full range, then as (full range /
+// distance)^8 up to its range, where it ends; the sum saturates at 1. The triangles with vertex colors (prelit) aren't
+// lit by the lights. Then the fog, by the depth from the camera (fog: start, end and density, 0 for none): as the fog table of
 // the PowerVR that the game fills, indexed by the logarithm of the depth, it goes linearly with the logarithm of the
 // depth from the start to the end, times the density, at most 1
 static const char* g_fragmentShader =
@@ -63,6 +81,7 @@ static const char* g_fragmentShader =
     "uniform int mode;\n"
     "uniform float opacity;\n"
     "uniform int lit;\n"
+    "uniform int prelit;\n"
     "uniform vec3 ambient;\n"
     "uniform int lightCount;\n"
     "uniform vec3 lightPosition[LIGHTS];\n"
@@ -82,14 +101,17 @@ static const char* g_fragmentShader =
     "        (mode == 6 && color.a < 0.004)) discard;\n"
     "    vec3 normal = normalize(fragNormal);\n"
     "    vec3 light = vec3(0.45 + 0.55 * abs(dot(normal, lightDir)));\n"
-    "    if (lit == 1) {\n"
+    "    if (lit == 1 && prelit == 1)\n"
+    "        light = vec3(1.0);\n"
+    "    else if (lit == 1) {\n"
     "        light = ambient + sunColor * max(dot(normal, -sunDirection), 0.0);\n"
     "        for (int i = 0; i < lightCount; i++) {\n"
     "            vec3 toLight = lightPosition[i] - fragPosition;\n"
-    "            float distance = length(toLight);\n"
-    "            float reach = clamp((lightRange[i].y - distance) / max(lightRange[i].y - lightRange[i].x, 0.001), 0.0, 1.0);\n"
-    "            light += lightColor[i] * reach * max(dot(normal, toLight / max(distance, 0.001)), 0.0);\n"
+    "            float distance = max(length(toLight), 0.001);\n"
+    "            float reach = distance < lightRange[i].y ? min(pow(lightRange[i].x / distance, 8.0), 1.0) : 0.0;\n"
+    "            light += lightColor[i] * reach * max(dot(normal, toLight / distance), 0.0);\n"
     "        }\n"
+    "        light = min(light, vec3(1.0));\n"
     "    }\n"
     "    float alpha = mode == 0 ? 1.0 : mode == 4 || mode == 5 ? opacity : mode == 6 ? color.a * opacity : color.a;\n"
     "    vec3 rgb = color.rgb * light;\n"
@@ -101,12 +123,24 @@ static const char* g_fragmentShader =
     "    finalColor = vec4(rgb, alpha);\n"
     "}\n";
 
+// Writes back the depth saved before drawing a faded instance (texture1, the depth of the viewport from its origin)
+static const char* g_restoreShader =
+    "#version 330\n"
+    "uniform sampler2D texture1;\n"
+    "uniform ivec2 origin;\n"
+    "out vec4 finalColor;\n"
+    "void main() {\n"
+    "    gl_FragDepth = texelFetch(texture1, ivec2(gl_FragCoord.xy) - origin, 0).r;\n"
+    "    finalColor = vec4(0.0);\n"
+    "}\n";
+
 void MT5Render_Init(MT5Render* render) {
     render->shader = LoadShaderFromMemory(g_vertexShader, g_fragmentShader);
     render->lightDirLoc = GetShaderLocation(render->shader, "lightDir");
     render->modeLoc = GetShaderLocation(render->shader, "mode");
     render->opacityLoc = GetShaderLocation(render->shader, "opacity");
     render->litLoc = GetShaderLocation(render->shader, "lit");
+    render->prelitLoc = GetShaderLocation(render->shader, "prelit");
     render->ambientLoc = GetShaderLocation(render->shader, "ambient");
     render->lightCountLoc = GetShaderLocation(render->shader, "lightCount");
     render->lightPositionLoc = GetShaderLocation(render->shader, "lightPosition");
@@ -120,12 +154,23 @@ void MT5Render_Init(MT5Render* render) {
     render->fogColorLoc = GetShaderLocation(render->shader, "fogColor");
     render->material = LoadMaterialDefault();
     render->material.shader = render->shader;
+    render->restoreShader = LoadShaderFromMemory(g_vertexShader, g_restoreShader);
+    render->restoreShader.locs[SHADER_LOC_MAP_SPECULAR] = GetShaderLocation(render->restoreShader, "texture1");
+    render->originLoc = GetShaderLocation(render->restoreShader, "origin");
+    render->restoreMaterial = LoadMaterialDefault();
+    render->restoreMaterial.shader = render->restoreShader;
     MT5Render_SetFog(render, NULL);
 }
 
 void MT5Render_Free(MT5Render* render) {
     if (render->shader.id > 0 && render->shader.id != rlGetShaderIdDefault())
         UnloadShader(render->shader);
+    if (render->restoreShader.id > 0 && render->restoreShader.id != rlGetShaderIdDefault())
+        UnloadShader(render->restoreShader);
+    if (render->savedDepth > 0)
+        rlUnloadTexture(render->savedDepth);
+    if (render->restoreMaterial.maps != NULL)
+        MemFree(render->restoreMaterial.maps);
     if (render->material.maps != NULL)
         MemFree(render->material.maps); // UnloadMaterial would also unload the shader and the textures
     memset(render, 0, sizeof(*render));
@@ -422,6 +467,8 @@ static void DrawGroup(MT5Render* render, const MT5Render_Model* model, const MT5
         return;
     Texture white = { rlGetTextureIdDefault(), 1, 1, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
     SetShaderValue(render->shader, render->modeLoc, &mode, SHADER_UNIFORM_INT);
+    int prelit = group->prelit ? 1 : 0;
+    SetShaderValue(render->shader, render->prelitLoc, &prelit, SHADER_UNIFORM_INT);
     bool hasTexture = group->texture < model->textureCount && model->textures[group->texture].id > 0;
     render->material.maps[MATERIAL_MAP_DIFFUSE].texture = hasTexture ? model->textures[group->texture] : white;
     if (hasTexture) {
@@ -484,12 +531,70 @@ void MT5Render_DrawTranslucent(MT5Render* render, MT5Render_Model* model, Matrix
     DrawSortedTranslucent(render, model, transform, frame, camera, 3);
 }
 
-// A faded instance, blended over what is drawn without writing the depth: its opaque and punch-through groups, then its
-// translucent ones from back to front
+// Copies the depth of the viewport, to write it back after drawing a faded instance. Returns false if it can't
+static bool SaveDepth(MT5Render* render) {
+    int viewport[4];
+    glGetIntegerv(MT5RENDER_GL_VIEWPORT, viewport);
+    if (viewport[2] <= 0 || viewport[3] <= 0)
+        return false;
+    if (render->savedDepth == 0 || render->savedWidth != viewport[2] || render->savedHeight != viewport[3]) {
+        if (render->savedDepth > 0)
+            rlUnloadTexture(render->savedDepth);
+        render->savedDepth = rlLoadTextureDepth(viewport[2], viewport[3], false);
+        render->savedWidth = viewport[2];
+        render->savedHeight = viewport[3];
+        if (render->savedDepth == 0)
+            return false;
+    }
+    glBindTexture(MT5RENDER_GL_TEXTURE_2D, render->savedDepth);
+    glCopyTexSubImage2D(MT5RENDER_GL_TEXTURE_2D, 0, 0, 0, viewport[0], viewport[1], viewport[2], viewport[3]);
+    glBindTexture(MT5RENDER_GL_TEXTURE_2D, 0);
+    render->savedOrigin[0] = viewport[0];
+    render->savedOrigin[1] = viewport[1];
+    return true;
+}
+
+// Writes back the saved depth over all the pixels of the instance, without color
+static void RestoreDepth(MT5Render* render, const MT5Render_Instance* instance) {
+    const MT5Mesh* mesh = &instance->model->mesh;
+    rlDrawRenderBatchActive();
+    rlColorMask(false, false, false, false);
+    glDepthFunc(MT5RENDER_GL_ALWAYS);
+    SetShaderValue(render->restoreShader, render->originLoc, render->savedOrigin, SHADER_UNIFORM_IVEC2);
+    render->restoreMaterial.maps[MATERIAL_MAP_SPECULAR].texture = (Texture) { render->savedDepth, render->savedWidth,
+        render->savedHeight, 1, 0 };
+    for (uint32_t i = 0; i < mesh->groupCount; i++) {
+        const MT5Mesh_Group* group = &mesh->groups[i];
+        if (group->frame < 0 || (uint32_t)group->frame == instance->frame)
+            DrawMesh(group->mesh, render->restoreMaterial, instance->transform);
+    }
+    rlDrawRenderBatchActive();
+    glDepthFunc(MT5RENDER_GL_LEQUAL);
+    rlColorMask(true, true, true, true);
+}
+
+// A faded instance, blended as a whole over what is drawn, as the game fades the characters and the models of the map
+// (CharacterOpacity, MapModelOpacity): only its nearest surface is seen through, not the faces behind it (e.g. the
+// back of the hair of Ryo through his face, or the walls of the room behind the front ones, in the cutscene of
+// seqdata0.bin of scene/02/toki). Its depth first, without color: its opaque and punch-through groups and the opaque
+// pixels of its translucent ones; then its colors at that depth with the opacity, without writing the depth: the opaque
+// and punch-through groups, then the translucent ones from back to front. The depth before it is written back after it,
+// so that it doesn't hide what is drawn after it, as the translucent polygons of the game don't (e.g. the stars and
+// Shenhua of the vision of that cutscene, behind the ceiling and the walls of the room that fades in over them)
 static void DrawFaded(MT5Render* render, const MT5Render_Instance* instance, Camera3D camera) {
     float opacity = 1.0f - instance->fade;
     SetShaderValue(render->shader, render->opacityLoc, &opacity, SHADER_UNIFORM_FLOAT);
     const MT5Mesh* mesh = &instance->model->mesh;
+    rlDrawRenderBatchActive();
+    bool saved = SaveDepth(render);
+    rlColorMask(false, false, false, false);
+    for (uint32_t i = 0; i < mesh->groupCount; i++) {
+        uint8_t type = mesh->groups[i].listType;
+        DrawGroup(render, instance->model, &mesh->groups[i], type == MT5_LIST_TRANSLUCENT ? 2 : type == MT5_LIST_PUNCH_THROUGH ? 5 : 4,
+            instance->transform, instance->frame);
+    }
+    rlDrawRenderBatchActive();
+    rlColorMask(true, true, true, true);
     rlDisableDepthMask();
     for (uint32_t i = 0; i < mesh->groupCount; i++) {
         if (mesh->groups[i].listType != MT5_LIST_TRANSLUCENT)
@@ -498,11 +603,13 @@ static void DrawFaded(MT5Render* render, const MT5Render_Instance* instance, Cam
     }
     rlEnableDepthMask();
     DrawSortedTranslucent(render, instance->model, instance->transform, instance->frame, camera, 6);
+    if (saved)
+        RestoreDepth(render, instance);
 }
 
 // The lights of an instance, or from the camera: of its lights, the MT5RENDER_LIGHTS nearest ones whose range reaches its
 // bounding sphere
-static void SetLighting(MT5Render* render, const MT5Render_Instance* instance) {
+static void SetLighting(MT5Render* render, const MT5Render_Instance* instance, Camera3D camera) {
     int lit = instance->lighting != NULL ? 1 : 0;
     SetShaderValue(render->shader, render->litLoc, &lit, SHADER_UNIFORM_INT);
     if (!lit)
@@ -534,7 +641,10 @@ static void SetLighting(MT5Render* render, const MT5Render_Instance* instance) {
         ranges[i] = (Vector2) { nearest[i]->fullRange, nearest[i]->range };
     }
     SetShaderValue(render->shader, render->ambientLoc, lighting->ambient, SHADER_UNIFORM_VEC3);
-    SetShaderValue(render->shader, render->sunDirectionLoc, lighting->sunDirection, SHADER_UNIFORM_VEC3);
+    Vector3 sunDirection = { lighting->sunDirection[0], lighting->sunDirection[1], lighting->sunDirection[2] };
+    if (lighting->fromCamera)
+        sunDirection = Vector3Normalize(Vector3Subtract(instance->center, camera.position));
+    SetShaderValue(render->shader, render->sunDirectionLoc, &sunDirection, SHADER_UNIFORM_VEC3);
     SetShaderValue(render->shader, render->sunColorLoc, lighting->sunColor, SHADER_UNIFORM_VEC3);
     SetShaderValue(render->shader, render->lightCountLoc, &count, SHADER_UNIFORM_INT);
     if (count > 0) {
@@ -551,7 +661,7 @@ void MT5Render_DrawInstances(MT5Render* render, const MT5Render_Instance* instan
     MT5Render_SetCamera(render, camera);
     for (uint32_t i = 0; i < count; i++) {
         if (instances[i].fade <= 0.0f) {
-            SetLighting(render, &instances[i]);
+            SetLighting(render, &instances[i], camera);
             MT5Render_DrawOpaque(render, instances[i].model, instances[i].transform, instances[i].frame);
         }
         order[i] = (MT5Render_SortEntry) { Vector3DistanceSqr(instances[i].center, camera.position), i };
@@ -561,7 +671,7 @@ void MT5Render_DrawInstances(MT5Render* render, const MT5Render_Instance* instan
         const MT5Render_Instance* instance = &instances[order[i].index];
         if (instance->fade >= 1.0f)
             continue;
-        SetLighting(render, instance);
+        SetLighting(render, instance, camera);
         if (instance->fade > 0.0f)
             DrawFaded(render, instance, camera);
         else

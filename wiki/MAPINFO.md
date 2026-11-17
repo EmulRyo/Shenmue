@@ -565,16 +565,25 @@ The chunk contains 1 to 17 inner `LGHT` chunks (74 files have one, 26 have two),
 
 | Offset | Size | Type    | Name        | Description |
 |-------:|-----:|---------|-------------|-------------|
-| 0x00   | 2    | uint16  | `id`        | Number of the light: the game keeps the lights of the group by it, and `0x066` (LightControl) changes the light of that number |
+| 0x00   | 2    | uint16  | `id`        | Number of the light: the game keeps the lights of the group by it, and `0x066` (LightControl) changes the light of that number. The light 31 is the [light of the characters](#lighting) |
 | 0x02   | 2    | uint16  | `on`        | 1 (2728 lights) or 0 (334). *Probably* the light is switched on: the group 1 of `scene/02/toki`, the vision of its cutscene, has the lamps 1, 2, 3 and 16 of the group 0 at 0 and only its blue light 4 at 1 |
 | 0x04   | 2    | uint16  | `flags`     | The type of the light in the low bits (3 in the lamps, 2, 4) and an unknown bit `0x08`: 11 (1680), 3 (1151), 2, 4, 12 or 10. `0x066` operation 0 sets it |
 | 0x06   | 6    | half[3] | `color`     | Red, green and blue, from 0 to 1 |
 | 0x0C   | 2    | half    | `intensity` | The intensity: usually 1 (0.5 to 1.3). `0x066` operation 4 sets it |
-| 0x0E   | 2    | half    | `range`     | The distance where the light ends: usually 2 to 6. The game keeps it with its square and its inverse |
-| 0x10   | 2    | half    | `full`      | The part of the range that the light lights fully, usually about 0.65 (65% of it); the game keeps it with `1 / (1 - full)`, the slope of the light from there to the range |
+| 0x0E   | 2    | half    | `range`     | The distance where the light ends: usually 2 to 6. The game keeps it with its square and its inverse. See [lighting](#lighting) |
+| 0x10   | 2    | half    | `full`      | The part of the range that the light lights fully, usually about 0.65 (65% of it); the game keeps it with `1 / (1 - full)`, and the eighth power of `range × full` for the falloff of the light (see [lighting](#lighting)) |
 | 0x12   | 6    | half[3] | `position`  | Position X, Y, Z. Y is the height, usually 1 to 4 |
 | 0x18   | 6    | half[3] | `direction` | `(0, -1, 0)` (pointing down) in 2776 of 3062 lights |
 | 0x1E   | 2    | uint16  | `angle`     | Angle in units of 1/65536 of a turn: `0x071C` (10°) in 2922 lights |
+
+### Lighting
+
+The game lights the vertices of the models (the maps and the characters) with the group of lights chosen by the program (vertex lighting code at `0x0C1F3AA0` in `1ST_READ.BIN` PAL, with a table of lights of `0xB0` bytes at `0x0C22FBA8`):
+
+- Each point light (type 3) lights a vertex by the cosine of the angle between its normal and the direction to the light, times the color and the intensity of the light. It lights fully up to `range × full` from its position, then as `(range × full / distance)^8`, and not at all from `range` on. The vertices facing away from the light aren't lit by it. Type 2 is a directional light (along its `direction`).
+- The lights are added to the ambient color, and each component of the sum saturates at 1 (255). The result multiplies the texture and the base color of the polygons ([MT5](MT5#colors-8-bytes)).
+- The triangles of strips with vertex colors (`0x001A`, `0x001C` of [MT5](MT5#face-data)) aren't lit: their colors are used as they are. Most of the maps have none: e.g. 212 of the 222 strip chunks of `scene/02/toki/map.mt5` have no vertex colors, so the room is dark away from its lamps (ambient 0.21, 0.17, 0.12).
+- The light 31 is a white directional light (type 2, intensity 1, switched off) in 91 groups. The game sets it before drawing each character (code at `0x0C1450E0`): by default it goes from the camera to the character (`0x0C144CD8`), with the color that the game gives it instead of the white of the group (0.3 gray for the red, green and blue, set at `0x0C144A34`; a character can have its own), so the faces seen by the camera are lit even far from the lamps (e.g. Ryo in the cutscene of `seqdata0.bin` of `scene/02/toki`); other modes make it a point light or place it otherwise. The models of the map aren't lit by it.
 
 ## COLS — Collisions and areas
 

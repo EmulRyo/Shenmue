@@ -155,6 +155,7 @@ typedef struct {
     MT5Render_Instance* visibleInstances; // The instances drawn, filled before drawing them
     MT5Render_Light*    renderLights;   // The lights of the group 0 for the characters, filled before drawing them
     MT5Render_Lighting  lighting;
+    MT5Render_Lighting  mapLighting;    // The same for the models of the map, without the light of the characters
     int32_t*            doorInstances;  // Instance of each door, -1 if its model couldn't be loaded
     const char**        doorErrors;     // Why the model of each door couldn't be loaded, NULL if it was
     MAPINFO_Door*       originalDoors;  // The doors and the lights as read from the file, to restore the edits

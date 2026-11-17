@@ -20,6 +20,7 @@ typedef struct {
     int         modeLoc;
     int         opacityLoc;
     int         litLoc;
+    int         prelitLoc;
     int         ambientLoc;
     int         lightCountLoc;
     int         lightPositionLoc;
@@ -32,6 +33,13 @@ typedef struct {
     int         fogLoc;
     int         fogColorLoc;
     Material    material;
+    Shader      restoreShader;  // Writes back the depth saved before drawing a faded instance
+    int         originLoc;
+    Material    restoreMaterial;
+    unsigned int savedDepth;    // Texture of the depth of the viewport, 0 if none
+    int         savedWidth;
+    int         savedHeight;
+    int         savedOrigin[2];
 } MT5Render;
 
 // Fog over the models drawn: linear with the logarithm of the depth from nearDistance to farDistance, times density, at
@@ -45,7 +53,7 @@ typedef struct {
 } MT5Render_Fog;
 
 // A point light of the scene (the lights of the LGHT chunks of the maps): it lights fully up to fullRange from its
-// position, and less and less up to range
+// position, then as (fullRange / distance)^8 up to range, where it ends
 typedef struct {
     float       position[3];
     float       color[3];
@@ -61,6 +69,9 @@ typedef struct {
     const MT5Render_Light*  lights;
     float                   sunDirection[3];    // A directional light: where it goes (normalized)
     float                   sunColor[3];        // Its color times its intensity, 0 for none
+    bool                    fromCamera;         // The directional light goes from the camera to the center of each
+                                                // instance instead of sunDirection: the light that the game gives to
+                                                // each character (the light 31 of the LGHT chunks)
 } MT5Render_Lighting;
 
 typedef struct {

@@ -39,6 +39,7 @@ typedef struct {
     uint16_t    texture;  // Index in the texture list
     uint8_t     listType; // MT5_ListType
     uint8_t     uvFlags;  // MT5_UVFlags, repeat if 0
+    bool        prelit;   // Of a strip with vertex colors (0x001A, 0x001C): the game doesn't light it
 } MT5_Triangle;
 
 typedef struct {

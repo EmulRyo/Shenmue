@@ -422,7 +422,20 @@ static struct {
     MT5Render_Light*    lights;
     uint16_t*           ids;
     MT5Render_Lighting  lighting;
+    MT5Render_Lighting  objectLighting; // The same without the light of the people, for the objects
 } g_lights;
+
+// The lighting of a character of the cutscene: the objects (e.g. the constellations SEZ1 and SEZ2 of the cutscene of
+// seqdata0.bin of scene/02/toki) aren't lit by the light that the game gives to the people
+static const MT5Render_Lighting* CharacterLighting(bool human) {
+    const MT5Render_Lighting* lighting = g_mapChanges.lighting;
+    if (human || lighting == NULL || !lighting->fromCamera)
+        return lighting;
+    g_lights.objectLighting = *lighting;
+    g_lights.objectLighting.fromCamera = false;
+    memset(g_lights.objectLighting.sunColor, 0, sizeof(g_lights.objectLighting.sunColor));
+    return &g_lights.objectLighting;
+}
 
 // The lights that light the characters at the current frame, NULL if from the camera (the Lights toggle is off, the
 // map has no lights, or they are of an exterior, which the game also lights by the hour and the weather): the group of lights of the map chosen by the last call to LightGroup (0 before), with the ambient
@@ -456,6 +469,10 @@ static const MT5Render_Lighting* CutsceneLighting(void) {
     MT5Render_Lighting* lighting = &g_lights.lighting;
     lighting->lightCount = MAPINFOView_GroupLights(group, lighting->ambient, g_lights.lights, g_lights.ids, total);
     lighting->lights = g_lights.lights;
+    // The light that the game gives to each character, from the camera
+    float characterColor[3] = { 0.0f, 0.0f, 0.0f };
+    lighting->fromCamera = MAPINFOView_CharacterLight(group, characterColor);
+    memcpy(lighting->sunColor, characterColor, sizeof(characterColor));
     for (uint32_t i = first; i < program->lightCount && program->lights[i].frame <= frame; i++) {
         const SCNCutscene_Light* call = &program->lights[i];
         if (call->function == SCNCUTSCENE_AMBIENT && (call->known & 0x0E) == 0x0E)
@@ -667,7 +684,7 @@ static void DrawCharacters(Camera3D camera) {
         Matrix transform = AUTHPose_CharacterTransform(i);
         MT5Render_Model* instanced = &g_auth.models[model].model;
         g_auth.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0,
-            ProgramFade(g_auth.sequence.characters[i].idValue), g_mapChanges.lighting };
+            ProgramFade(g_auth.sequence.characters[i].idValue), CharacterLighting(g_auth.characterModels[i].human) };
     }
     for (uint32_t i = 0; i < g_auth.placedCount && g_options.charactersShown; i++) {
         const AUTHView_Placed* placed = &g_auth.placed[i];
@@ -682,7 +699,7 @@ static void DrawCharacters(Camera3D camera) {
         AUTHPose_PosePlaced(placed);
         MT5Render_Model* instanced = &g_auth.models[placed->model].model;
         g_auth.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0,
-            fade, g_mapChanges.lighting };
+            fade, CharacterLighting(placed->human) };
     }
     MT5Render_DrawInstances(&g_auth.render, g_auth.instances, count, camera);
 
@@ -768,14 +785,19 @@ static void DrawScene(Rectangle area, Font font, float fontSize) {
     Camera3D camera;
     Rectangle view = area;
     bool map = ShowsMap();
+    // The sky of the map behind it, as the game draws it in the cutscenes (e.g. the night sky of the vision of the
+    // cutscene of seqdata0.bin of scene/02/toki, where the program fades the room out)
     if (g_options.cutsceneCamera) {
         camera = CutsceneCamera();
         view = Scene3D_Letterbox(area, SCENE3D_GAME_ASPECT);
+        if (map)
+            MAPINFOView_DrawSky(camera, view);
         FreeCamera_BeginCamera3D(camera, view, AUTHVIEW_NEAR, AUTHVIEW_FAR);
     }
     else if (map) {
         // The planes of the free camera are those of the cutscene, which can be much smaller than the map
         camera = FreeCamera_Camera3D(&g_auth.camera);
+        MAPINFOView_DrawSky(camera, view);
         FreeCamera_BeginCamera3D(camera, view, AUTHVIEW_NEAR, AUTHVIEW_FAR);
     }
     else

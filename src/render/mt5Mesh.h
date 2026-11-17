@@ -9,11 +9,12 @@
 // Meshes of an MT5/CHRM model in the pose of its node hierarchy, ready to draw with raylib. They keep the node of each
 // vertex, so that they can be drawn in another pose of the nodes (the motions of the characters)
 
-// Triangles that share texture, list type and texture wrapping, drawn with one mesh
+// Triangles that share texture, list type, texture wrapping and lighting, drawn with one mesh
 typedef struct {
     uint16_t    texture;
     uint8_t     listType;
     uint8_t     uvFlags;
+    bool        prelit;     // With vertex colors, not lit by the lights (MT5_Triangle.prelit)
     int32_t     frame; // Animation frame of the triangles, -1 if they are always shown
     uint32_t    triangleCount;
     uint32_t    filled; // Triangles copied to the mesh while it is built

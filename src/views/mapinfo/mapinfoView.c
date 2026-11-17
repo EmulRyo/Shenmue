@@ -492,6 +492,46 @@ static void UpdateInput(Rectangle scene) {
 static void DrawModels(Camera3D camera, const MAPINFOView_Changes* changes) {
     if (g_map.visibleInstances == NULL)
         return;
+    // The fog of the weather module or of the FOG chunk, and the light of the weather module, with the sky
+    SCNSky_Air air = { 0 };
+    bool hasAir = g_mapOptions.sky && MAPINFODate_Air(&air);
+    MAPINFO_Fog source = { 0 };
+    MT5Render_Fog fog = { 0 };
+    if (g_mapOptions.sky && MAPINFODate_Fog(&source))
+        fog = (MT5Render_Fog) { true, source.nearDistance, source.farDistance, source.density, { ((source.color >> 16) & 0xFF) / 255.0f,
+            ((source.color >> 8) & 0xFF) / 255.0f, (source.color & 0xFF) / 255.0f } };
+    MT5Render_SetFog(&g_map.render, &fog);
+    // The characters lit by the lights of the other view, by the weather module (its ambient light and the intensity of
+    // its light 0, shown with the direction and the color of its tables, which the game doesn't set), or by the map.
+    // The models of the map and the doors are lit by the lights of the interiors too, else from the camera: only their
+    // triangles without vertex colors, as in the game (e.g. most of the room of scene/02/toki), and without the light
+    // that the game gives to each person
+    const MT5Render_Lighting* lighting = NULL;
+    const MT5Render_Lighting* mapLighting = NULL;
+    if (changes != NULL) {
+        lighting = changes->lighting;
+        mapLighting = lighting;
+    }
+    else if (g_mapOptions.lights && hasAir && (g_map.sky.air & SCNSKY_AIR_LIGHT)) {
+        MT5Render_Lighting* airLighting = &g_map.airLighting;
+        Vector3 direction = Vector3Normalize((Vector3) { air.direction[0], air.direction[1], -air.direction[2] });
+        *airLighting = (MT5Render_Lighting) { { air.ambient, air.ambient, air.ambient }, 0, NULL, { direction.x, direction.y, direction.z },
+            { air.light[0] * air.intensity, air.light[1] * air.intensity, air.light[2] * air.intensity } };
+        lighting = airLighting;
+    }
+    else if (g_mapOptions.lights && g_map.renderLights != NULL && !MAPINFOView_IsOutdoorGroup(0)) {
+        g_map.lighting.lightCount = MAPINFOView_GroupLights(0, g_map.lighting.ambient, g_map.renderLights, NULL, g_map.file.lightCount);
+        g_map.lighting.lights = g_map.renderLights;
+        g_map.lighting.fromCamera = MAPINFOView_CharacterLight(0, g_map.lighting.sunColor);
+        lighting = &g_map.lighting;
+        mapLighting = lighting;
+    }
+    if (mapLighting != NULL && mapLighting->fromCamera) {
+        g_map.mapLighting = *mapLighting;
+        g_map.mapLighting.fromCamera = false;
+        memset(g_map.mapLighting.sunColor, 0, sizeof(g_map.mapLighting.sunColor));
+        mapLighting = &g_map.mapLighting;
+    }
     uint32_t count = 0;
     for (uint32_t i = 0; i < g_map.mapModelCount && g_mapOptions.layers[LAYER_MAP]; i++) {
         if (!MAPINFOView_IsItemVisible(ITEM_MAP_MODEL, i))
@@ -504,37 +544,14 @@ static void DrawModels(Camera3D camera, const MAPINFOView_Changes* changes) {
         if (!shown || fade >= 1.0f)
             continue;
         g_map.visibleInstances[count] = g_map.instances[i];
+        g_map.visibleInstances[count].lighting = mapLighting;
         g_map.visibleInstances[count++].fade = fade;
     }
     for (uint32_t i = 0; i < g_map.file.doorCount && g_mapOptions.layers[LAYER_DOORS]; i++) {
-        if (g_map.doorInstances[i] >= 0 && MAPINFOView_IsItemVisible(ITEM_DOOR, i))
-            g_map.visibleInstances[count++] = g_map.instances[g_map.doorInstances[i]];
-    }
-    // The fog of the weather module or of the FOG chunk, and the light of the weather module, with the sky
-    SCNSky_Air air = { 0 };
-    bool hasAir = g_mapOptions.sky && MAPINFODate_Air(&air);
-    MAPINFO_Fog source = { 0 };
-    MT5Render_Fog fog = { 0 };
-    if (g_mapOptions.sky && MAPINFODate_Fog(&source))
-        fog = (MT5Render_Fog) { true, source.nearDistance, source.farDistance, source.density, { ((source.color >> 16) & 0xFF) / 255.0f,
-            ((source.color >> 8) & 0xFF) / 255.0f, (source.color & 0xFF) / 255.0f } };
-    MT5Render_SetFog(&g_map.render, &fog);
-    // The characters lit by the lights of the other view, by the weather module (its ambient light and the intensity of
-    // its light 0, shown with the direction and the color of its tables, which the game doesn't set), or by the map
-    const MT5Render_Lighting* lighting = NULL;
-    if (changes != NULL)
-        lighting = changes->lighting;
-    else if (g_mapOptions.lights && hasAir && (g_map.sky.air & SCNSKY_AIR_LIGHT)) {
-        MT5Render_Lighting* airLighting = &g_map.airLighting;
-        Vector3 direction = Vector3Normalize((Vector3) { air.direction[0], air.direction[1], -air.direction[2] });
-        *airLighting = (MT5Render_Lighting) { { air.ambient, air.ambient, air.ambient }, 0, NULL, { direction.x, direction.y, direction.z },
-            { air.light[0] * air.intensity, air.light[1] * air.intensity, air.light[2] * air.intensity } };
-        lighting = airLighting;
-    }
-    else if (g_mapOptions.lights && g_map.renderLights != NULL && !MAPINFOView_IsOutdoorGroup(0)) {
-        g_map.lighting.lightCount = MAPINFOView_GroupLights(0, g_map.lighting.ambient, g_map.renderLights, NULL, g_map.file.lightCount);
-        g_map.lighting.lights = g_map.renderLights;
-        lighting = &g_map.lighting;
+        if (g_map.doorInstances[i] >= 0 && MAPINFOView_IsItemVisible(ITEM_DOOR, i)) {
+            g_map.visibleInstances[count] = g_map.instances[g_map.doorInstances[i]];
+            g_map.visibleInstances[count++].lighting = mapLighting;
+        }
     }
     // In the order of MAPINFOModels_ShowCharacters, which gives an instance to the shown characters with a model
     uint32_t instance = g_map.characterInstances;
@@ -545,7 +562,8 @@ static void DrawModels(Camera3D camera, const MAPINFOView_Changes* changes) {
         float fade = changes != NULL && changes->characterFade != NULL ? changes->characterFade(character->info.id) : 0.0f;
         if (fade < 1.0f) {
             g_map.visibleInstances[count] = g_map.instances[instance];
-            g_map.visibleInstances[count].lighting = lighting;
+            // The objects (e.g. the doors DOOR and DOR2 of scene/02/toki) are lit as the map, without the light of the people
+            g_map.visibleInstances[count].lighting = character->info.human || mapLighting == NULL ? lighting : mapLighting;
             g_map.visibleInstances[count++].fade = fade;
         }
         instance++;
@@ -589,6 +607,22 @@ uint32_t MAPINFOView_GroupLights(uint32_t group, float ambient[3], MT5Render_Lig
         count++;
     }
     return count;
+}
+
+// The game sets this light of each character before drawing it (code at 0x0C1450E0 in 1ST_READ.BIN PAL): by default a
+// directional light from the camera to the character (0x0C144CD8), whatever its state in the group, with the color that
+// the game gives it (0.3 gray, set at 0x0C144A34) instead of the one of the group, and the intensity of the group
+bool MAPINFOView_CharacterLight(uint32_t group, float color[3]) {
+    const MAPINFO_File* file = &g_map.file;
+    for (uint32_t i = 0; g_map.open && i < file->lightCount; i++) {
+        const MAPINFO_Light* light = &file->lights[i];
+        if (light->group == group && light->id == MAPINFOVIEW_CHARACTER_LIGHT) {
+            for (int c = 0; c < 3; c++)
+                color[c] = MAPINFOVIEW_CHARACTER_LIGHT_COLOR * light->intensity;
+            return true;
+        }
+    }
+    return false;
 }
 
 const char* MAPINFOView_Path(void) {
@@ -765,6 +799,11 @@ static void DrawSky(Camera3D camera, Rectangle view) {
     bool back = (g_map.sky.air & SCNSKY_AIR_BACK) && MAPINFODate_Air(&air);
     if (SkyRender_Load(&g_skyRender, path))
         SkyRender_Draw(&g_skyRender, camera, view, g_map.sky.offset, back ? air.fog.top : 0, back ? air.fog.bottom : 0);
+}
+
+void MAPINFOView_DrawSky(Camera3D camera, Rectangle area) {
+    if (g_map.open)
+        DrawSky(camera, area);
 }
 
 static void DrawScene(Rectangle area, Font font, float fontSize) {
