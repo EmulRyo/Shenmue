@@ -253,14 +253,16 @@ static bool RunCommand(int line, char* command, char* argument) {
         PrintStatus();
     else if (strcmp(command, "move") == 0 && count == 2)
         AddStep(STEP_MOVE, atoi(words[0]), atoi(words[1]), 0, 1);
+    // The mouse goes to the point a frame before the button is pressed: in the frame of the press, the views that drag
+    // with it (the cameras) would take the jump of the mouse to the point as a movement of the drag
     else if (strcmp(command, "click") == 0 && count >= 2 && ParseButton(words[2], &button)) {
-        AddStep(STEP_MOVE, atoi(words[0]), atoi(words[1]), 0, 0);
+        AddStep(STEP_MOVE, atoi(words[0]), atoi(words[1]), 0, 1);
         AddStep(STEP_BUTTON, button, GLFW_PRESS, 0, 1);
         AddStep(STEP_BUTTON, button, GLFW_RELEASE, 0, 1);
     }
     else if (strcmp(command, "drag") == 0 && count >= 4 && ParseButton(words[4], &button)) {
         int x1 = atoi(words[0]), y1 = atoi(words[1]), x2 = atoi(words[2]), y2 = atoi(words[3]);
-        AddStep(STEP_MOVE, x1, y1, 0, 0);
+        AddStep(STEP_MOVE, x1, y1, 0, 1);
         AddStep(STEP_BUTTON, button, GLFW_PRESS, 0, 1);
         for (int i = 1; i <= 8; i++)
             AddStep(STEP_MOVE, x1 + (x2 - x1) * i / 8, y1 + (y2 - y1) * i / 8, 0, 1);
