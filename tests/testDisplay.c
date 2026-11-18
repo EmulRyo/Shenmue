@@ -176,6 +176,13 @@ static void CheckDisplays(const char* name, const SCNDisplay displays[TIME_COUNT
         CHECK(SCNDisplay_Loads(&displays[1], "MAP1") && !SCNDisplay_Loads(&displays[1], "MAP0"), "act01_d000: MAP1 with snow");
         CHECK(SCNDisplay_Loads(&displays[2], "MAP2"), "act01_d000: MAP2 at Christmas");
         CHECK(SCNDisplay_Loads(&displays[3], "MAP3") && !SCNDisplay_Loads(&displays[3], "MAP2"), "act01_d000: MAP3 on New Year");
+        // The doors of the records 26 (DR01_011) and 0 (DR28_001, the jazz bar): open from 10:00 to 21:00 and from 19:00
+        // to 4:00
+        CHECK_EQ(displays[0].doorCount, 65, "act01_d000: door records");
+        CHECK(displays[0].doors[26] == SCNDISPLAY_DOOR_OPEN && displays[4].doors[26] == SCNDISPLAY_DOOR_CLOSED,
+            "act01_d000: record 26 open at 12:00, closed at 23:00");
+        CHECK(displays[0].doors[0] == SCNDISPLAY_DOOR_CLOSED && displays[4].doors[0] == SCNDISPLAY_DOOR_OPEN,
+            "act01_d000: record 0 closed at 12:00, open at 23:00");
     }
     if (strcmp(name, "scenario/act01_jhd0.scn") == 0) {
         CHECK(SCNDisplay_Loads(&displays[0], "MPSU") && !SCNDisplay_Loads(&displays[0], "MPSN"), "act01_jhd0: MPSU");
@@ -202,7 +209,7 @@ void Test_Display(const TestContext* context) {
         SCNDisplay_SlotOfFile("map01.chrm") == -1, "slots of the MAP model files");
 
     CorpusList list = Corpus_ScnFiles(context->content);
-    uint32_t programs = 0, withSlots = 0, withEvents = 0, varying = 0;
+    uint32_t programs = 0, withSlots = 0, withEvents = 0, varying = 0, withDoors = 0, openDoors = 0;
     for (uint32_t i = 0; i < list.count; i++) {
         uint32_t size;
         uint8_t* data = Corpus_Load(&list.files[i], &size);
@@ -237,6 +244,9 @@ void Test_Display(const TestContext* context) {
                 }
             }
             withSlots += slots;
+            withDoors += displays[0].doorCount > 0;
+            for (uint32_t d = 0; d < displays[0].doorCount; d++)
+                openDoors += displays[0].doors[d] == SCNDISPLAY_DOOR_OPEN;
             withEvents += different;
             if (different) {
                 for (uint32_t t = 0; t < TIME_COUNT; t++)
@@ -250,6 +260,8 @@ void Test_Display(const TestContext* context) {
     }
     Corpus_Free(&list);
     CHECK_EQ(programs, 136, "programs emulated");
+    CHECK_EQ(withDoors, 97, "programs with door records");
+    Test_Info("%u doors open at the first date", openDoors);
     Test_Info("%u programs, %u show or hide MAP models at the start, %u change with the date or the hour; %u slots vary",
         programs, withSlots, withEvents, varying);
 }

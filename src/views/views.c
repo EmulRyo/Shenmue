@@ -20,6 +20,7 @@ typedef struct {
     void    (*toolbar)(void);   // Adds the actions of the view to the toolbar, NULL if it has none
     void    (*status)(ViewStatus* status);
     bool    (*hasToolbar)(void); // If it adds actions now, NULL if it always does
+    void    (*look)(Vector3 position, Vector3 target); // Moves the free camera, NULL if the view has none
 } View;
 
 static const View g_views[VIEW_COUNT] = {
@@ -30,7 +31,7 @@ static const View g_views[VIEW_COUNT] = {
     [VIEW_AUTH]  = { AUTHView_Close, AUTHView_IsOpen, AUTHView_Draw, AUTHView_Toolbar, AUTHView_Status },
     [VIEW_CHRT]  = { CHRTView_Close, CHRTView_IsOpen, CHRTView_Draw, CHRTView_Toolbar, CHRTView_Status },
     [VIEW_PROGRAM] = { ProgramView_Close, ProgramView_IsOpen, ProgramView_Draw, ProgramView_Toolbar, ProgramView_Status },
-    [VIEW_MAPINFO] = { MAPINFOView_Close, MAPINFOView_IsOpen, MAPINFOView_Draw, MAPINFOView_Toolbar, MAPINFOView_Status },
+    [VIEW_MAPINFO] = { MAPINFOView_Close, MAPINFOView_IsOpen, MAPINFOView_Draw, MAPINFOView_Toolbar, MAPINFOView_Status, NULL, MAPINFOView_Look },
     [VIEW_MOTN]  = { MOTNView_Close, MOTNView_IsOpen, MOTNView_Draw, MOTNView_Toolbar, MOTNView_Status },
     [VIEW_FON]   = { FONView_Close, FONView_IsOpen, FONView_Draw, FONView_Toolbar, FONView_Status },
 };
@@ -67,6 +68,18 @@ void Views_Toolbar(void) {
             return;
         }
     }
+}
+
+bool Views_Look(Vector3 position, Vector3 target) {
+    for (int i = 0; i < VIEW_COUNT; i++) {
+        if (g_views[i].isOpen()) {
+            if (g_views[i].look == NULL)
+                return false;
+            g_views[i].look(position, target);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool Views_Status(ViewStatus* status) {

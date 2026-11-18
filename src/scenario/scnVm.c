@@ -127,6 +127,10 @@ static void RecycleState(Machine* machine, State* state) {
     }
     free(state->overlayAddresses);
     free(state->overlayBytes);
+    // Freed again by FreeState if the state isn't reused
+    state->overlayAddresses = NULL;
+    state->overlayBytes = NULL;
+    state->overlayCount = state->overlayCapacity = 0;
     machine->spares[machine->spareCount++] = state;
 }
 
@@ -1103,8 +1107,11 @@ static void RunThread(Machine* machine, const Root* root) {
     machine->work[machine->workCount++] = state;
     while (machine->workCount > 0 && machine->ok) {
         State* path = machine->work[--machine->workCount];
-        if (states++ < VM_MAX_STATES && machine->steps < machine->maxSteps)
+        if (states++ < VM_MAX_STATES && machine->steps < machine->maxSteps) {
             RunPath(machine, path);
+            if (machine->environment != NULL && machine->environment->ended != NULL)
+                machine->environment->ended(machine->environment->context, machine->thread, path->path);
+        }
         RecycleState(machine, path);
     }
     if (states > VM_MAX_STATES || machine->steps >= machine->maxSteps)

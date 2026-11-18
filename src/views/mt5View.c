@@ -75,7 +75,7 @@ bool MT5View_Open(const char* filepath) {
     g_view.model = model;
     MT5Render_Init(&g_view.render);
     if (model.mesh.hiddenNodes > 0)
-        Log_Info("[MT5View_Open]: %u alternative meshes, CLOSE signs and invisible meshes are not shown\n", model.mesh.hiddenNodes);
+        Log_Info("[MT5View_Open]: %u alternative meshes and invisible meshes are not shown\n", model.mesh.hiddenNodes);
     if (model.mesh.skippedTriangles > 0)
         Log_Info("[MT5View_Open]: %u triangles with unresolved vertex indices are not shown\n", model.mesh.skippedTriangles);
 

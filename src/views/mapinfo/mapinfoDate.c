@@ -149,6 +149,31 @@ bool MAPINFODate_Fog(MAPINFO_Fog* fog) {
     return fog->density > 0.0f && fog->farDistance > fog->nearDistance;
 }
 
+// The state of a door at the date: the state that the program writes in its record (SCNDISPLAY_DOOR_UNSET without
+// emulation, or if the door has no record)
+static SCNDisplay_Door DoorDate(uint32_t door) {
+    const SCNDisplay* display = g_mapOptions.date && g_map.hasDate ? MapDate_Display() : NULL;
+    int32_t record = door < g_map.file.doorCount ? g_map.file.doors[door].record : -1;
+    if (display == NULL || record < 0 || (uint32_t)record >= display->doorCount)
+        return SCNDISPLAY_DOOR_UNSET;
+    return (SCNDisplay_Door)display->doors[record];
+}
+
+bool MAPINFODate_IsDoorClosed(uint32_t door) {
+    return DoorDate(door) == SCNDISPLAY_DOOR_CLOSED;
+}
+
+const char* MAPINFODate_DoorText(uint32_t door) {
+    if (g_map.file.doors[door].record < 0)
+        return NULL;
+    switch (DoorDate(door)) {
+    case SCNDISPLAY_DOOR_OPEN: return "open: the sign shows OPEN";
+    case SCNDISPLAY_DOOR_CLOSED: return "closed: the sign shows CLOSE";
+    case SCNDISPLAY_DOOR_VARIES: return "open or closed, depending on the paths of the program";
+    default: return g_mapOptions.date && g_map.hasDate ? "not set by the program" : "not emulated";
+    }
+}
+
 // e.g. "SCROLL64.SPR (rain or snowfall), chosen by the hour and the weather"
 const char* MAPINFODate_SkyText(void) {
     switch (g_map.sky.source) {
@@ -254,6 +279,13 @@ void MAPINFODate_Properties(Properties* properties) {
             counts[display->slots[s]]++;
         Properties_Text(properties, "MAP models", TextFormat("%u shown, %u hidden, %u depending on the paths",
             counts[SCNDISPLAY_SHOWN], counts[SCNDISPLAY_HIDDEN], counts[SCNDISPLAY_VARIES]));
+        if (display->doorCount > 0) {
+            uint32_t doors[4] = { 0 };
+            for (uint32_t d = 0; d < display->doorCount; d++)
+                doors[display->doors[d]]++;
+            Properties_Text(properties, "Doors", TextFormat("%u open, %u closed, %u depending on the paths, %u not set",
+                doors[SCNDISPLAY_DOOR_OPEN], doors[SCNDISPLAY_DOOR_CLOSED], doors[SCNDISPLAY_DOOR_VARIES], doors[SCNDISPLAY_DOOR_UNSET]));
+        }
         uint32_t variants = 0, loaded = 0;
         for (uint32_t i = 0; i < g_map.mapModelCount; i++) {
             variants += g_map.mapModelVariants[i];

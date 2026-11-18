@@ -108,6 +108,8 @@ typedef struct {
     void        (*initialize)(void* context, VM_Memory* memory);
     // Instructions run in all, and per thread, 0 for VM_MAX_TOTAL_STEPS and VM_MAX_STEPS
     uint64_t    maxSteps;
+    // When a path stops: its thread ends, it is dropped (maxWaits) or stopped by a limit of steps or an error. Can be NULL
+    void        (*ended)(void* context, uint32_t thread, const uint8_t* path);
 } VM_Environment;
 
 // Runs the program from its entry point. Returns false on memory error

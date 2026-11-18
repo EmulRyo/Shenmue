@@ -149,6 +149,13 @@ static void DoorProperties(Properties* properties, uint32_t index) {
     changed |= Properties_EditFloat(properties, "Angle", &door->angle, &original->angle, 0.5f);
     changed |= Properties_EditVector(properties, "Scale", door->scale, original->scale, 3, 0.01f);
     Properties_Text(properties, "Model file", error != NULL ? error : "loaded");
+    if (door->record >= 0)
+        Properties_Int(properties, "Record of the program", door->record);
+    const char* state = MAPINFODate_DoorText(index);
+    if (state != NULL)
+        Properties_Text(properties, "State at the date", state);
+    if (g_map.doorSource[0] != '\0')
+        Properties_Text(properties, "Door table", TextFormat("of %s: this map has none", g_map.doorSource));
     if (changed)
         MAPINFOView_UpdateDoor(index);
 }

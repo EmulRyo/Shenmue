@@ -182,7 +182,7 @@ Many doors of the shops (`DRnn_nnn` models, e.g. `scene/01/dski/dr13_012.mt5`, `
 | `0x0D`  | Sign with the **OPEN** text |
 | `0x08`  | Sign with the **CLOSE** (or **CLOSED**) text |
 
-The frame of the sign is the same in both meshes; only the polygons of the text change (different UVs on the same texture, which has both words, sometimes with the opening hours). 139 models of the `scene` folders have this sign (counting the copies of the same model in several maps). The IDs `0x08` and `0x0D` are also used by other models (the wheels of the cars, the bones of the characters), but there the two nodes are in different places.
+The frame of the sign is the same in both meshes; only the polygons of the text change (different UVs on the same texture, which has both words, sometimes with the opening hours). The program of the map chooses the side by the opening hours of the shop, and moves the other one 1000 units down (see [door records](MAPINFO#door-records)). 139 models of the `scene` folders have this sign (counting the copies of the same model in several maps). The IDs `0x08` and `0x0D` are also used by other models (the wheels of the cars, the bones of the characters), but there the two nodes are in different places.
 
 ## Invisible meshes
 

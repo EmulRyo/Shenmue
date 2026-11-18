@@ -246,6 +246,7 @@ void MAPINFOView_Close(void) {
     free(g_map.flags);
     MapDate_Close();
     MAPINFO_Free(&g_map.file);
+    MAPINFO_Free(&g_map.doorMap);
     memset(&g_map, 0, sizeof(g_map));
 }
 
@@ -261,10 +262,11 @@ bool MAPINFOView_Open(const char* filepath) {
     char folder[1024];
     snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(filepath));
     MAPINFOModels_Load(folder);
-    g_map.originalDoors = malloc((file.doorCount + 1) * sizeof(MAPINFO_Door));
+    // After the models: a map without door table can take the doors of another one
+    g_map.originalDoors = malloc((g_map.file.doorCount + 1) * sizeof(MAPINFO_Door));
     g_map.originalLights = malloc((file.lightCount + 1) * sizeof(MAPINFO_Light));
     if (g_map.originalDoors != NULL && g_map.originalLights != NULL) {
-        memcpy(g_map.originalDoors, file.doors, file.doorCount * sizeof(MAPINFO_Door));
+        memcpy(g_map.originalDoors, g_map.file.doors, g_map.file.doorCount * sizeof(MAPINFO_Door));
         memcpy(g_map.originalLights, file.lights, file.lightCount * sizeof(MAPINFO_Light));
     }
     // What the program does with the map, if it has one
@@ -289,7 +291,7 @@ bool MAPINFOView_Open(const char* filepath) {
 
     Log_Info("[MAPINFOView_Open]: %u chunks, %u cameras, %u lights, %u shapes, %u characters (%u shown with their model), %u map models, %u of %u doors\n",
         file.chunkCount, file.cameraCount, file.lightCount, file.shapeCount, g_map.characterCount, g_map.modelledCharacters,
-        g_map.mapModelCount, g_map.loadedDoors, file.doorCount);
+        g_map.mapModelCount, g_map.loadedDoors, g_map.file.doorCount);
     g_map.open = true;
     return true;
 }
@@ -550,6 +552,7 @@ static void DrawModels(Camera3D camera, const MAPINFOView_Changes* changes) {
     for (uint32_t i = 0; i < g_map.file.doorCount && g_mapOptions.layers[LAYER_DOORS]; i++) {
         if (g_map.doorInstances[i] >= 0 && MAPINFOView_IsItemVisible(ITEM_DOOR, i)) {
             g_map.visibleInstances[count] = g_map.instances[g_map.doorInstances[i]];
+            g_map.visibleInstances[count].frame = MAPINFODate_IsDoorClosed(i) ? MT5MESH_FRAME_CLOSE : MT5MESH_FRAME_OPEN;
             g_map.visibleInstances[count++].lighting = mapLighting;
         }
     }
@@ -930,6 +933,13 @@ void MAPINFOView_Draw(Rectangle area) {
     DrawTree(tree);
     MAPINFOProperties_Draw(properties);
     DrawScene(scene, font, fontSize);
+}
+
+void MAPINFOView_Look(Vector3 position, Vector3 target) {
+    if (!g_map.open)
+        return;
+    FreeCamera_LookFrom(&g_map.camera, (Camera3D) { position, target, { 0.0f, 1.0f, 0.0f }, SCENE3D_FOVY, CAMERA_PERSPECTIVE });
+    g_map.mapCamera = false;
 }
 
 void MAPINFOView_Status(ViewStatus* status) {

@@ -97,16 +97,16 @@ static bool IsAlternativeRoot(const MT5_Model* model, uint32_t node) {
 // Many doors of the shops have a sign that shows OPEN or CLOSE: two sibling nodes with the same transform and almost
 // the same bounding sphere (slightly different in some doors, e.g. DR02_019), 0xD with the OPEN side and 8 with the
 // CLOSE side. Other models (the wheels of the cars, the bones of the bodies) also have the nodes 8 and 0xD, but in
-// different places
+// different places. The game moves the side that isn't shown 1000 units down
 static bool IsCloseSign(const MT5_Model* model, uint32_t node) {
     const MT5_Node* close = &model->nodes[node];
-    if ((close->id & 0xFFFF) != 0x08 || !close->hasMesh)
+    if ((close->id & 0xFFFF) != MT5MESH_CLOSE_SIGN || !close->hasMesh)
         return false;
     Vector3 closeCenter = { close->center[0], close->center[1], close->center[2] };
     for (uint32_t i = 0; i < model->nodeCount; i++) {
         const MT5_Node* open = &model->nodes[i];
         Vector3 openCenter = { open->center[0], open->center[1], open->center[2] };
-        if ((open->id & 0xFFFF) == 0x0D && open->hasMesh && open->parent == close->parent &&
+        if ((open->id & 0xFFFF) == MT5MESH_OPEN_SIGN && open->hasMesh && open->parent == close->parent &&
             memcmp(open->position, close->position, sizeof(open->position)) == 0 &&
             memcmp(open->rotation, close->rotation, sizeof(open->rotation)) == 0 &&
             memcmp(open->scale, close->scale, sizeof(open->scale)) == 0 &&
@@ -311,7 +311,23 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
         Matrix local = NodeMatrix(&model->nodes[i], body ? ArmSpread(model, i) : 0.0f);
         world[i] = parent >= 0 ? MatrixMultiply(local, world[parent]) : MatrixMultiply(local, part);
         normalMatrix[i] = MatrixTranspose(MatrixInvert(world[i]));
-        hidden[i] = IsAlternativeRoot(model, i) || IsCloseSign(model, i) || (parent >= 0 && hidden[parent]);
+        hidden[i] = IsAlternativeRoot(model, i) || (parent >= 0 && hidden[parent]);
+    }
+    // The two sides of the signs, in the frames of the models that have none: the OPEN side and its siblings with the ID
+    // 0xD in the frame 0, the CLOSE side in the frame 1. In the models with frames, only the OPEN side is shown
+    for (uint32_t i = 0; i < model->nodeCount; i++) {
+        if (!IsCloseSign(model, i))
+            continue;
+        if (result->frameCount > 0) {
+            hidden[i] = true;
+            continue;
+        }
+        result->sign = true;
+        nodeFrame[i] = MT5MESH_FRAME_CLOSE;
+        for (uint32_t j = 0; j < model->nodeCount; j++) {
+            if ((model->nodes[j].id & 0xFFFF) == MT5MESH_OPEN_SIGN && model->nodes[j].parent == model->nodes[i].parent)
+                nodeFrame[j] = MT5MESH_FRAME_OPEN;
+        }
     }
     // The invisible nodes don't hide their children, they are marked after the children inherit hidden
     for (uint32_t i = 0; i < model->nodeCount; i++) {

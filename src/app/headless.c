@@ -288,6 +288,11 @@ static bool RunCommand(int line, char* command, char* argument) {
             c += size > 0 ? size : 1;
         }
     }
+    else if (strcmp(command, "camera") == 0 && count == 6) {
+        Vector3 position = { (float)atof(words[0]), (float)atof(words[1]), (float)atof(words[2]) };
+        if (!Views_Look(position, (Vector3) { (float)atof(words[3]), (float)atof(words[4]), (float)atof(words[5]) }))
+            Fail(line, "The open view has no free camera");
+    }
     else if (strcmp(command, "dialog") == 0 && *argument != '\0')
         Dialog_Answer(argument);
     else if (strcmp(command, "quit") == 0)

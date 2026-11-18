@@ -305,33 +305,116 @@ static bool IsDoorModel(const uint8_t* scn, uint32_t size, uint32_t pos) {
         Bytes_ReadU32(scn + pos + 4) < MAPINFO_DOOR_MAX_TYPE;
 }
 
-// The door table of the data of the scene program: a list of models followed by their placements. It isn't referenced by
-// the header, so it is found by its content: the first list of models followed by a valid placement. Reads the doors, or
-// only counts them if the array is NULL
-static void ReadDoors(MAPINFO_File* file, const MAPINFO_Chunk* chunk) {
-    const uint8_t* scn = file->data + chunk->offset;
-    uint32_t size = chunk->size;
-    for (uint32_t table = MAPINFO_SCN_CODE_START; table + MAPINFO_DOOR_MODEL_SIZE <= size; table += 4) {
+static int32_t ReadI32(const uint8_t* scn, uint32_t pos) {
+    return (int32_t)Bytes_ReadU32(scn + pos);
+}
+
+// The first word of a record: the start of its placements in the list, usually after a -1 (in scene/0x/dmaj the second
+// record starts at the second placement of the first one)
+static bool IsRecordStart(const uint8_t* scn, const MAPINFO_DoorTable* table, uint32_t record) {
+    int32_t first = ReadI32(scn, record);
+    return first >= 0 && (uint32_t)first < table->listCount && ReadI32(scn, table->listOffset + (uint32_t)first * 4) >= 0;
+}
+
+// The door records before the table: the records end with a word -1 (alone, or the first word of a whole record),
+// followed by the list of placements, which ends at the names of the models of the table. Walks back from the names: the
+// list holds indices of placements and -1; the records before it start at the placements of their door, the first one at
+// 0, in order
+static void FindDoorRecords(const uint8_t* scn, uint32_t size, MAPINFO_DoorTable* table) {
+    static const uint32_t ends[2] = { 4, MAPINFO_DOOR_RECORD_SIZE }; // Size of the end of the records
+    uint32_t names = size;
+    for (uint32_t m = 0; m < table->modelCount; m++) {
+        uint32_t name = Bytes_ReadU32(scn + table->offset + m * MAPINFO_DOOR_MODEL_SIZE);
+        if (name < names)
+            names = name;
+    }
+    if (names % 4 != 0 || names >= table->offset || names < MAPINFO_SCN_CODE_START + 2 * MAPINFO_DOOR_RECORD_SIZE ||
+        ReadI32(scn, names - 4) != -1)
+        return;
+    for (uint32_t start = names - 4; start >= MAPINFO_SCN_CODE_START + 2 * MAPINFO_DOOR_RECORD_SIZE; start -= 4) {
+        int32_t value = ReadI32(scn, start);
+        if (value < -1 || value >= (int32_t)table->placementCount)
+            break;
+        for (int e = 0; e < 2; e++) {
+            if (ReadI32(scn, start - ends[e]) != -1)
+                continue;
+            MAPINFO_DoorTable candidate = *table;
+            candidate.listOffset = start;
+            candidate.listCount = (names - start) / 4;
+            uint32_t first = start - ends[e], count = 0;
+            int32_t next = INT32_MAX; // First word of the record after
+            while (first >= MAPINFO_SCN_CODE_START + MAPINFO_DOOR_RECORD_SIZE &&
+                IsRecordStart(scn, &candidate, first - MAPINFO_DOOR_RECORD_SIZE) &&
+                ReadI32(scn, first - MAPINFO_DOOR_RECORD_SIZE) < next) {
+                first -= MAPINFO_DOOR_RECORD_SIZE;
+                next = ReadI32(scn, first);
+                count++;
+            }
+            if (count > table->recordCount && next == 0) {
+                *table = candidate;
+                table->recordsOffset = first;
+                table->recordCount = count;
+            }
+        }
+    }
+}
+
+bool MAPINFO_FindDoorTable(const uint8_t* scn, uint32_t size, MAPINFO_DoorTable* table) {
+    memset(table, 0, sizeof(*table));
+    for (uint32_t offset = MAPINFO_SCN_CODE_START; offset + MAPINFO_DOOR_MODEL_SIZE <= size; offset += 4) {
         uint32_t models = 0;
-        while (IsDoorModel(scn, size, table + models * MAPINFO_DOOR_MODEL_SIZE))
+        while (IsDoorModel(scn, size, offset + models * MAPINFO_DOOR_MODEL_SIZE))
             models++;
-        uint32_t pos = table + models * MAPINFO_DOOR_MODEL_SIZE;
+        uint32_t pos = offset + models * MAPINFO_DOOR_MODEL_SIZE;
         if (models == 0 || !IsDoorPlacement(scn, size, pos, models))
             continue;
-        for (; IsDoorPlacement(scn, size, pos, models); pos += MAPINFO_DOOR_SIZE) {
-            if (file->doors != NULL) {
-                MAPINFO_Door* door = &file->doors[file->doorCount];
-                door->model = (const char*)scn + Bytes_ReadU32(scn + table + Bytes_ReadU32(scn + pos + 4) * MAPINFO_DOOR_MODEL_SIZE);
-                door->type = Bytes_ReadU32(scn + pos);
-                for (int i = 0; i < 3; i++) {
-                    door->scale[i] = ReadFloat(scn + pos + 8 + i * 4);
-                    door->position[i] = ReadFloat(scn + pos + 20 + i * 4);
-                }
-                door->angle = (int32_t)Bytes_ReadU32(scn + pos + 32) * 360.0f / 65536.0f;
-            }
-            file->doorCount++;
+        table->offset = offset;
+        table->modelCount = models;
+        for (; IsDoorPlacement(scn, size, pos, models); pos += MAPINFO_DOOR_SIZE)
+            table->placementCount++;
+        FindDoorRecords(scn, size, table);
+        return true;
+    }
+    return false;
+}
+
+int32_t MAPINFO_DoorRecord(const uint8_t* scn, const MAPINFO_DoorTable* table, uint32_t placement) {
+    // The record that starts at the placement, else the first one that has it
+    for (uint32_t r = 0; r < table->recordCount; r++) {
+        uint32_t first = (uint32_t)ReadI32(scn, table->recordsOffset + r * MAPINFO_DOOR_RECORD_SIZE);
+        if ((uint32_t)ReadI32(scn, table->listOffset + first * 4) == placement)
+            return (int32_t)r;
+    }
+    for (uint32_t r = 0; r < table->recordCount; r++) {
+        for (uint32_t i = (uint32_t)ReadI32(scn, table->recordsOffset + r * MAPINFO_DOOR_RECORD_SIZE);
+            i < table->listCount && ReadI32(scn, table->listOffset + i * 4) >= 0; i++) {
+            if ((uint32_t)ReadI32(scn, table->listOffset + i * 4) == placement)
+                return (int32_t)r;
         }
+    }
+    return -1;
+}
+
+// The doors of the door table of the data of the scene program. Reads them, or only counts them if the array is NULL
+static void ReadDoors(MAPINFO_File* file, const MAPINFO_Chunk* chunk) {
+    const uint8_t* scn = file->data + chunk->offset;
+    MAPINFO_DoorTable table;
+    if (!MAPINFO_FindDoorTable(scn, chunk->size, &table))
         return;
+    for (uint32_t p = 0; p < table.placementCount; p++) {
+        if (file->doors != NULL) {
+            uint32_t pos = table.offset + table.modelCount * MAPINFO_DOOR_MODEL_SIZE + p * MAPINFO_DOOR_SIZE;
+            MAPINFO_Door* door = &file->doors[file->doorCount];
+            door->model = (const char*)scn + Bytes_ReadU32(scn + table.offset + Bytes_ReadU32(scn + pos + 4) * MAPINFO_DOOR_MODEL_SIZE);
+            door->type = Bytes_ReadU32(scn + pos);
+            for (int i = 0; i < 3; i++) {
+                door->scale[i] = ReadFloat(scn + pos + 8 + i * 4);
+                door->position[i] = ReadFloat(scn + pos + 20 + i * 4);
+            }
+            door->angle = (int32_t)Bytes_ReadU32(scn + pos + 32) * 360.0f / 65536.0f;
+            door->record = door->type == MAPINFO_DOOR_DOOR ? MAPINFO_DoorRecord(scn, &table, p) : -1;
+        }
+        file->doorCount++;
     }
 }
 

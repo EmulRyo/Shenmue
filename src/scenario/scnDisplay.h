@@ -13,7 +13,11 @@
 // MAPY, the snow, of scene/01/jd00).
 // The display of a slot is the one the program leaves when its threads yield for the first time (their first frame):
 // the last call to 0x098 for the slot on each path before it, the threads started last (StartThread) after the first
-// ones. The packages are those loaded on any path, at any time
+// ones. The packages are those loaded on any path, at any time.
+// The programs with a door table also open and close the doors at their hours (their sign shows OPEN or CLOSE): they
+// keep the state of each door in its record (MAPINFO_DoorTable of mapinfo.h), which they read and write with ArrayAccess
+// (0x09A), emulated on the records. A door is open if a path leaves it open: the programs open and close the doors after
+// the first frame, only those of the area where Ryo is (the paths of the other areas leave them closed)
 
 #define SCNDISPLAY_SLOTS        32
 #define SCNDISPLAY_PACKAGES     64
@@ -23,6 +27,10 @@
 #define SCNDISPLAY_WEATHER      0x176   // (12, n): the events for n = 0, no event for n = 1, bit n - 2 of them for n = 2 to 5
 #define SCNDISPLAY_PACKAGE      0x13C   // (0, 0, folder, name): loads a package
 #define SCNDISPLAY_EVENTS_OP    12
+#define SCNDISPLAY_ARRAY_ACCESS 0x09A   // (array, operation, index[, value]): the operation 4 reads a word, 14 writes one
+#define SCNDISPLAY_READ_WORD    4
+#define SCNDISPLAY_WRITE_WORD   14
+#define SCNDISPLAY_DOORS        128     // Door records at most
 
 typedef enum {
     SCNDISPLAY_UNSET,       // The program doesn't show or hide the slot at the start
@@ -31,6 +39,13 @@ typedef enum {
     SCNDISPLAY_VARIES,      // Shown on some paths and hidden on others (e.g. after a flag of the game), or by a value
                             // computed that the emulation doesn't know
 } SCNDisplay_Slot;
+
+typedef enum {
+    SCNDISPLAY_DOOR_UNSET,  // The program doesn't write the state of the door
+    SCNDISPLAY_DOOR_OPEN,
+    SCNDISPLAY_DOOR_CLOSED,
+    SCNDISPLAY_DOOR_VARIES, // Open on some paths and closed on others, or by a value that the emulation doesn't know
+} SCNDisplay_Door;
 
 typedef struct {
     int         year;       // e.g. 1986
@@ -51,6 +66,9 @@ typedef struct {
     uint32_t    truncated;
     uint32_t    eventQueries;               // Calls to 0x176 with the operation 12 answered
     uint32_t    dateQueries;                // Calls to 0x059 answered
+    uint32_t    doorCount;                  // Door records of the program (MAPINFO_DoorTable), up to SCNDISPLAY_DOORS
+    uint8_t     doors[SCNDISPLAY_DOORS];    // SCNDisplay_Door of each record
+    uint32_t    doorWrites;                 // Writes of the state of a door
 } SCNDisplay;
 
 // Runs the program at a time. Returns false on memory error

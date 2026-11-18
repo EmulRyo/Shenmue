@@ -123,7 +123,34 @@ typedef struct {
     float       scale[3];
     float       position[3];
     float       angle;      // Around the vertical axis, degrees
+    int32_t     record;     // Its door record (MAPINFO_DoorTable), -1 if none
 } MAPINFO_Door;
+
+// The door table in the data of a scene program (SH-4 code or bytecode: the same layout), and the records that the code
+// of the doors keeps of each door, just before it: records of MAPINFO_DOOR_RECORD_SIZE bytes, ended by a word -1 (alone
+// or the first word of a whole record), then a list of indices of placements of the table, where each record starts at
+// its first word: the placements of its door and of its dark boxes, ended by -1. The word 1 of a record holds the state
+// of the door, with MAPINFO_DOOR_OPEN when it is open (its sign shows OPEN), set by the program at the opening hours
+typedef struct {
+    uint32_t    offset;         // Of the models of the table, from the "SCN3" ID
+    uint32_t    modelCount;
+    uint32_t    placementCount;
+    uint32_t    recordsOffset;  // From the "SCN3" ID, 0 if there are no records
+    uint32_t    recordCount;    // The last one, with -1, not included
+    uint32_t    listOffset;
+    uint32_t    listCount;      // Words
+} MAPINFO_DoorTable;
+
+#define MAPINFO_DOOR_RECORD_SIZE    52
+#define MAPINFO_DOOR_STATE_WORD     1       // Word of the record with the state of the door
+#define MAPINFO_DOOR_OPEN           0x20    // Bit of the state: the door is open
+
+// Finds the door table (and its records) in a scene program that starts at scn (the "SCN3" ID). It isn't referenced by
+// the header, so it is found by its content: the first list of models followed by a valid placement. Returns false if
+// there is none
+bool MAPINFO_FindDoorTable(const uint8_t* scn, uint32_t size, MAPINFO_DoorTable* table);
+// The record of a placement of the table, -1 if none
+int32_t MAPINFO_DoorRecord(const uint8_t* scn, const MAPINFO_DoorTable* table, uint32_t placement);
 
 // A TRCK chunk of the SCEX chunk: an AUTH cutscene, or an empty chunk (only the header) that keeps its number
 typedef struct {

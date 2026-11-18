@@ -116,7 +116,10 @@ typedef struct {
     bool                open;
     char                filename[1024]; // Path of the open file
     MapCutscene*        cutscenes;      // file.cutsceneCount of them
-    MAPINFO_File        file;
+    MAPINFO_File        file;           // Its doors are those of doorMap if it has no door table and doorMap has them
+    MAPINFO_File        doorMap;        // The same map in another folder, whose doors are taken: the names of their models
+                                        // point into it. Empty if none
+    char                doorSource[64]; // Scene folder of doorMap (e.g. "scene/01/jd00"), empty if none
     SD_Data             program;        // What the program of the map does with it (mapProgram.h), empty if none
     uint32_t            sequenceCount;
     uint32_t*           sequences;      // The cutscenes that the program loads in the table of cutscenes: their first
@@ -237,6 +240,10 @@ const char* MAPINFODate_Hours(void);
 void MAPINFODate_NextEvents(void);
 const char* MAPINFODate_Text(const WEATHER_Date* date);
 bool MAPINFODate_IsHidden(uint32_t model);
+// The program closes the door at the date: its sign shows CLOSE (else OPEN)
+bool MAPINFODate_IsDoorClosed(uint32_t door);
+// The state of the door at the date, NULL if it has no record of the program
+const char* MAPINFODate_DoorText(uint32_t door);
 const char* MAPINFODate_MapModelText(uint32_t model);
 void MAPINFODate_Properties(Properties* properties);
 const char* MAPINFODate_SkyFile(void);

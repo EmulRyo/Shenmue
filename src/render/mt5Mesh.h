@@ -9,6 +9,12 @@
 // Meshes of an MT5/CHRM model in the pose of its node hierarchy, ready to draw with raylib. They keep the node of each
 // vertex, so that they can be drawn in another pose of the nodes (the motions of the characters)
 
+// The sign of the doors of the shops: the IDs of the nodes of its two sides, and the frames that show them
+#define MT5MESH_OPEN_SIGN   0x0D
+#define MT5MESH_CLOSE_SIGN  0x08
+#define MT5MESH_FRAME_OPEN  0
+#define MT5MESH_FRAME_CLOSE 1
+
 // Triangles that share texture, list type, texture wrapping and lighting, drawn with one mesh
 typedef struct {
     uint16_t    texture;
@@ -39,8 +45,9 @@ typedef struct {
     MT5Mesh_Group*  groups;
     uint32_t        triangleCount;
     uint32_t        skippedTriangles; // Triangles with vertex indices that can't be resolved
-    uint32_t        hiddenNodes;      // Alternative meshes, CLOSE signs and invisible meshes
+    uint32_t        hiddenNodes;      // Alternative meshes, CLOSE signs of the animated models and invisible meshes
     uint32_t        frameCount;       // Animation frames (see FindFrames), 0 if the model is not animated
+    bool            sign;             // A door with an OPEN / CLOSE sign: frame 0 shows OPEN, frame 1 CLOSE
     Vector3         front;            // Direction the model looks to
     Vector3         center;           // Bounding sphere of the model
     float           radius;

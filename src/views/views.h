@@ -41,5 +41,7 @@ void Views_Draw(Rectangle area);
 void Views_Toolbar(void);
 // Fills the status of the open view. Returns false if no view is open
 bool Views_Status(ViewStatus* status);
+// Moves the free camera of the open view to position, looking at target. Returns false if the view has no free camera
+bool Views_Look(Vector3 position, Vector3 target);
 
 #endif

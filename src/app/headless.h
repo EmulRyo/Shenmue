@@ -22,7 +22,10 @@
 //   key <keys>                     Presses and releases a key with its modifiers, e.g. "ctrl+s", "left", "f"
 //   hold <keys> <n>                Holds a key down during n frames (e.g. "w" to fly forwards)
 //   type <text>                    Types the text, a character per frame, in the text box being edited
-//   dialog <answer>                Queues the answer of the next file dialog: a path, several separated by | to open
+//   camera <x> <y> <z> <tx> <ty> <tz>
+//                                  Orbits the free camera of the open view (the map) around the target from the
+//                                  position
+//   dialog <answer>               Queues the answer of the next file dialog: a path, several separated by | to open
 //                                  several files, or "cancel". A dialog without answer is cancelled
 //   quit                           Ends the application (also after the last command of a script without pipe)
 

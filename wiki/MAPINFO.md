@@ -412,7 +412,9 @@ In version `0x20000`, the code loads the strings of the data with `mov.l @(disp,
 
 ### Door table
 
-The data of 97 files (96 of version `0x20000` and the bytecode of `scene/03/door`) contains a table with the doors of the map and other models placed with them: a list of models followed by the list of placements. No field of the header points to it; it is preceded by the names of its models. It has 1 to 36 models and 1 to 120 placements (`scene/0x/d000`); there are 861 placements in all.
+The data of 97 files (96 of version `0x20000` and the bytecode of `scene/03/door`) contains a table with the doors of the map and other models placed with them: a list of models followed by the list of placements. No field of the header points to it; it is preceded by the [door records](#door-records) and the names of its models. It has 1 to 36 models and 1 to 120 placements (`scene/0x/d000`); there are 861 placements in all. The SCN files have the same table, with the records, at the same place of their data.
+
+The `dnoz` maps (`scene/01` and `scene/02`, Sakuragaoka) have no door table: their `map.mt5` and several numbered MAP models are those of `jd00` (the same place), whose doors fill doorways that are empty in them.
 
 | Offset    | Size   | Type             | Name       | Description |
 |----------:|-------:|------------------|------------|-------------|
@@ -446,6 +448,37 @@ The model is scaled, rotated around the vertical axis and moved to its position,
 | 0x20   | 4    | int32    | `angle`    | Rotation around the vertical axis in units of 1/65536 of a turn (`0x4000` = 90°). It can be negative (`0xFFFFC001`): 354 placements |
 
 A door and a dark box are often placed together, at the same or almost the same position, with the same angle or with angles 180° apart.
+
+### Door records
+
+Before the door table, the data has the records that the code of the doors keeps of each door, read and written with `0x09A` (ArrayAccess), and the list of the placements of each record. The code receives their addresses with that of the table (e.g. in `scene/01/jd00`: the player `AKIR`, the records, the list, the models and the placements of the table).
+
+```
++---------------------------+
+| DoorRecord[R]             |  52 bytes each
+| int32 -1                  |  alone (55 files) or the first word of a 52-byte record (42 files)
++---------------------------+
+| int32 list[]              |  indices of placements; -1 ends the placements of a record
++---------------------------+
+| names of the models       |
++---------------------------+
+| door table                |
++---------------------------+
+```
+
+The 97 files have 528 records: 1 in the shops (the door seen from inside), up to 65 in `scene/0x/d000`. Each record lists the placements of its door and of its dark box (333 records) or of its door alone (195): e.g. the record 0 of `scene/01/d000` has the placements 98 and 99 (`DR00_003` and `DR28_001`, the door of the jazz bar). 3 records have two doors (in `scene/0x/dmaj`, whose second record starts at the second placement of the first one). 528 of the 531 doors have a record; one door of each `jomo` has none.
+
+#### Door record (52 bytes)
+
+| Offset | Size | Type      | Name      | Description |
+|-------:|-----:|-----------|-----------|-------------|
+| 0x00   | 4    | int32     | `first`   | Index in the list of the first placement of the record |
+| 0x04   | 4    | uint32    | `state`   | 0 in the files. Flags set by the program: `0x20` the door is open (its [sign](MT5#door-signs) shows OPEN), `0x02` closed by the hours (see below), `0x100` and `0x80` unknown (`0x100` moves the nodes 10 and 5 of the door model 1200 units down when it is clear) |
+| 0x08   | 4    | uint16[2] | `unknown` | Two equal or almost equal halfwords: 100 and 100 (469 records), 110 and 110, 101 and 101, 103 and 102... |
+| 0x0C   | 16   | uint32[4] | `unknown` | 0 |
+| 0x1C   | 24   | int32[6]  | `unknown` | -1 |
+
+The programs open and close the doors of the shops at their opening hours. Each record starts with `state` 0, and the program sets `0x02` in all of them after the first frame. Then a thread checks the hour of the game every minute, for the doors of the area of the map where Ryo is: a door within its hours whose `state` has `0x02` loses it and is opened (`0x20` set), a door outside its hours without `0x02` gets it and is closed (`0x20` cleared). Opening or closing a door that is on screen shows the side of its sign: the program moves the node `0x0D` (OPEN) or `0x08` (CLOSE) of its model 1000 units down with `0x0C9` (NodeTransform) and puts the other one at its place. In `scene/01/d000`, e.g., the records 26, 27, 31 and 38 are open from 10:00 to 21:00, the jazz bar (record 0) and Heartbeats (record 30) from 19:00 to 4:00 and 5:00, Bar Linda... The doors that the program never opens stay closed.
 
 ### Jukebox
 

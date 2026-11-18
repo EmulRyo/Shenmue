@@ -1022,7 +1022,7 @@ bool SCNCutscene_Run(const BC_Program* program, uint32_t slot, const char* file,
         free(parameters);
         return false;
     }
-    VM_Environment environment = { &context, OnCall, NULL, OnCapture, true, distances, SCNCUTSCENE_MAX_WAITS, Initialize, 0 };
+    VM_Environment environment = { &context, OnCall, NULL, OnCapture, true, distances, SCNCUTSCENE_MAX_WAITS, Initialize, 0, NULL };
     VM_Snapshot* snapshot = VM_Capture(program, &environment);
     int start = snapshot != NULL ? BC_FunctionAt(program, program->scn->header.entry) : -1;
     // From the functions that give the slot as a constant to a call that plays it, when the emulation from the entry

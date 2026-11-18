@@ -1,5 +1,7 @@
 // The models of the view of the maps: of the map, of its doors and of the characters of its CHRT scripts, and the
 // packages of the characters
+#include "core/log.h"
+#include "core/path.h"
 #include "views/mapinfo/mapinfoViewInternal.h"
 
 #define MAPINFOVIEW_PACKAGE      "mpk00" // Base package of the map (PKF/PKS files or their extracted folder)
@@ -97,14 +99,24 @@ static int ModelFile(const MapFile* files, uint32_t count, const char* name, con
     return found;
 }
 
+// The files of the models of the doors: those of the map, or of the map whose door table it takes (see BorrowDoors)
+typedef struct {
+    const MapFile*          files;
+    uint32_t                count;
+    int*                    fileModels;     // Model of each file, -1 if not loaded
+    const IPAC_FileList*    packed;
+    const CHRT_Script*      scripts;        // The CHRD chunk and the CHRT files of the map
+    uint32_t                scriptCount;
+} DoorFiles;
+
 // Model file of the model of a door: the file with its name, or the file of the DefImage with its name in the CHRT
 // scripts of the map (the CHRD chunk and the CHRT files, e.g. mpk00/CHARA.chrt). Returns -1 if there is none
-static int DoorModelFile(const MapFile* files, uint32_t count, const char* name) {
-    int file = ModelFile(files, count, name, NULL);
-    for (uint32_t i = 0; file < 0 && i < g_map.scriptCount; i++) {
-        const char* image = CHRT_ImageFile(&g_map.scripts[i], name);
+static int DoorModelFile(const DoorFiles* doorFiles, const char* name) {
+    int file = ModelFile(doorFiles->files, doorFiles->count, name, NULL);
+    for (uint32_t i = 0; file < 0 && i < doorFiles->scriptCount; i++) {
+        const char* image = CHRT_ImageFile(&doorFiles->scripts[i], name);
         if (image != NULL)
-            file = ModelFile(files, count, image, NULL);
+            file = ModelFile(doorFiles->files, doorFiles->count, image, NULL);
     }
     return file;
 }
@@ -208,7 +220,8 @@ static bool IsLoadedMapModel(const MapFile* file, int slot) {
 
 // The instances of the models of the map, of the doors at their placements and of the shown characters in the map. The
 // characters whose model isn't in the map are drawn with the model of the folder of the scene
-static void PlaceModels(const char* folder, const MapFile* files, uint32_t count, int* fileModels, const IPAC_FileList* packed) {
+static void PlaceModels(const char* folder, const MapFile* files, uint32_t count, int* fileModels, const IPAC_FileList* packed,
+    const DoorFiles* doorFiles) {
     const MAPINFO_File* file = &g_map.file;
     for (uint32_t i = 0; i < count; i++) {
         if (IsMapModel(&files[i]) && FileModel(files, (int)i, fileModels, packed) >= 0) {
@@ -225,17 +238,17 @@ static void PlaceModels(const char* folder, const MapFile* files, uint32_t count
     for (uint32_t i = 0; i < file->doorCount; i++) {
         const MAPINFO_Door* door = &file->doors[i];
         g_map.doorInstances[i] = -1;
-        int f = DoorModelFile(files, count, door->model);
+        int f = DoorModelFile(doorFiles, door->model);
         if (f < 0) {
             g_map.doorErrors[i] = "no model file";
             continue;
         }
-        if (FileModel(files, f, fileModels, packed) < 0) {
+        if (FileModel(doorFiles->files, f, doorFiles->fileModels, doorFiles->packed) < 0) {
             g_map.doorErrors[i] = "invalid model file";
             continue;
         }
         g_map.doorInstances[i] = (int32_t)g_map.instanceCount;
-        AddInstance((uint32_t)fileModels[f], MAPINFOModels_DoorTransform(door));
+        AddInstance((uint32_t)doorFiles->fileModels[f], MAPINFOModels_DoorTransform(door));
         g_map.loadedDoors++;
     }
 
@@ -313,6 +326,108 @@ static void LoadScripts(const MapFile* files, uint32_t count) {
     }
 }
 
+// The map whose door table a map without one takes: another map of its scene folder that is the same map in the
+// database of the maps (same name and area, e.g. scene/01/dnoz and scene/01/jd00, Sakuragaoka, whose map models are the
+// same: the doorways of dnoz are empty without the doors of jd00), the only one with a door table. Loads its mapinfo.bin
+// in g_map.doorMap. Returns false if there is none, or more than one
+static bool FindDoorMap(const char* folder, char* doorFolder, size_t size) {
+    const GameDB_Map* map = GameDB_MapOfFile(g_map.filename);
+    if (map == NULL || map->name[0] == '\0' || map->area[0] == '\0')
+        return false;
+    FilePathList paths = LoadDirectoryFiles(GetPrevDirectoryPath(folder));
+    uint32_t found = 0;
+    for (uint32_t i = 0; i < paths.count; i++) {
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/mapinfo.bin", paths.paths[i]);
+        const GameDB_Map* other = DirectoryExists(paths.paths[i]) && !Path_Equals(paths.paths[i], folder) && FileExists(path) ?
+            GameDB_MapOfFile(path) : NULL;
+        if (other == NULL || other == map || strcmp(other->name, map->name) != 0 || strcmp(other->area, map->area) != 0)
+            continue;
+        MAPINFO_File candidate;
+        if (!MAPINFO_Load(path, &candidate))
+            continue;
+        if (candidate.doorCount > 0 && found++ == 0) {
+            g_map.doorMap = candidate;
+            snprintf(doorFolder, size, "%s", paths.paths[i]);
+        } else
+            MAPINFO_Free(&candidate);
+    }
+    UnloadDirectoryFiles(paths);
+    if (found != 1 && found > 0)
+        MAPINFO_Free(&g_map.doorMap);
+    return found == 1;
+}
+
+// The scripts of the door map, for the DefImage of its door models: its CHRD chunk and its CHRT files
+static uint32_t LoadDoorScripts(const MapFiles* files, CHRT_Script* scripts) {
+    uint32_t count = 0;
+    const MAPINFO_File* file = &g_map.doorMap;
+    if (file->characters != NULL && CHRT_LoadFromMemory(file->characters, file->charactersSize, "CHRD", &scripts[count]))
+        count++;
+    for (uint32_t i = 0; i < files->count; i++) {
+        if (IsFileExtension(files->files[i].name, ".chrt") && LoadMapScript(&files->files[i], &scripts[count]))
+            count++;
+    }
+    return count;
+}
+
+// A map without door table whose folder has only MAP models (e.g. scene/01/dnoz, a copy of the map of scene/01/jd00 for
+// its cutscenes) takes the doors of the same map in another folder (FindDoorMap), with the models of its folder. The
+// maps with other models have theirs, their doors included (e.g. the doors placed as characters of scene/01/toki and
+// scene/02/gmct). Fills the files of the models of the doors and returns true if it takes them; the files and the
+// scripts are freed by the caller
+static bool BorrowDoors(const char* folder, const DoorFiles* own, MapFiles* doorMapFiles, DoorFiles* doorFiles) {
+    char doorFolder[1024];
+    if (g_map.file.doorCount > 0)
+        return false;
+    for (uint32_t i = 0; i < own->count; i++) {
+        if (!IsFileExtension(own->files[i].name, ".chrt") && !IsMapModel(&own->files[i]))
+            return false;
+    }
+    if (!FindDoorMap(folder, doorFolder, sizeof(doorFolder)))
+        return false;
+    const MAPINFO_File* doorMap = &g_map.doorMap;
+    bool ok = MapFiles_Load(doorFolder, ".mt5;.chrm;.chrt", doorMapFiles);
+    CHRT_Script* scripts = ok ? calloc(doorMapFiles->count + 2, sizeof(CHRT_Script)) : NULL;
+    MAPINFO_Door* doors = ok ? malloc((doorMap->doorCount + 1) * sizeof(MAPINFO_Door)) : NULL;
+    int* fileModels = ok ? malloc((doorMapFiles->count + 1) * sizeof(int)) : NULL;
+    if (scripts != NULL && doors != NULL && fileModels != NULL) {
+        *doorFiles = (DoorFiles) { doorMapFiles->files, doorMapFiles->count, fileModels, &doorMapFiles->packed, scripts,
+            LoadDoorScripts(doorMapFiles, scripts) };
+        for (uint32_t i = 0; i < doorMapFiles->count; i++)
+            fileModels[i] = -1;
+    }
+    else
+        ok = false;
+    if (ok) {
+        memcpy(doors, doorMap->doors, doorMap->doorCount * sizeof(MAPINFO_Door));
+        // The records are those of the program of the other map
+        for (uint32_t i = 0; i < doorMap->doorCount; i++)
+            doors[i].record = -1;
+        free(g_map.file.doors);
+        g_map.file.doors = doors;
+        g_map.file.doorCount = doorMap->doorCount;
+        // e.g. "scene/01/jd00"
+        char parent[1024];
+        snprintf(parent, sizeof(parent), "%s", doorFolder);
+        Path_ToSlashes(parent);
+        char name[64];
+        snprintf(name, sizeof(name), "%s", Path_LastComponent(parent));
+        Path_ToParent(parent);
+        snprintf(g_map.doorSource, sizeof(g_map.doorSource), "scene/%s/%s", Path_LastComponent(parent), name);
+        Log_Info("[MAPINFOView]: %u doors of %s, which is the same map\n", g_map.file.doorCount, g_map.doorSource);
+        return true;
+    }
+    for (uint32_t i = 0; scripts != NULL && i < doorMapFiles->count + 2; i++)
+        CHRT_Free(&scripts[i]);
+    free(scripts);
+    free(doors);
+    free(fileModels);
+    MapFiles_Free(doorMapFiles);
+    MAPINFO_Free(&g_map.doorMap);
+    return false;
+}
+
 // The scripts, the models of the map, the models of the doors at their placements and the models of the characters,
 // from the MT5, CHRM and CHRT files of the map (see mapFiles.h). Each file is loaded once
 void MAPINFOModels_Load(const char* folder) {
@@ -324,27 +439,42 @@ void MAPINFOModels_Load(const char* folder) {
     uint32_t count = mapFiles.count;
     int* fileModels = malloc((count + 1) * sizeof(int)); // Model of each file, -1 if not loaded
     g_map.scripts = calloc(count + 2, sizeof(CHRT_Script));
-    g_map.doorErrors = calloc(file->doorCount + 1, sizeof(const char*));
-    g_map.doorInstances = calloc(file->doorCount + 1, sizeof(int32_t));
     g_map.mapModelNames = calloc(count + 1, sizeof(*g_map.mapModelNames));
     g_map.mapModelSlots = calloc(count + 1, sizeof(int));
     g_map.mapModelPackages = calloc(count + 1, sizeof(*g_map.mapModelPackages));
     g_map.mapModelVariants = calloc(count + 1, sizeof(bool));
     g_map.mapModelUnloaded = calloc(count + 1, sizeof(bool));
-    if (fileModels != NULL && g_map.scripts != NULL && g_map.doorErrors != NULL && g_map.doorInstances != NULL &&
-        g_map.mapModelNames != NULL && g_map.mapModelSlots != NULL && g_map.mapModelPackages != NULL &&
-        g_map.mapModelVariants != NULL && g_map.mapModelUnloaded != NULL) {
+    MapFiles doorMapFiles = { 0 };
+    DoorFiles doorFiles = { 0 };
+    bool borrowed = false;
+    if (fileModels != NULL && g_map.scripts != NULL && g_map.mapModelNames != NULL && g_map.mapModelSlots != NULL &&
+        g_map.mapModelPackages != NULL && g_map.mapModelVariants != NULL && g_map.mapModelUnloaded != NULL) {
         for (uint32_t i = 0; i < count; i++)
             fileModels[i] = -1;
 
         LoadScripts(files, count);
-        // The models of the files, and of the folder of the scene for the characters
-        g_map.models = calloc(count + g_map.characterCount + 1, sizeof(MT5Render_Model));
+        DoorFiles own = { files, count, fileModels, &mapFiles.packed, g_map.scripts, g_map.scriptCount };
+        borrowed = BorrowDoors(folder, &own, &doorMapFiles, &doorFiles);
+        if (!borrowed)
+            doorFiles = own;
+        g_map.doorErrors = calloc(file->doorCount + 1, sizeof(const char*));
+        g_map.doorInstances = calloc(file->doorCount + 1, sizeof(int32_t));
+        // The models of the files (and of those of the door map), and of the folder of the scene for the characters
+        uint32_t modelCount = count + (borrowed ? doorFiles.count : 0) + g_map.characterCount + 1;
+        g_map.models = calloc(modelCount, sizeof(MT5Render_Model));
         g_map.instances = calloc(count + file->doorCount + g_map.characterCount + 1, sizeof(MT5Render_Instance));
         g_map.visibleInstances = calloc(count + file->doorCount + g_map.characterCount + 1, sizeof(MT5Render_Instance));
         g_map.renderLights = calloc(file->lightCount + 1, sizeof(MT5Render_Light));
-        if (g_map.models != NULL && g_map.instances != NULL && g_map.visibleInstances != NULL)
-            PlaceModels(folder, files, count, fileModels, &mapFiles.packed);
+        if (g_map.models != NULL && g_map.instances != NULL && g_map.visibleInstances != NULL && g_map.doorErrors != NULL &&
+            g_map.doorInstances != NULL)
+            PlaceModels(folder, files, count, fileModels, &mapFiles.packed, &doorFiles);
+    }
+    if (borrowed) {
+        for (uint32_t i = 0; i < doorFiles.scriptCount; i++)
+            CHRT_Free((CHRT_Script*)&doorFiles.scripts[i]);
+        free((void*)doorFiles.scripts);
+        free(doorFiles.fileModels);
+        MapFiles_Free(&doorMapFiles);
     }
     free(fileModels);
     MapFiles_Free(&mapFiles);
