@@ -115,8 +115,8 @@ id	handler	arguments	name	description	character
 071	0x0C1574D8	2			
 072	0x0C1586C8	2			yes
 073	0x0C16B980	1			
-074	0x0C16556E	3			yes
-075	0x0C16566A	4			yes
+074	0x0C16556E	3	FaceSlot	With argument 1 equal to 0, returns the slot (0 to 7) of the detailed face of the character of ID argument 0 (its _F model and _FTBL skin, attached the first time), or -1 if it has none. With 1, returns another value of the character (-1 if below 1)	yes
+075	0x0C16566A	4	FaceAnimation	Animates (argument 1: 1) or freezes (0) the face of the character of ID argument 0: a frozen face does not blink, look or speak. Argument 2 is an expression (poses 6 x expression of its TALK set) and argument 3 a number of frames	yes
 076					
 077					
 078	0x0C16681C	3			yes
@@ -147,12 +147,12 @@ id	handler	arguments	name	description	character
 091	0x0C158710	2			yes
 092	0x0C174036				
 093	0x0C174056				
-094	0x0C165874	4			yes
+094	0x0C165874	4	Eyelids	Eyelids of the character of ID argument 0, the mode in argument 1: 0 blinks by itself (every 60 to 90 frames), 1 closes the eyes, 2 opens them, in the number of frames of argument 2. Mode 3 unused by the programs; argument 3 unknown	yes
 095	0x0C164C6C				
 096	0x0C174076	1			
 097	0x0C174098	0			
 098	0x0C1651D2	2	MapModelDisplay	Shows (argument 1: 1) or hides (0) the MAP model of the slot of argument 0, in a table of 32 (0x0C21E328, 0x60 bytes each): slot 0 is MAP.MT5 and slot n MAPnn.MT5. Returns the previous value	
-099	0x0C1658B8	2-4			yes
+099	0x0C1658B8	2-4	EyesLook	Where the eyes of the character of ID argument 0 look, the mode in argument 1: 0 to the front, 2 to the point of 3 floats pointed by argument 2 in argument 3 frames (within the limits of its FTBL file), 1 probably to a target chosen by the game in argument 2 frames	yes
 09A	0x0C17412C	3, 4	ArrayAccess	Operation chosen by argument 1 (18 operations) on the element of argument 2 of the array of argument 0, of bytes, halfwords or words	
 09B	0x0C1668C0	1			
 09C	0x0C1668CE	2			yes
@@ -274,7 +274,7 @@ id	handler	arguments	name	description	character
 110	0x0C09C288	3			yes
 111	0x0C1578FE				
 112	0x0C164EF4	3			
-113	0x0C1656AC	4			yes
+113	0x0C1656AC	4	FaceExpression	Expression of the face of the character of ID argument 0: argument 1 (0 to 11) selects the poses 6 x expression of its TALK set, reached in argument 3 frames. Argument 2 goes to the CLIP module of the character, which gives the shape of the mouth (-1 another mode)	yes
 114	0x0C160438	2-4, 6, 9			
 115	0x0C158CFE	1			
 116	0x0C15791A	1, 2			

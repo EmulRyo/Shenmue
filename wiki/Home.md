@@ -23,6 +23,8 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [XWM](XWM)         | `.xwm`        | `RIFF` .... `XWMA` | Audio           | xWMA audio clip (voices and music)           |
 | [SND](SND)         | `.snd`        | `DTPK`           | Audio             | Sound bank: instruments, sequences, DSP settings and samples |
 | [MT5 / CHRM](MT5)  | `.mt5` `.chrm` | `HRCM`          | Model             | 3D model (CHRM: textures stored in the PKF)  |
+| [FTBL](FTBL)       | `.bin` (`*_ftbl.bin`) | —         | Model             | Skin of a face: 25 face bones and the bones and weights of each vertex |
+| [TALK](TALK)       | `.bin` (`talk_*.bin`) | —         | Animation         | Poses of the faces: expressions, blinking and shapes of the mouth |
 | [PVR](PVR)         | `.pvr`        | `GBIX` / `PVRT`  | Texture           | PowerVR texture                              |
 | [SPR](SPR)         | `.spr`        | `TEXN` / `SCRL`  | Texture           | TEXN blocks with a PVR texture each          |
 | [GZ](GZ)           | `.gz`         | `1F 8B 08`       | Texture           | Gzipped SPR file                             |
@@ -43,6 +45,7 @@ TAD/TAC
  ├─ WEATHER (misc/coldinit/WEATHER.bin, misc/cold_s/WEATHER.bin, sprite/weather.bin, sprite/weat_org.bin)
  ├─ MOTN (motion/motion.bin, m_*.bin of the maps)
  ├─ MT5 → TEXN → PVR / DDS
+ ├─ FTBL, TALK (model/face, with the faces _F.MT5)
  ├─ PVR
  ├─ SPR → PVR
  ├─ GZ → SPR → PVR (misc/battle*.gz, sprite/*.gz)

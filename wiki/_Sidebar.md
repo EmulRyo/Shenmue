@@ -10,6 +10,7 @@
 
 **Models**
 - [MT5 / CHRM](MT5)
+- [FTBL](FTBL)
 
 **Maps**
 - [MAPINFO](MAPINFO)
@@ -28,6 +29,7 @@
 
 **Animations**
 - [MOTN](MOTN)
+- [TALK](TALK)
 
 **Audio**
 - [XWM](XWM)
