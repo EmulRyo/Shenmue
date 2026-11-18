@@ -25,6 +25,8 @@ The map folders (`scene/0N/<map>/`, those with a [MAPINFO](MAPINFO)) hold MOTN f
 
 The cutscenes of a PKS whose name is the name of a map play the motions of that map, not of the PKS: `scene/01/d000/yq14.pks` has no MOTN, and its `SEQDATA2` plays the motions `0x1001`, `0x1002` and `0x1003` of `scene/01/yq14/m_01114.bin` (`AKI_WHATS_0114`, `OTH_GIA_WHATS_0114` and `OTH_GIB_YOPPARAI_0114`, of 638, 642 and 1007 frames: the last frames played by the commands). The IDs of the files of a map overlap: `m_0114.bin` of the same map also has the IDs `0x1001` and `0x1002`, for other motions (`BKB_KAKOMU_AKIREN_B_0258`, 470 frames, and `BKC_KAKOMU_AKIREN_C_0258`, 296 frames), too short for the commands. The other cutscene of the PKS, `SEQDATA1`, plays the motion `0x1004` from frame 612 to frame 691, while `0x1004` of `m_01114.bin` (`AKI_AITU_MASAKA_0448`) has 80 frames, and no MOTN file of the game has a motion `0x1004` of Ryo that long.
 
+The program of the map tells which file a cutscene plays, with the game function `0x084` (LoadMotionBank, see [MAPINFO](MAPINFO)) next to the load of the cutscene: the program of `scene/01/dnoz` loads `M_01SKI.BIN` with `SEQDATA4.BIN` and `SEQDATA5.BIN`, and `M_01FUL.BIN` with `SEQDATA2.BIN` and `SEQDATA3.BIN`. Both files have IDs from `0x1000`, for different motions: in `SEQDATA4`, Ryo plays `0x1005` from frame 151 to frame 1090, which is `AKI_AT1_KOKUHAKUSURU_NOZOMIKOKUHAKU_0100` (1090 frames) in `m_01ski.bin` and `SIN_NOZ_AT1_NOZOMI_NAMIDA_0100`, a motion of Nozomi of 2315 frames, in `m_01ful.bin`.
+
 - **Extension:** `.motn` (`MOTN` in the [IPAC](IPAC) dictionary)
 - **Magic:** none
 - **Compression:** none in the game files (the [PKS](PKS) files that contain them are usually [gzipped](Home#compression))

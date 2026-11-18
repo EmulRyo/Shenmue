@@ -123,10 +123,14 @@ static void AddMapFolderMotionBanks(const char* name) {
     const char* map = TextFormat("%s/%s", g_auth.sceneFolder, name);
     if (!DirectoryExists(map))
         return;
+    // The motion file that the program loads for the cutscene is already loaded
+    char bankFolder[AUTHVIEW_PATH_SIZE];
+    snprintf(bankFolder, sizeof(bankFolder), "%s", g_auth.motionBank[0] != '\0' ? GetFileName(GetDirectoryPath(g_auth.motionBank)) : "");
     FilePathList mapFiles = LoadDirectoryFilesEx(map, ".bin", false);
     for (unsigned int i = 0; i < mapFiles.count; i++) {
         const char* file = GetFileName(mapFiles.paths[i]);
-        if ((file[0] == 'm' || file[0] == 'M') && file[1] == '_')
+        bool loaded = Text_EqualsIgnoreCase(bankFolder, name) && Text_EqualsIgnoreCase(file, GetFileName(g_auth.motionBank));
+        if ((file[0] == 'm' || file[0] == 'M') && file[1] == '_' && !loaded)
             AddMotionBank(mapFiles.paths[i]);
     }
     UnloadDirectoryFiles(mapFiles);
@@ -141,10 +145,13 @@ static void AddMapFolderMotionBanks(const char* name) {
 // (the motions 0x1001 to 0x1003 of SEQDATA2 of yq14.pks of scene/01/d000 are those of scene/01/yq14/m_01114.bin, not
 // those of the m_*.bin of d000, which have the same IDs). Then, for every cutscene of a mapinfo.bin, the m_*.bin files
 // of its map (e.g. scene/03/nbik/m_01bike.bin), the other MOTN files of the PKF/PKS files of its map, and the common
-// motions
+// motions. Before all of them, the motion file that the program of the map loads for the cutscene (g_auth.motionBank):
+// the m_*.bin files of a map can have the same IDs (scene/01/dnoz/m_01ful.bin and m_01ski.bin, 0x1000 to 0x1006)
 void AUTHMotions_LoadBanks(const char* filepath, const char* package) {
     char folder[AUTHVIEW_PATH_SIZE];
     snprintf(folder, sizeof(folder), "%s", GetDirectoryPath(filepath));
+    if (g_auth.motionBank[0] != '\0')
+        AddMotionBank(g_auth.motionBank);
     if (g_auth.cutscene < 0) {
         AddFolderMotionBanks(folder);
         if (g_auth.bankCount == 0)

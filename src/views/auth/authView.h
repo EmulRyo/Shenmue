@@ -25,8 +25,9 @@ bool AUTHView_Open(const char* filepath);
 bool AUTHView_OpenMapCutscene(const char* filepath, uint32_t cutscene);
 // Loads a cutscene that the program of a mapinfo.bin loads in the table of cutscenes of the game (an AUTH file of a
 // package of its map, see mapProgram.h), as one of its cutscenes: its number is the slot of the table. Returns false if
-// the cutscene can't be loaded
-bool AUTHView_OpenMapSequence(const char* filepath, const SD_Reference* sequence);
+// the cutscene can't be loaded. motionBank: the motion file that the program loads for it
+// (MapProgram_SequenceMotionBank), which has its motions, NULL if none
+bool AUTHView_OpenMapSequence(const char* filepath, const SD_Reference* sequence, const char* motionBank);
 // The open cutscene is one of a mapinfo.bin
 bool AUTHView_IsMapCutscene(void);
 // The view of the map of the open cutscene is open behind it: the view of the map that played it, or the one opened for

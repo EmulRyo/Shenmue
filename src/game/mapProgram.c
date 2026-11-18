@@ -211,3 +211,36 @@ uint8_t* MapProgram_LoadSequence(const char* mapinfoPath, const SD_Reference* se
     }
     return data;
 }
+
+// The motion files that the game loads from misc whatever the folder given (the objects and the doors)
+static bool IsMiscMotionBank(const char* name) {
+    return TextIsEqual(TextToUpper(name), "M_MOBJ.BIN") || TextIsEqual(TextToUpper(name), "M_MDOR.BIN");
+}
+
+bool MapProgram_SequenceMotionBank(const char* mapinfoPath, const SD_Data* data, const SD_Reference* sequence, char* path,
+    size_t size) {
+    char root[MAPPROGRAM_PATH_SIZE], lower[SD_NAME_SIZE * 2 + 1];
+    const char* parts[4] = { NULL };
+    if (sequence->kind != SD_SEQUENCE || !SplitPath(mapinfoPath, root, sizeof(root), parts, 4))
+        return false;
+    uint32_t best = UINT32_MAX;
+    for (uint32_t i = 0; i < data->count; i++) {
+        const SD_Reference* bank = &data->references[i];
+        if (bank->kind != SD_FILE || bank->game != SD_GAME_MOTION_BANK || bank->folder[0] == '\0' ||
+            bank->function != sequence->function || IsMiscMotionBank(bank->name))
+            continue;
+        uint32_t distance = bank->address > sequence->address ? bank->address - sequence->address :
+            sequence->address - bank->address;
+        if (distance >= best)
+            continue;
+        snprintf(lower, sizeof(lower), "%s/%s", bank->folder, bank->name);
+        ToLower(lower);
+        char candidate[MAPPROGRAM_PATH_SIZE];
+        snprintf(candidate, sizeof(candidate), "%s/%s", root, lower);
+        if (!FileExists(candidate))
+            continue;
+        best = distance;
+        snprintf(path, size, "%s", candidate);
+    }
+    return best != UINT32_MAX;
+}

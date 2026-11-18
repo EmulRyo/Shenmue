@@ -277,8 +277,10 @@ void AUTHView_Close(void) {
 
 // Shows a loaded cutscene, of the AUTH file filepath or of the TRCK chunk cutscene of the SCEX chunk of the mapinfo.bin
 // filepath (cutscene -1 for an AUTH file), replacing the current one. package and file: the package and the AUTH file
-// that the program of the map loads in the slot cutscene (e.g. "BUSS", "seqdata1.bin"), NULL if none
-static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutscene, const char* package, const char* file) {
+// that the program of the map loads in the slot cutscene (e.g. "BUSS", "seqdata1.bin"), NULL if none; motionBank: the
+// motion file that it loads for it, NULL if none
+static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutscene, const char* package, const char* file,
+    const char* motionBank) {
     AUTHView_Close();
     snprintf(g_auth.path, sizeof(g_auth.path), "%s", filepath);
     g_auth.sequence = *sequence;
@@ -286,6 +288,8 @@ static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutsc
     g_auth.current = -1;
     g_auth.selectedCharacter = -1;
     Path_ToSlashes(g_auth.path);
+    snprintf(g_auth.motionBank, sizeof(g_auth.motionBank), "%s", motionBank != NULL ? motionBank : "");
+    Path_ToSlashes(g_auth.motionBank);
     // The map of an AUTH file is the parent folder of its folder (of its PKS)
     char mapFolder[AUTHVIEW_PATH_SIZE];
     snprintf(mapFolder, sizeof(mapFolder), "%s", GetDirectoryPath(g_auth.path));
@@ -327,7 +331,7 @@ static bool Start(const AUTH_Sequence* sequence, const char* filepath, int cutsc
 
 bool AUTHView_Open(const char* filepath) {
     AUTH_Sequence sequence;
-    return AUTH_Load(filepath, &sequence) && Start(&sequence, filepath, -1, NULL, NULL);
+    return AUTH_Load(filepath, &sequence) && Start(&sequence, filepath, -1, NULL, NULL, NULL);
 }
 
 bool AUTHView_OpenMapCutscene(const char* filepath, uint32_t cutscene) {
@@ -338,10 +342,10 @@ bool AUTHView_OpenMapCutscene(const char* filepath, uint32_t cutscene) {
     bool loaded = cutscene < file.cutsceneCount && AUTH_LoadFromMemory(file.data + file.cutscenes[cutscene].offset,
         file.cutscenes[cutscene].size, TextFormat("%s #%u", filepath, cutscene), &sequence);
     MAPINFO_Free(&file);
-    return loaded && Start(&sequence, filepath, (int)cutscene, NULL, NULL);
+    return loaded && Start(&sequence, filepath, (int)cutscene, NULL, NULL, NULL);
 }
 
-bool AUTHView_OpenMapSequence(const char* filepath, const SD_Reference* sequence) {
+bool AUTHView_OpenMapSequence(const char* filepath, const SD_Reference* sequence, const char* motionBank) {
     size_t size = 0;
     uint8_t* data = MapProgram_LoadSequence(filepath, sequence, &size);
     AUTH_Sequence loaded;
@@ -358,7 +362,7 @@ bool AUTHView_OpenMapSequence(const char* filepath, const SD_Reference* sequence
     size_t length = strlen(name);
     if (length > 0 && (name[length - 1] == '/' || name[length - 1] == '\\'))
         name[length - 1] = '\0';
-    return ok && Start(&loaded, filepath, sequence->number, name, sequence->name);
+    return ok && Start(&loaded, filepath, sequence->number, name, sequence->name, motionBank);
 }
 
 bool AUTHView_IsMapCutscene(void) {

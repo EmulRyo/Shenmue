@@ -39,5 +39,11 @@ bool MapProgram_ContentFolder(const char* mapinfoPath, char* folder, size_t size
 // package in the folder of the map, or in the folder of the package extracted, or a file of a scene folder (e.g.
 // "SCENE/01/DNOZ", seqdata2.bin). Returns NULL if it isn't found. The data is freed with free
 uint8_t* MapProgram_LoadSequence(const char* mapinfoPath, const SD_Reference* sequence, size_t* size);
+// The motion file that the program loads (SD_GAME_MOTION_BANK) for a cutscene that it loads in the table of cutscenes:
+// the one of the same function nearest to the load of the cutscene, which plays its motions (scene/01/dnoz loads
+// M_01SKI.BIN with SEQDATA4.BIN and SEQDATA5.BIN, M_01FUL.BIN with SEQDATA2.BIN and SEQDATA3.BIN, and both have
+// motions 0x1000 to 0x1006). path: its path, in the scene folder. Returns false if there is none or it isn't found
+bool MapProgram_SequenceMotionBank(const char* mapinfoPath, const SD_Data* data, const SD_Reference* sequence, char* path,
+    size_t size);
 
 #endif

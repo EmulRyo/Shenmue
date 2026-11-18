@@ -138,6 +138,8 @@ typedef struct {
     bool            hasMapinfo; // mapinfoPath exists
     int             cutscene;   // TRCK chunk of the SCEX chunk of the open mapinfo.bin, -1 for an AUTH file
     MapFiles        mapFiles;   // For a cutscene of a mapinfo.bin: the CHRT, model and MOTN files of its map
+    char            motionBank[AUTHVIEW_PATH_SIZE]; // Motion file that the program of the map loads for the cutscene,
+                                                    // empty if none (it has its motions)
     MT5Render       render;
     uint32_t        modelCount;
     AUTHView_Model* models;

@@ -178,6 +178,13 @@ static bool ReadCall(SD_Data* data, uint32_t* capacity, const Source* source, co
             data->references[data->count - 1].value = (int32_t)a[1].value;
     } else if (id == SD_GAME_FOG_SET && a[0].constant && a[0].value < 16) {
         ok &= Add(data, capacity, source, SD_FOG, (int32_t)a[0].value, NULL, NULL);
+    } else if (id == SD_GAME_MOTION_BANK && a[0].constant && a[0].value < 100 && a[1].constant &&
+        SD_IsCharacterId(a[1].value) && a[2].string != NULL && IsFileName(a[2].string)) {
+        char name[5], folder[SD_NAME_SIZE];
+        IdText(a[1].value, name);
+        snprintf(folder, sizeof(folder), "SCENE/%02u/%s", (unsigned)a[0].value, name);
+        ok &= Add(data, capacity, source, SD_FILE, -1, a[2].string, folder);
+        used[2] = true;
     } else if (id == SD_GAME_SOUND_BANKS) {
         for (uint32_t i = 0; i < count && i < 8; i++) {
             if (a[i].string != NULL)

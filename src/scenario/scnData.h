@@ -33,6 +33,7 @@
 #define SD_GAME_SOUND_BANK  0x16D   // (0, slot, name, 0): loads a sound bank in a slot
 #define SD_GAME_SKY         0x175   // (operation, value): the sky and the light of the weather (scnSky.h)
 #define SD_GAME_FOG_SET     0x128   // (set): applies a set of the FOG chunk (scnSky.h)
+#define SD_GAME_MOTION_BANK 0x084   // (NN, folder ID, file): loads a motion file of scene/NN/<folder> (e.g. "M_01SKI.BIN")
 
 typedef enum {
     SD_PACKAGE,         // name, folder (as given, e.g. "scene/01/JOMO" or "/scene/01/DCBN/", empty if not constant)
@@ -52,7 +53,8 @@ typedef enum {
     SD_SKY,             // number: an operation of the sky and the light of the weather (SD_GAME_SKY), value: its argument
                         // (SD_UNKNOWN if it has none or it isn't constant)
     SD_FOG,             // number: a set of the FOG chunk applied (SD_GAME_FOG_SET)
-    SD_FILE,            // name: another string with an extension (e.g. "M_MDOR.BIN", "SCROLL00.SPR")
+    SD_FILE,            // name: another string with an extension (e.g. "M_MDOR.BIN", "SCROLL00.SPR"); folder: for a
+                        // motion file loaded by SD_GAME_MOTION_BANK, its scene folder (e.g. "SCENE/01/DNOZ")
     SD_KIND_COUNT
 } SD_Kind;
 

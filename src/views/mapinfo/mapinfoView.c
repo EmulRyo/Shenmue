@@ -469,7 +469,10 @@ void MAPINFOView_Toolbar(void) {
     if (cutscene < 0 && sequence == NULL)
         GuiDisable();
     if (Toolbar_Button(ICON_PLAYER_PLAY, "Play", "Play the selected cutscene", KEY_ENTER)) {
-        if (sequence != NULL && !AUTHView_OpenMapSequence(g_map.filename, sequence))
+        char motionBank[1024];
+        bool hasBank = sequence != NULL && MapProgram_SequenceMotionBank(g_map.filename, &g_map.program, sequence, motionBank,
+            sizeof(motionBank));
+        if (sequence != NULL && !AUTHView_OpenMapSequence(g_map.filename, sequence, hasBank ? motionBank : NULL))
             Log_Error("[MAPINFOView]: Failed to load the cutscene %s of %s\n", sequence->name, sequence->folder);
         else if (sequence == NULL && !AUTHView_OpenMapCutscene(g_map.filename, (uint32_t)cutscene))
             Log_Error("[MAPINFOView]: Failed to load the cutscene %d\n", cutscene);
