@@ -145,8 +145,8 @@ static const char* CommandText(const AUTH_Command* command) {
         return TextFormat("Motion %s 0x%X %u-%u%s%s", id, Arg(command, 1), Arg(command, 2), Arg(command, 3),
             name != NULL ? " " : "", name != NULL ? name : "");
     }
-    case AUTH_COMMAND_UNKNOWN:
-        return TextFormat("Unknown %s %u %u %u", id, Arg(command, 1), Arg(command, 2), Arg(command, 3));
+    case AUTH_COMMAND_EXPRESSION:
+        return TextFormat("Expression %s %u %u, %u frames", id, Arg(command, 1), Arg(command, 2), Arg(command, 3));
     case AUTH_COMMAND_VOICE:
         return TextFormat("Voice %s %s %.2f s", id, SoundName(Arg(command, 1)), AUTH_ArgFloat(command, 4));
     case AUTH_COMMAND_SOUND:
@@ -171,8 +171,8 @@ static const char* CommandName(const AUTH_Command* command) {
         const char* name = MotionName(Arg(command, 1));
         return name != NULL ? TextFormat("Motion %s %s", id, name) : TextFormat("Motion %s 0x%X", id, Arg(command, 1));
     }
-    case AUTH_COMMAND_UNKNOWN:
-        return TextFormat("Unknown %s", id);
+    case AUTH_COMMAND_EXPRESSION:
+        return TextFormat("Expression %s %u", id, Arg(command, 1));
     case AUTH_COMMAND_VOICE:
         return TextFormat("Voice %s %s", id, SoundName(Arg(command, 1)));
     case AUTH_COMMAND_SOUND:
@@ -250,6 +250,11 @@ void AUTHView_Close(void) {
         free((char*)g_auth.characterModels[i].source);
     for (uint32_t i = 0; g_auth.humanFiles != NULL && i < g_auth.sequence.characterCount; i++)
         IPAC_FreeFiles(&g_auth.humanFiles[i]);
+    for (uint32_t i = 0; g_auth.faces != NULL && i < g_auth.sequence.characterCount; i++)
+        AUTHFaces_Free(i);
+    free(g_auth.faces);
+    TALK_Free(&g_auth.talks[0]);
+    TALK_Free(&g_auth.talks[1]);
     free(g_auth.humanFiles);
     for (uint32_t i = 0; i < g_auth.placedCount; i++) {
         free((char*)g_auth.placed[i].source);
@@ -687,8 +692,13 @@ static void DrawCharacters(Camera3D camera) {
         AUTHPose_PoseCharacter(i);
         Matrix transform = AUTHPose_CharacterTransform(i);
         MT5Render_Model* instanced = &g_auth.models[model].model;
-        g_auth.instances[count++] = (MT5Render_Instance) { instanced, transform, Vector3Transform(instanced->mesh.center, transform), 0,
-            ProgramFade(g_auth.sequence.characters[i].idValue), CharacterLighting(g_auth.characterModels[i].human) };
+        Vector3 center = Vector3Transform(instanced->mesh.center, transform);
+        float fade = ProgramFade(g_auth.sequence.characters[i].idValue);
+        const MT5Render_Lighting* lighting = CharacterLighting(g_auth.characterModels[i].human);
+        g_auth.instances[count++] = (MT5Render_Instance) { instanced, transform, center, 0, fade, lighting };
+        MT5Render_Model* face = AUTHFaces_Pose(i, AUTHPose_BodyWorld(i));
+        if (face != NULL)
+            g_auth.instances[count++] = (MT5Render_Instance) { face, transform, center, 0, fade, lighting };
     }
     for (uint32_t i = 0; i < g_auth.placedCount && g_options.charactersShown; i++) {
         const AUTHView_Placed* placed = &g_auth.placed[i];
@@ -1000,6 +1010,9 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
         if (characterModel->source != NULL)
             Properties_Text(properties, "Found in", characterModel->source);
         Properties_Bool(properties, "Human", characterModel->human);
+        const AUTHView_Face* face = &g_auth.faces[index];
+        Properties_Text(properties, "Face", !face->loaded ? "none" : face->set != NULL ? face->name :
+            TextFormat("%s (no FTBL file: not animated)", face->name));
     }
     if (HasMovement(character)) {
         Properties_Section(properties, "Now");
@@ -1017,6 +1030,10 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
         }
         const char* sound = CharacterSound(character->idValue);
         Properties_Text(properties, "Sound", sound != NULL ? sound : "none");
+        if (g_auth.faces[index].set != NULL) {
+            Properties_Int(properties, "Expression", g_auth.faces[index].expression);
+            Properties_Int(properties, "Mouth", g_auth.faces[index].mouth);
+        }
     }
     Properties_Section(properties, "Keys of the curves");
     for (int c = 0; c < AUTH_CHARACTER_CURVES; c++)

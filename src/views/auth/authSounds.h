@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "formats/animation/auth.h"
+#include "formats/sound/lipsync.h"
 #include "scenario/scnCutscene.h"
 
 // Sounds of an AUTH cutscene, played with the timeline. The voice clips are the xWMA clips of the voice AFS files of the
@@ -16,6 +17,7 @@
 
 typedef struct {
     uint32_t    voices;         // Voice commands with a clip
+    uint32_t    lipSyncs;       // Voice commands with the shapes of the mouth (lip-sync record of the clip)
     uint32_t    voiceCommands;
     uint32_t    effects;        // Sound commands with an effect
     uint32_t    effectCommands;
@@ -39,5 +41,7 @@ void AUTHSounds_GetInfo(AUTHSounds_Info* info);
 bool AUTHSounds_HasSound(uint32_t command);
 // Whether the sound of a sound command of the program (an index of its sounds) was found
 bool AUTHSounds_HasProgramSound(uint32_t sound);
+// The shapes of the mouth of the voice of a command (its lip-sync record), NULL if none
+const LIPSYNC_Record* AUTHSounds_LipSync(uint32_t command);
 
 #endif

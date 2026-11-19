@@ -55,22 +55,31 @@ static Vector3 TransformNormal(const float normal[3], Matrix normalMatrix) {
     return Vector3Normalize(result);
 }
 
-// Node and vertex of a corner: negative indices point to the vertices of the parent mesh
-static bool ResolveVertex(const MT5_Model* model, uint32_t node, int32_t vertex, uint32_t* outNode, uint32_t* outVertex) {
+// Node and vertex of a corner: negative indices point to the vertices of the parent mesh. For a part (a face or a hand)
+// attached to a body, the negative indices of its root point to the mesh of a node of the body (external), which is the
+// node nodeCount
+static bool ResolveVertex(const MT5_Model* model, const MT5_Node* external, uint32_t node, int32_t vertex, uint32_t* outNode,
+    uint32_t* outVertex) {
+    uint32_t vertexCount = model->nodes[node].vertexCount;
     if (vertex < 0) {
         int32_t parent = MT5_ParentMeshNode(model, model->nodes[node].parent);
-        if (parent < 0)
+        if (parent < 0 && (external == NULL || model->nodes[node].parent >= 0))
             return false;
-        node = (uint32_t)parent;
-        vertex += (int32_t)model->nodes[node].vertexCount;
+        node = parent >= 0 ? (uint32_t)parent : model->nodeCount;
+        vertexCount = parent >= 0 ? model->nodes[node].vertexCount : external->vertexCount;
+        vertex += (int32_t)vertexCount;
         if (vertex < 0)
             return false;
     }
-    if ((uint32_t)vertex >= model->nodes[node].vertexCount)
+    if ((uint32_t)vertex >= vertexCount)
         return false;
     *outNode = node;
     *outVertex = (uint32_t)vertex;
     return true;
+}
+
+static const MT5_Vertex* SourceVertex(const MT5_Model* model, const MT5_Node* external, uint32_t node, uint32_t vertex) {
+    return node < model->nodeCount ? &model->nodes[node].vertices[vertex] : &external->vertices[vertex];
 }
 
 static bool IsDescendant(const MT5_Model* model, uint32_t node, uint32_t ancestor) {
@@ -122,10 +131,10 @@ static bool IsInvisible(const MT5_Node* node) {
     return (node->id >> 16) == 2;
 }
 
-static bool IsTriangleValid(const MT5_Model* model, uint32_t node, const MT5_Triangle* triangle) {
+static bool IsTriangleValid(const MT5_Model* model, const MT5_Node* external, uint32_t node, const MT5_Triangle* triangle) {
     uint32_t owner, vertex;
     for (int c = 0; c < 3; c++) {
-        if (!ResolveVertex(model, node, triangle->corners[c].vertex, &owner, &vertex))
+        if (!ResolveVertex(model, external, node, triangle->corners[c].vertex, &owner, &vertex))
             return false;
     }
     return true;
@@ -156,12 +165,14 @@ static bool AddGroup(MT5Mesh* result, const MT5_Triangle* triangle, int32_t fram
     return true;
 }
 
-static void AddCorner(MT5Mesh_Group* group, uint32_t index, const MT5_Corner* corner, uint32_t node, const MT5_Vertex* source,
-    Vector3 position, Vector3 normal) {
+static void AddCorner(MT5Mesh_Group* group, uint32_t index, const MT5_Corner* corner, uint32_t node, uint32_t vertex,
+    uint32_t owner, const MT5_Vertex* source, Vector3 position, Vector3 normal) {
     Mesh* mesh = &group->mesh;
     memcpy(&mesh->vertices[index * 3], &position, sizeof(Vector3));
     memcpy(&mesh->normals[index * 3], &normal, sizeof(Vector3));
     group->nodes[index] = (uint16_t)node;
+    group->sources[index] = (uint16_t)vertex;
+    group->owners[index] = (uint16_t)owner;
     memcpy(&group->positions[index * 3], source->position, 3 * sizeof(float));
     memcpy(&group->normals[index * 3], source->normal, 3 * sizeof(float));
     mesh->texcoords[index * 2] = corner->u;
@@ -294,12 +305,13 @@ static uint32_t FindFrames(const MT5_Model* model, int32_t* nodeFrame) {
     return 0;
 }
 
-bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
-    Matrix* world = malloc(model->nodeCount * (2 * sizeof(Matrix) + sizeof(int32_t) + sizeof(bool)));
+bool MT5Mesh_BuildPart(const MT5_Model* model, const MT5_Node* external, MT5Mesh* result) {
+    // One more matrix for the node of the body of a part
+    Matrix* world = malloc((model->nodeCount + 1) * 2 * sizeof(Matrix) + model->nodeCount * (sizeof(int32_t) + sizeof(bool)));
     if (world == NULL)
         return false;
-    Matrix* normalMatrix = world + model->nodeCount;
-    int32_t* nodeFrame = (int32_t*)(normalMatrix + model->nodeCount);
+    Matrix* normalMatrix = world + model->nodeCount + 1;
+    int32_t* nodeFrame = (int32_t*)(normalMatrix + model->nodeCount + 1);
     bool* hidden = (bool*)(nodeFrame + model->nodeCount);
     result->frameCount = FindFrames(model, nodeFrame);
     Matrix part;
@@ -313,6 +325,10 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
         normalMatrix[i] = MatrixTranspose(MatrixInvert(world[i]));
         hidden[i] = IsAlternativeRoot(model, i) || (parent >= 0 && hidden[parent]);
     }
+    // The node of the body of a part is placed as the part in the file
+    result->external = external != NULL && model->nodeCount > 0;
+    world[model->nodeCount] = model->nodeCount > 0 ? world[0] : MatrixIdentity();
+    normalMatrix[model->nodeCount] = model->nodeCount > 0 ? normalMatrix[0] : MatrixIdentity();
     // The two sides of the signs, in the frames of the models that have none: the OPEN side and its siblings with the ID
     // 0xD in the frame 0, the CLOSE side in the frame 1. In the models with frames, only the OPEN side is shown
     for (uint32_t i = 0; i < model->nodeCount; i++) {
@@ -344,7 +360,7 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
             continue;
         for (uint32_t t = 0; t < node->triangleCount; t++) {
             const MT5_Triangle* triangle = &node->triangles[t];
-            if (!IsTriangleValid(model, n, triangle)) {
+            if (!IsTriangleValid(model, external, n, triangle)) {
                 result->skippedTriangles++;
                 continue;
             }
@@ -372,8 +388,11 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
         result->groups[i].nodes = malloc((mesh->vertexCount + 1) * sizeof(uint16_t));
         result->groups[i].positions = malloc((mesh->vertexCount + 1) * 3 * sizeof(float));
         result->groups[i].normals = malloc((mesh->vertexCount + 1) * 3 * sizeof(float));
+        result->groups[i].sources = malloc((mesh->vertexCount + 1) * sizeof(uint16_t));
+        result->groups[i].owners = malloc((mesh->vertexCount + 1) * sizeof(uint16_t));
         if (mesh->vertices == NULL || mesh->normals == NULL || mesh->texcoords == NULL || mesh->colors == NULL ||
-            result->groups[i].nodes == NULL || result->groups[i].positions == NULL || result->groups[i].normals == NULL) {
+            result->groups[i].nodes == NULL || result->groups[i].positions == NULL || result->groups[i].normals == NULL ||
+            result->groups[i].sources == NULL || result->groups[i].owners == NULL) {
             free(world);
             return false;
         }
@@ -387,19 +406,19 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
             continue;
         for (uint32_t t = 0; t < node->triangleCount; t++) {
             const MT5_Triangle* triangle = &node->triangles[t];
-            if (!IsTriangleValid(model, n, triangle))
+            if (!IsTriangleValid(model, external, n, triangle))
                 continue;
             MT5Mesh_Group* group = FindGroup(result, triangle, nodeFrame[n]);
             // A mirrored transform (negative scale) changes the winding
             bool mirrored = MatrixDeterminant(world[n]) < 0.0f;
             for (int c = 0; c < 3; c++) {
                 uint32_t owner, vertex;
-                ResolveVertex(model, n, triangle->corners[c].vertex, &owner, &vertex);
-                const MT5_Vertex* source = &model->nodes[owner].vertices[vertex];
+                ResolveVertex(model, external, n, triangle->corners[c].vertex, &owner, &vertex);
+                const MT5_Vertex* source = SourceVertex(model, external, owner, vertex);
                 Vector3 position = Vector3Transform((Vector3) { source->position[0], source->position[1], source->position[2] }, world[owner]);
                 Vector3 normal = TransformNormal(source->normal, normalMatrix[owner]);
                 int index = mirrored && c > 0 ? 3 - c : c;
-                AddCorner(group, group->filled * 3 + index, &triangle->corners[c], owner, source, position, normal);
+                AddCorner(group, group->filled * 3 + index, &triangle->corners[c], owner, vertex, n, source, position, normal);
                 min = Vector3Min(min, position);
                 max = Vector3Max(max, position);
             }
@@ -408,7 +427,7 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
     }
     result->nodeCount = model->nodeCount;
     result->nodes = malloc((model->nodeCount + 1) * sizeof(MT5Mesh_Node));
-    result->pose = malloc((model->nodeCount + 1) * sizeof(Matrix));
+    result->pose = malloc((model->nodeCount + 2) * sizeof(Matrix));
     if (result->nodes == NULL || result->pose == NULL) {
         free(world);
         return false;
@@ -418,7 +437,7 @@ bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
         result->nodes[i] = (MT5Mesh_Node) { node->parent, node->id, { node->position[0], node->position[1], node->position[2] },
             { node->rotation[0], NodeRotationY(node), node->rotation[2] }, { node->scale[0], node->scale[1], node->scale[2] } };
     }
-    memcpy(result->pose, world, model->nodeCount * sizeof(Matrix));
+    memcpy(result->pose, world, (model->nodeCount + 1) * sizeof(Matrix));
     free(world);
 
     for (uint32_t i = 0; i < result->groupCount; i++)
@@ -439,6 +458,8 @@ void MT5Mesh_Free(MT5Mesh* meshes) {
         free(meshes->groups[i].nodes);
         free(meshes->groups[i].positions);
         free(meshes->groups[i].normals);
+        free(meshes->groups[i].sources);
+        free(meshes->groups[i].owners);
     }
     free(meshes->groups);
     free(meshes->nodes);
@@ -454,16 +475,25 @@ Matrix MT5Mesh_NodeMatrix(const MT5Mesh_Node* node) {
     return MatrixMultiply(matrix, MatrixTranslate(node->position.x, node->position.y, node->position.z));
 }
 
+bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result) {
+    return MT5Mesh_BuildPart(model, NULL, result);
+}
+
 void MT5Mesh_Pose(MT5Mesh* meshes, const Matrix* world) {
     if (world == NULL && !meshes->posed)
         return;
-    meshes->posed = world != NULL;
+    MT5Mesh_PoseWith(meshes, world, NULL);
+}
+
+void MT5Mesh_PoseWith(MT5Mesh* meshes, const Matrix* world, const MT5Mesh_PoseOptions* options) {
+    meshes->posed = world != NULL || options != NULL;
     if (world == NULL)
         world = meshes->pose;
-    Matrix* normalMatrix = malloc((meshes->nodeCount + 1) * sizeof(Matrix));
+    uint32_t matrixCount = meshes->nodeCount + (meshes->external ? 1 : 0);
+    Matrix* normalMatrix = malloc((matrixCount + 1) * sizeof(Matrix));
     if (normalMatrix == NULL)
         return;
-    for (uint32_t i = 0; i < meshes->nodeCount; i++)
+    for (uint32_t i = 0; i < matrixCount; i++)
         normalMatrix[i] = MatrixTranspose(MatrixInvert(world[i]));
     for (uint32_t g = 0; g < meshes->groupCount; g++) {
         MT5Mesh_Group* group = &meshes->groups[g];
@@ -471,7 +501,18 @@ void MT5Mesh_Pose(MT5Mesh* meshes, const Matrix* world) {
         for (int v = 0; v < mesh->vertexCount; v++) {
             uint16_t node = group->nodes[v];
             const float* p = &group->positions[v * 3];
-            Vector3 position = Vector3Transform((Vector3) { p[0], p[1], p[2] }, world[node]);
+            Vector3 local = { p[0], p[1], p[2] };
+            if (options != NULL && options->offsets != NULL && node == options->node && group->sources[v] < options->offsetCount) {
+                const float* offset = &options->offsets[group->sources[v] * 3];
+                local = (Vector3) { local.x + offset[0], local.y + offset[1], local.z + offset[2] };
+            }
+            // The triangles of a hidden node collapse to a point
+            if (options != NULL && options->hiddenNodes != NULL && group->owners[v] < meshes->nodeCount &&
+                options->hiddenNodes[group->owners[v]]) {
+                node = group->owners[v];
+                local = Vector3Zero();
+            }
+            Vector3 position = Vector3Transform(local, world[node]);
             Vector3 normal = TransformNormal(&group->normals[v * 3], normalMatrix[node]);
             memcpy(&mesh->vertices[v * 3], &position, sizeof(Vector3));
             memcpy(&mesh->normals[v * 3], &normal, sizeof(Vector3));

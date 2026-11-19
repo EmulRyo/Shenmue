@@ -27,6 +27,8 @@ typedef struct {
     float       depth;  // Mean depth of the triangles of a translucent group, to draw the groups from back to front
     Mesh        mesh;
     uint16_t*   nodes;      // Node of each vertex of the mesh
+    uint16_t*   sources;    // Index of each vertex in the mesh of its node
+    uint16_t*   owners;     // Node of the mesh of the triangle of each vertex (the vertex can be of its parent)
     float*      positions;  // Of each vertex in the space of its node
     float*      normals;
 } MT5Mesh_Group;
@@ -55,15 +57,31 @@ typedef struct {
     MT5Mesh_Node*   nodes;
     Matrix*         pose;             // World matrix of each node in the pose of the meshes
     bool            posed;            // The meshes are in another pose than the one of the file
+    bool            external;         // A part attached to a body: the node nodeCount is the node of the body whose
+                                      // mesh the negative vertex indices of the root use
 } MT5Mesh;
+
+// Changes to the meshes in a pose: the triangles of some nodes hidden (e.g. the head of a body, replaced by a detailed
+// face), and the vertices of the mesh of a node moved (e.g. a face with an expression)
+typedef struct {
+    const bool*     hiddenNodes;      // Per node, NULL for none
+    uint32_t        node;             // Node whose vertices are moved
+    uint32_t        offsetCount;      // Number of vertices of its mesh with an offset
+    const float*    offsets;          // 3 floats per vertex, in the space of the node; NULL for none
+} MT5Mesh_PoseOptions;
 
 // Builds one mesh per group with the vertices in model space and uploads them. On error, result has to be freed too
 bool MT5Mesh_Build(const MT5_Model* model, MT5Mesh* result);
+// Same for a part (a face or a hand) attached to a body: the negative vertex indices of its root point to the mesh of a
+// node of the body (external), whose world matrix is the one after the nodes of the part in the poses
+bool MT5Mesh_BuildPart(const MT5_Model* model, const MT5_Node* external, MT5Mesh* result);
 void MT5Mesh_Free(MT5Mesh* meshes);
 // Local matrix of a node of the file: scale, rotation around X, Y and Z, and translation, relative to the parent
 Matrix MT5Mesh_NodeMatrix(const MT5Mesh_Node* node);
 // Moves the vertices to the pose given by the world matrix of each node, and uploads them. NULL goes back to the pose of
 // the file
 void MT5Mesh_Pose(MT5Mesh* meshes, const Matrix* world);
+// Same with changes to the meshes (NULL for none). world NULL is the pose of the file
+void MT5Mesh_PoseWith(MT5Mesh* meshes, const Matrix* world, const MT5Mesh_PoseOptions* options);
 
 #endif

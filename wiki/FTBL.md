@@ -32,7 +32,7 @@ There are 161 FTBL files (47 different contents), one per face model.
 |-------:|-----:|--------|-----------------|-------------|
 | 0x00   | 4    | int32  | `talkSet`       | Index of the set of poses in a [TALK](TALK) chain (0 to 3): 0 in 80 files (e.g. Ryo), 1 in 57, 2 in 9, 3 in 15 |
 | 0x04   | 4    | uint32 | `bonesOffset`   | Position of the bones. Always 0x30 |
-| 0x08   | 4    | uint32 | `unknown`       | Unknown, always 0x24 |
+| 0x08   | 4    | uint32 | `skinOffset`    | Position of the three positions of the skin below (`countsOffset`). Always 0x24 |
 | 0x0C   | 4    | int32  | `eyeYMax`       | Limits of the rotation of the eyes around their Y axis (up and down), `0x10000` = 360°: maximum and minimum. Both eyes |
 | 0x10   | 4    | int32  | `eyeYMin`       | |
 | 0x14   | 4    | int32  | `eyeZMax1`      | Limits of the rotation of the eye `0x4D` around its Z axis (to the sides), maximum and minimum |
@@ -54,9 +54,13 @@ The bones are in the space of the face model (X to the front of the face, Z to t
 | 0x00   | 12   | float[3] | `tip`     | A point on the surface of the face (e.g. the chin for bone 0) |
 | 0x0C   | 4    | int32    | `type`    | Always 2 |
 | 0x10   | 12   | float[3] | `root`    | A point behind `tip`, inside the head (e.g. near the joint of the jaw for bone 0) |
-| 0x1C   | 4    | float    | `unknown` | Always 1.5708 (π/2) |
-| 0x20   | 8    | float[2] | `unknown` | Always 0 |
-| 0x28   | 8    | float[2] | `unknown` | Two small values (e.g. 0.0110 and 0.0391); for most bones they are the differences in Z and in X between `tip` and `root`, but not for bone 0 (0.0197 and 0.0989) |
+| 0x1C   | 12   | float[3] | `angles`  | Rotation around X, Y and Z of the frame of the bone at its root, in radians. Always (π/2, 0, 0) |
+| 0x28   | 4    | float    | `length1` | Length of the first segment of the bone, from the root (e.g. 0.0110) |
+| 0x2C   | 4    | float    | `length2` | Length of the second segment, to the end (e.g. 0.0391) |
+
+A bone is a chain of two segments from its `root` (`type` 2; the code also handles a type 1, a single segment of `length1`). In a pose, the end of the chain goes to the position that the [TALK](TALK) file gives for the bone, or as far as it reaches in that direction: the game bends the chain like a limb, with the law of cosines (code at `0x0C090008` of `1ST_READ.BIN`, PAL v1.001), so the end is at the same direction from the root, at a distance between the difference and the sum of the two lengths. The displacement of the bone is from its `tip` to that end. In most bones `length1` and `length2` are the differences in Z and in X between `tip` and `root`, but not for bone 0 (0.0197 and 0.0989).
+
+The bones of all the faces that use the same set of poses are at the same places: the pose 0 of each set of [TALK](TALK) has the `tip` of their bones (to 0.2 mm, the precision of the values of the keys).
 
 Where the bones are in Ryo's face (`ykb_ftbl.bin`), from their `tip`:
 

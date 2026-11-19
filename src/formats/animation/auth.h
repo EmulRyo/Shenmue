@@ -16,7 +16,7 @@ typedef enum {
     AUTH_COMMAND_START      = 1, // "(^^;", 0
     AUTH_COMMAND_CHARACTER  = 2, // Character ID, index
     AUTH_COMMAND_MOTION     = 3, // Character ID, motion ID, first frame, last frame, 0
-    AUTH_COMMAND_UNKNOWN    = 4, // Character ID, 0 to 12, 0 to 6, 1 to 49
+    AUTH_COMMAND_EXPRESSION = 4, // Character ID, expression of the face (0 to 12), 0 to 6, frames to reach it (1 to 49)
     AUTH_COMMAND_VOICE      = 5, // Character ID, sound, -1, -1, length in seconds
     AUTH_COMMAND_SOUND      = 6, // Character ID, sound ID, sound; with 9 arguments: character ID, 0x7F, 4, 0x10, 0,
                                  // length in seconds

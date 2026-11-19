@@ -16,11 +16,13 @@
 #include "core/path.h"
 #include "core/text.h"
 #include "formats/animation/auth.h"
+#include "formats/animation/talk.h"
 #include "formats/animation/motn.h"
 #include "formats/archive/ipac.h"
 #include "formats/archive/pkf.h"
 #include "formats/archive/pks.h"
 #include "formats/map/mapinfo.h"
+#include "formats/model/ftbl.h"
 #include "formats/script/chrt.h"
 #include "game/mapFiles.h"
 #include "game/mapProgram.h"
@@ -49,6 +51,23 @@ typedef struct {
     bool            posed;      // In the pose of the motion of its character at the current frame
     bool            programPosed; // Nodes moved by the program of the map at the current frame
 } AUTHView_Model;
+
+// The detailed face of a character (_F model of its Face command or of its body, in the model/face folder of the scene),
+// which replaces the head of its body, with its skin (FTBL) and the set of poses of the TALK files that the skin uses
+typedef struct {
+    bool            loaded;
+    char            name[32];   // File name of the model
+    MT5Render_Model model;
+    FTBL_Skin       skin;       // Empty if its FTBL file wasn't found
+    const TALK_Set* set;        // In g_auth.talks, NULL if none: the face isn't animated
+    int32_t         head;       // Node of the body that the face replaces (0xFFBD)
+    int32_t         neck;       // Node of the body whose mesh the negative vertex indices of the face use
+    bool*           hidden;     // Nodes of the body hidden: the head
+    Matrix*         pose;       // World matrices of the nodes of the face, then of the neck
+    float*          offsets;    // Of the vertices of the face, from the skin
+    int32_t         expression; // At the current frame
+    int32_t         mouth;
+} AUTHView_Face;
 
 // A motion played by the commands, decoded from the MOTN files
 typedef struct {
@@ -144,6 +163,8 @@ typedef struct {
     uint32_t        modelCount;
     AUTHView_Model* models;
     AUTHView_CharacterModel* characterModels;
+    AUTHView_Face*  faces;      // Of each character
+    TALK_File       talks[2];   // talk_n00.bin and talk_kc.bin of the face folder, loaded when a face uses them
     IPAC_FileList*  humanFiles; // Of each character: the files of its PKF/PKS pair in stream/humans if it isn't extracted
     MT5Render_Instance* instances; // Of the characters drawn with their model, filled before drawing them
     SCNCutscene     program;    // What the program of the map does with the cutscene (a cutscene of the table of a map)
@@ -201,8 +222,19 @@ const MOTN_Motion* AUTHMotions_Find(uint32_t id); // NULL if it wasn't found or 
 bool AUTHModels_LoadCharacters(void);
 bool AUTHModels_LoadPlaced(void);
 
+// authFaces.c: the detailed faces of the characters, posed with the expression, the voice and blinking. Load is called
+// after the model of the body of the character is loaded (body: its file, packed: the file if it is packed) with the
+// model of the Face command of its script (empty if none). Returns false if the character has no face
+bool AUTHFaces_Load(uint32_t character, const char* face, const char* body, const IPAC_File* packed);
+void AUTHFaces_Free(uint32_t character);
+const bool* AUTHFaces_HiddenNodes(uint32_t character); // The nodes of the body that the face replaces, NULL if no face
+// Puts the face in the pose of the current frame on the body in a pose (world matrices of its nodes). Returns the face
+// model to draw with the body, NULL if none
+MT5Render_Model* AUTHFaces_Pose(uint32_t character, const Matrix* body);
+
 // authPose.c: the poses and the transforms of the characters at the current frame
 void AUTHPose_PoseCharacter(uint32_t index);
+const Matrix* AUTHPose_BodyWorld(uint32_t index); // World matrices of the nodes of the model of a character in its pose
 Matrix AUTHPose_CharacterTransform(uint32_t index);
 float AUTHPose_CharacterHeight(uint32_t index);
 bool AUTHPose_PlacedDrawn(const AUTHView_Placed* placed, uint32_t frame);

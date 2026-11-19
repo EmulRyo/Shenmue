@@ -285,9 +285,12 @@ bool AUTHModels_LoadCharacters(void) {
     const AUTH_Sequence* sequence = &g_auth.sequence;
     g_auth.models = calloc(sequence->characterCount + 1, sizeof(AUTHView_Model));
     g_auth.characterModels = calloc(sequence->characterCount + 1, sizeof(AUTHView_CharacterModel));
-    g_auth.instances = calloc(sequence->characterCount + 1, sizeof(MT5Render_Instance));
+    // A body and a face for each character
+    g_auth.instances = calloc(2 * sequence->characterCount + 1, sizeof(MT5Render_Instance));
     g_auth.humanFiles = calloc(sequence->characterCount + 1, sizeof(IPAC_FileList));
-    if (g_auth.models == NULL || g_auth.characterModels == NULL || g_auth.instances == NULL || g_auth.humanFiles == NULL)
+    g_auth.faces = calloc(sequence->characterCount + 1, sizeof(AUTHView_Face));
+    if (g_auth.models == NULL || g_auth.characterModels == NULL || g_auth.instances == NULL || g_auth.humanFiles == NULL ||
+        g_auth.faces == NULL)
         return false;
 
     // The characters of the map
@@ -308,8 +311,9 @@ bool AUTHModels_LoadCharacters(void) {
         char path[AUTHVIEW_PATH_SIZE];
         const IPAC_File* packed = NULL;
         const IPAC_FileList* textures = NULL;
+        CHRT_Character info = { 0 };
         characterModel->source = FindCharacterModel(character->id, hasMapScript ? &mapScript : NULL, mapFolder, &g_auth.humanFiles[i],
-            path, sizeof(path), &packed, &textures, &characterModel->human, NULL);
+            path, sizeof(path), &packed, &textures, &characterModel->human, &info);
         if (characterModel->source != NULL) {
             // A copy of the source is kept: TextFormat reuses its buffers
             char* source = malloc(strlen(characterModel->source) + 1);
@@ -320,8 +324,11 @@ bool AUTHModels_LoadCharacters(void) {
         }
         if (characterModel->model < 0)
             Log_Warning("[AUTHView_Open]: No model for %s (%s)\n", character->id, characterModel->source != NULL ? "invalid model file" : "not found");
-        else
+        else {
             Log_Debug("  %s: %s (%s)\n", character->id, GetFileName(path), characterModel->source);
+            if (characterModel->human)
+                AUTHFaces_Load(i, info.face, packed != NULL ? packed->filename : path, packed);
+        }
     }
     if (hasMapScript)
         CHRT_Free(&mapScript);
@@ -366,7 +373,8 @@ bool AUTHModels_LoadPlaced(void) {
     AUTHView_Model* models = realloc(g_auth.models, capacity * sizeof(AUTHView_Model));
     if (models != NULL)
         g_auth.models = models;
-    MT5Render_Instance* instances = realloc(g_auth.instances, capacity * sizeof(MT5Render_Instance));
+    // And a face for each character of the cutscene
+    MT5Render_Instance* instances = realloc(g_auth.instances, (capacity + g_auth.sequence.characterCount) * sizeof(MT5Render_Instance));
     if (instances != NULL)
         g_auth.instances = instances;
     if (models == NULL || instances == NULL)

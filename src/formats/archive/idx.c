@@ -5,14 +5,15 @@
 #include <assert.h>
 #include "core/file.h"
 #include "core/log.h"
+#include "core/text.h"
 #include "formats/archive/afs.h"
 #include "formats/archive/idx.h"
 
 typedef struct {
     char        filename[0x0C];
     uint16_t    afsIndex;
-    uint16_t    afsLastIndex;
-    uint32_t    unknown;
+    uint16_t    lipSyncIndex;   // AFS entry with the lip-sync table of the clip, 0xFFFF if none
+    uint32_t    lipSyncOffset;  // Of the record of the clip in that table, 0xFFFFFFFF if none
 } IDX0_Entry;
 
 typedef struct {
@@ -56,7 +57,8 @@ static void PrintIDX0Header(IDX0_Header* header) {
     Log_Debug("  Count: %u\n", header->count);
     for (uint32_t i = 0; i < header->count; i++) {
         IDX0_Entry* entry = &(header->entries[i]);
-        Log_Debug("  Entry %03u: %.12s, AFS Index: %03u, AFS Last Index: %u, Unknown: %u\n", i, entry->filename, entry->afsIndex, entry->afsLastIndex, entry->unknown);
+        Log_Debug("  Entry %03u: %.12s, AFS Index: %03u, Lip-sync table: %u, offset: %u\n", i, entry->filename, entry->afsIndex,
+            entry->lipSyncIndex, entry->lipSyncOffset);
     }
 }
 
@@ -96,6 +98,29 @@ bool IDX_LoadEntryNames(const char* idxPath, char (*names)[IDX_NAME_SIZE], uint3
 
     free(idx);
     return loaded;
+}
+
+bool IDX_FindLipSync(const char* idxPath, const char* name, uint32_t* table, uint32_t* offset) {
+    size_t size = 0;
+    uint8_t* idx = File_LoadToMemoryEx(idxPath, &size);
+    if (idx == NULL)
+        return false;
+    bool found = false;
+    if (IsIDX0(idx, size)) {
+        const IDX0_Header* header = (const IDX0_Header*)idx;
+        for (uint32_t i = 0; i < header->count && !found; i++) {
+            const IDX0_Entry* entry = &header->entries[i];
+            char filename[IDX_NAME_SIZE];
+            snprintf(filename, sizeof(filename), "%.12s", entry->filename);
+            if (!Text_EqualsIgnoreCase(filename, name) || entry->lipSyncIndex == 0xFFFF || entry->lipSyncOffset == 0xFFFFFFFF)
+                continue;
+            *table = entry->lipSyncIndex;
+            *offset = entry->lipSyncOffset;
+            found = true;
+        }
+    }
+    free(idx);
+    return found;
 }
 
 void IDX_ExtractAllFiles(const char* filepath, const char* outputPath) {

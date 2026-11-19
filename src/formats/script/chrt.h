@@ -39,6 +39,7 @@ typedef struct {
 typedef struct {
     char            id[5];          // "?" if the Character command has no ID
     const char*     image;          // Name of its first Image, NULL if none. Points into the buffer of the script
+    char            face[32];       // Model of its detailed face (Face command, e.g. "KAS_F.MT5"), empty if none
     bool            sleep;          // SLEEP flag
     bool            human;          // Human command: a person, whose body model has its origin at the hips
     bool            arm;            // Object and Hand commands: an arm of Ryo for the close-ups (e.g. putting a coin

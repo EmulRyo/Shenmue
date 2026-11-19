@@ -65,7 +65,7 @@ In 77 records (e.g. the lines of `ASDA` in `scene/01/stream/pc/eng/a0142.afs`) `
 
 | Offset | Size | Type   | Name       | Description                                                     |
 |-------:|-----:|--------|------------|-----------------------------------------------------------------|
-| 0x00   | 2    | uint16 | `mouth`    | Shape of the mouth, 0 to 5                                      |
+| 0x00   | 2    | uint16 | `mouth`    | Shape of the mouth, 0 to 5: the pose of the mouth in the group of poses of the expression of the face (see [TALK](TALK#poses)) |
 | 0x02   | 2    | uint16 | `unknown`  | Unknown, always 2                                               |
 | 0x04   | 4    | uint32 | `duration` | Time the shape is held, in 1/60 s                               |
 

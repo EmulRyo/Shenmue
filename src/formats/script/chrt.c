@@ -114,6 +114,8 @@ void CHRT_ReadCharacter(const CHRT_Script* script, uint32_t index, CHRT_Characte
             continue;
         if (CHRT_IsCommand(child, "Image") && character->image == NULL && child->argCount > 0 && child->args[0].type == CHRT_ARG_STRING)
             character->image = child->args[0].string;
+        else if (CHRT_IsCommand(child, "Face") && child->argCount > 0 && child->args[0].type == CHRT_ARG_STRING)
+            snprintf(character->face, sizeof(character->face), "%s", child->args[0].string);
         else if (CHRT_IsCommand(child, "Entry") && entry < 0)
             entry = (int32_t)c;
         else if (CHRT_IsCommand(child, "Human"))

@@ -277,9 +277,10 @@ static bool LoadTextures(const MT5_Model* source, const char* filepath, const IP
     return true;
 }
 
-static bool Build(MT5_Model* source, const char* filepath, const IPAC_FileList* packedFiles, MT5Render_Model* model) {
+static bool Build(MT5_Model* source, const char* filepath, const IPAC_FileList* packedFiles, const MT5_Node* external,
+    MT5Render_Model* model) {
     model->nodeCount = source->nodeCount;
-    bool success = MT5Mesh_Build(source, &model->mesh) && LoadTextures(source, filepath, packedFiles, model);
+    bool success = MT5Mesh_BuildPart(source, external, &model->mesh) && LoadTextures(source, filepath, packedFiles, model);
     MT5_Free(source);
     if (!success) {
         Log_Error("[MT5Render_LoadModel]: Memory error\n");
@@ -294,7 +295,15 @@ bool MT5Render_LoadModel(const char* filepath, MT5Render_Model* model) {
     MT5_Model source;
     if (!MT5_Load(filepath, &source))
         return false;
-    return Build(&source, filepath, NULL, model);
+    return Build(&source, filepath, NULL, NULL, model);
+}
+
+bool MT5Render_LoadPart(const char* filepath, const MT5_Node* external, MT5Render_Model* model) {
+    memset(model, 0, sizeof(*model));
+    MT5_Model source;
+    if (!MT5_Load(filepath, &source))
+        return false;
+    return Build(&source, filepath, NULL, external, model);
 }
 
 bool MT5Render_LoadPackedModel(const IPAC_File* file, const IPAC_FileList* files, MT5Render_Model* model) {
@@ -302,7 +311,7 @@ bool MT5Render_LoadPackedModel(const IPAC_File* file, const IPAC_FileList* files
     MT5_Model source;
     if (!MT5_LoadFromMemory(file->data, file->size, file->filename, &source))
         return false;
-    return Build(&source, file->filename, files, model);
+    return Build(&source, file->filename, files, NULL, model);
 }
 
 void MT5Render_FreeModel(MT5Render_Model* model) {
@@ -320,6 +329,11 @@ void MT5Render_Pose(MT5Render_Model* model, const Matrix* world) {
         return;
     MT5Mesh_Pose(&model->mesh, world);
     model->sorted = false; // The translucent triangles moved
+}
+
+void MT5Render_PoseWith(MT5Render_Model* model, const Matrix* world, const MT5Mesh_PoseOptions* options) {
+    MT5Mesh_PoseWith(&model->mesh, world, options);
+    model->sorted = false;
 }
 
 uint32_t MT5Render_Vertices(const MT5Render_Model* model, Matrix transform, Vector3* points) {
@@ -434,6 +448,8 @@ static void SortTriangles(MT5Mesh_Group* group, Vector3 eye, Vector3 forward) {
     PermuteTriangles(mesh->normals, 9 * sizeof(float), entries, count, temp);
     PermuteTriangles(mesh->colors, 12, entries, count, temp);
     PermuteTriangles(group->nodes, 3 * sizeof(uint16_t), entries, count, temp);
+    PermuteTriangles(group->sources, 3 * sizeof(uint16_t), entries, count, temp);
+    PermuteTriangles(group->owners, 3 * sizeof(uint16_t), entries, count, temp);
     PermuteTriangles(group->positions, 9 * sizeof(float), entries, count, temp);
     PermuteTriangles(group->normals, 9 * sizeof(float), entries, count, temp);
     UpdateMeshBuffer(*mesh, RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION, mesh->vertices, mesh->vertexCount * 3 * sizeof(float), 0);

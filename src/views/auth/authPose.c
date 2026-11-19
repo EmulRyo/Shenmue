@@ -77,7 +77,8 @@ static bool ProgramPose(uint32_t character, AUTHView_Model* model) {
 }
 
 // Puts the model of a character in the pose of its motion at the current time (from the first frame of the command to
-// its last one), or in the pose that the program of the map gives to its nodes, or in the pose of the file
+// its last one), or in the pose that the program of the map gives to its nodes, or in the pose of the file. The head of a
+// body with a detailed face is hidden
 void AUTHPose_PoseCharacter(uint32_t index) {
     const AUTH_Character* character = &g_auth.sequence.characters[index];
     AUTHView_Model* model = &g_auth.models[g_auth.characterModels[index].model];
@@ -90,8 +91,16 @@ void AUTHPose_PoseCharacter(uint32_t index) {
     }
     model->posed = motion != NULL && model->pose != NULL && MT5Pose_Compute(&model->model.mesh, &model->bodyNodes, motion, frame, model->pose);
     model->programPosed = !model->posed && ProgramPose(character->idValue, model);
-    if (!model->programPosed)
+    const bool* hidden = AUTHFaces_HiddenNodes(index);
+    if (hidden != NULL)
+        MT5Render_PoseWith(&model->model, AUTHPose_BodyWorld(index), &(MT5Mesh_PoseOptions) { hidden, 0, 0, NULL });
+    else if (!model->programPosed)
         MT5Render_Pose(&model->model, model->posed ? model->pose : NULL);
+}
+
+const Matrix* AUTHPose_BodyWorld(uint32_t index) {
+    const AUTHView_Model* model = &g_auth.models[g_auth.characterModels[index].model];
+    return model->posed || model->programPosed ? model->pose : model->model.mesh.pose;
 }
 
 // As the nodes of the models: rotation around X, Y and Z, and translation, at the current time. The models of the persons

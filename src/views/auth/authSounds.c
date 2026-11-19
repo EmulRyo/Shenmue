@@ -9,7 +9,9 @@
 #include "core/log.h"
 #include "core/path.h"
 #include "formats/archive/afs.h"
+#include "formats/archive/idx.h"
 #include "formats/map/mapinfo.h"
+#include "formats/sound/lipsync.h"
 #include "formats/sound/snd.h"
 #include "formats/sound/xwm.h"
 #include "views/auth/authMusic.h"
@@ -42,6 +44,7 @@ static struct {
     AUTHSound*      sounds;
     uint32_t        commandCount;
     int*            commandSounds;  // First sound of each command, -1 if none
+    LIPSYNC_Record* lipSyncs;       // Of the voice of each command, without keys if none
     const SCNCutscene* program;     // While it loads, NULL if none
     uint32_t        programCount;
     int*            programSounds;  // First sound of each sound command of the program, -1 if none
@@ -159,6 +162,31 @@ static void FreeRoots(FilePathList* roots) {
     free(roots->paths);
 }
 
+// The lip-sync record of a voice clip: in the table that the IDX file of its voice AFS gives for it, in English or else in
+// Japanese. Returns false if there is none
+static bool LoadLipSync(const FilePathList* roots, const char* scene, const char* afs, const char* clip, LIPSYNC_Record* record) {
+    const char* languages[2] = { "eng", "jap" };
+    for (int l = 0; l < 2; l++) {
+        for (unsigned int r = 0; r < roots->count; r++) {
+            char path[AUTHSOUNDS_PATH_SIZE], idx[AUTHSOUNDS_PATH_SIZE];
+            snprintf(path, sizeof(path), "%s/scene/%s/stream/pc/%s/%s.afs", roots->paths[r], scene, languages[l], afs);
+            snprintf(idx, sizeof(idx), "%s/scene/%s/stream/pc/%s/%s.idx", roots->paths[r], scene, languages[l], afs);
+            uint32_t table, offset, count;
+            if (!FileExists(path) || !FileExists(idx) || !IDX_FindLipSync(idx, clip, &table, &offset))
+                continue;
+            size_t size = 0;
+            uint8_t* data = AFS_LoadEntry(path, table, &size, &count);
+            if (data == NULL)
+                continue;
+            bool read = LIPSYNC_Read(data, size, offset, record);
+            free(data);
+            if (read)
+                return true;
+        }
+    }
+    return false;
+}
+
 static void LoadVoices(const AUTH_Sequence* sequence, const char* sceneFolder) {
     FilePathList roots = AudioRoots(sceneFolder);
     const char* scene = Path_LastComponent(sceneFolder);
@@ -184,6 +212,8 @@ static void LoadVoices(const AUTH_Sequence* sequence, const char* sceneFolder) {
         }
         g_sounds.commandSounds[i] = sound;
         g_sounds.info.voices += sound >= 0;
+        if (LoadLipSync(&roots, scene, afs, clip, &g_sounds.lipSyncs[i]))
+            g_sounds.info.lipSyncs++;
     }
     FreeRoots(&roots);
 }
@@ -446,6 +476,9 @@ void AUTHSounds_Free(void) {
         UnloadSound(g_sounds.sounds[i].sound);
     free(g_sounds.sounds);
     free(g_sounds.commandSounds);
+    for (uint32_t i = 0; g_sounds.lipSyncs != NULL && i < g_sounds.commandCount; i++)
+        LIPSYNC_Free(&g_sounds.lipSyncs[i]);
+    free(g_sounds.lipSyncs);
     free(g_sounds.programSounds);
     free(g_sounds.cues);
     memset(&g_sounds, 0, sizeof(g_sounds));
@@ -458,9 +491,10 @@ void AUTHSounds_Load(const char* sceneFolder, const char* mapinfo, const char* n
     g_sounds.commandCount = sequence->commandCount;
     g_sounds.programCount = program != NULL ? program->soundCount : 0;
     g_sounds.commandSounds = malloc((sequence->commandCount + 1) * sizeof(int));
+    g_sounds.lipSyncs = calloc(sequence->commandCount + 1, sizeof(LIPSYNC_Record));
     g_sounds.programSounds = malloc((g_sounds.programCount + 1) * sizeof(int));
     g_sounds.sounds = calloc((sequence->commandCount + g_sounds.programCount) * AUTHSOUNDS_SEQUENCE_EVENTS + 1, sizeof(AUTHSound));
-    if (g_sounds.commandSounds == NULL || g_sounds.programSounds == NULL || g_sounds.sounds == NULL) {
+    if (g_sounds.commandSounds == NULL || g_sounds.lipSyncs == NULL || g_sounds.programSounds == NULL || g_sounds.sounds == NULL) {
         AUTHSounds_Free();
         return;
     }
@@ -486,8 +520,8 @@ void AUTHSounds_Load(const char* sceneFolder, const char* mapinfo, const char* n
     // The events of a sequence can come after the next commands
     if (g_sounds.cues != NULL)
         qsort(g_sounds.cues, g_sounds.cueCount, sizeof(AUTHCue), CompareCues);
-    Log_Info("[AUTHSounds_Load]: %u/%u voices, %u/%u sound effects, %u/%u of the program in %.2f s\n", g_sounds.info.voices,
-        g_sounds.info.voiceCommands, g_sounds.info.effects, g_sounds.info.effectCommands, g_sounds.info.programEffects,
+    Log_Info("[AUTHSounds_Load]: %u/%u voices (%u with lip-sync), %u/%u sound effects, %u/%u of the program in %.2f s\n",
+        g_sounds.info.voices, g_sounds.info.voiceCommands, g_sounds.info.lipSyncs, g_sounds.info.effects, g_sounds.info.effectCommands, g_sounds.info.programEffects,
         g_sounds.info.programCommands, GetTime() - start);
 }
 
@@ -554,4 +588,9 @@ bool AUTHSounds_HasSound(uint32_t command) {
 
 bool AUTHSounds_HasProgramSound(uint32_t sound) {
     return sound < g_sounds.programCount && g_sounds.programSounds[sound] >= 0;
+}
+
+const LIPSYNC_Record* AUTHSounds_LipSync(uint32_t command) {
+    return command < g_sounds.commandCount && g_sounds.lipSyncs != NULL && g_sounds.lipSyncs[command].keyCount > 0 ?
+        &g_sounds.lipSyncs[command] : NULL;
 }

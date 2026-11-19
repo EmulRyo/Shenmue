@@ -26,6 +26,8 @@ set(SRC_CORE
     src/formats/animation/auth.h
     src/formats/animation/motn.c
     src/formats/animation/motn.h
+    src/formats/animation/talk.c
+    src/formats/animation/talk.h
 
     src/formats/archive/afs.c
     src/formats/archive/afs.h
@@ -50,6 +52,8 @@ set(SRC_CORE
     src/formats/map/weather.c
     src/formats/map/weather.h
 
+    src/formats/model/ftbl.c
+    src/formats/model/ftbl.h
     src/formats/model/mt5.c
     src/formats/model/mt5.h
 
@@ -60,6 +64,8 @@ set(SRC_CORE
     src/formats/script/scnf.c
     src/formats/script/scnf.h
 
+    src/formats/sound/lipsync.c
+    src/formats/sound/lipsync.h
     src/formats/sound/snd.c
     src/formats/sound/snd.h
     src/formats/sound/xwm.c
@@ -184,6 +190,7 @@ set(SRC
     src/views/xwmView.c
     src/views/xwmView.h
 
+    src/views/auth/authFaces.c
     src/views/auth/authModels.c
     src/views/auth/authMusic.c
     src/views/auth/authMusic.h
