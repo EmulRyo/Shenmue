@@ -72,4 +72,4 @@ The skeleton is the one of the right hand, with the fingers along −Y; the hand
 p' = p + Σ weight × (posed × rest⁻¹ × p − p)
 ```
 
-where `rest` is the matrix of the node in the file and `posed` its matrix with the angles of the motion. The normals are moved the same way (as the point `p + normal`). With no motion the hand keeps the shape of its model.
+where `rest` is the matrix of the node in the file and `posed` its matrix with the angles of the motion. The normals are moved the same way (as the point `p + normal`). With no motion the hand keeps the shape of its model. The programs of the maps also pose the fingers with the function `0x05E` (see [MAPINFO](MAPINFO#functions-of-the-game)), which turns 19 joints from their angles at rest.

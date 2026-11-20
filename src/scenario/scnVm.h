@@ -28,6 +28,7 @@
 #define VM_MAX_ARGUMENTS    12
 #define VM_WAIT_READS       16          // Reads of the variables kept per wait (VM_Environment.releaseWaits)
 #define VM_START_THREAD     0x002       // ID of StartThread: (function, count, arguments...)
+#define VM_CUTSCENE         0x050       // ID of Cutscene: (slot) plays a cutscene, (-1) while it plays
 #define VM_KILL_THREAD      0x003       // ID of KillThread: (thread returned by StartThread, 0 for the current one)
 
 // A call to the game run with some known arguments
@@ -139,9 +140,11 @@ bool VM_ReadSnapshotGame(const VM_Snapshot* snapshot, uint32_t address, uint32_t
 // itself; the frame 0 is the frame of that call, and the code of the function before it runs without time (its waits
 // don't wait). A wait (a service of ctx[0x2C]) yields: the service 0 waits the number of frames of its argument, the
 // others 1 frame. The threads started with StartThread run from the frame they are started, after those started before
-// them, and KillThread ends them. The values aren't forked: a conditional branch on an unknown result goes the way of 0
-// (the loops that wait for something of the game end, the blocks of an unknown condition are skipped). A thread that
-// doesn't wait within VM_TIMED_STEPS instructions is stopped
+// them, and KillThread ends them. A run from the call (not rewound) starts with it the threads that the path of the
+// snapshot started since its last wait or its last call that plays a cutscene (Cutscene with a slot). The values aren't
+// forked: a conditional branch on an unknown result goes the way of 0 (the loops that wait for something of the game
+// end, the blocks of an unknown condition are skipped). A thread that doesn't wait within VM_TIMED_STEPS instructions
+// is stopped
 
 #define VM_TIMED_STEPS      200000
 #define VM_TIMED_THREADS    64

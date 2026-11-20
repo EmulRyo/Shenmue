@@ -88,7 +88,8 @@ typedef struct {
     float*          offsets;    // Of its vertices, from the skin
     Matrix*         pose;       // World matrices of the nodes of the hand, then of the arm
     bool            shown;      // At the current frame
-    const HMOT_Motion* motion;  // Played at the current frame, NULL for the rest
+    bool            posed;      // By HandPose at the current frame
+    const HMOT_Motion* motion;  // Played at the current frame, NULL for the rest (or a pose)
     float           motionFrame;
 } AUTHView_Hand;
 

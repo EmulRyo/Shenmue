@@ -529,8 +529,8 @@ static void FaceCall(Context* c, uint32_t frame, const VM_Call* call, VM_Memory*
 }
 
 // A call that changes a hand of a character, with all its arguments known
-static void HandCall(Context* c, uint32_t frame, const VM_Call* call) {
-    uint32_t count = call->id == SCNCUTSCENE_HAND ? 4 : 9;
+static void HandCall(Context* c, uint32_t frame, const VM_Call* call, VM_Memory* memory) {
+    uint32_t count = call->id == SCNCUTSCENE_HAND_MOTION ? 9 : 4;
     if (call->count < count)
         return;
     for (uint32_t a = 0; a < count; a++) {
@@ -538,7 +538,16 @@ static void HandCall(Context* c, uint32_t frame, const VM_Call* call) {
             return;
     }
     SCNCutscene_Hand hand = { frame, call->address, call->id, call->values[0], 1, 0, 0, 0, 0, 0, SCNCUTSCENE_HAND_LOOP, 1.0f };
-    if (call->id == SCNCUTSCENE_HAND) {
+    if (call->id == SCNCUTSCENE_HAND_POSE) {
+        hand.side = call->values[1];
+        hand.frames = (int32_t)call->values[3];
+        for (uint32_t j = 0; j < SCNCUTSCENE_POSE_JOINTS; j++) {
+            uint32_t known;
+            if (!VM_ReadMemory(memory, call->values[2] + j * 12, 12, (uint8_t*)hand.pose[j], &known) || known != 0xFFF)
+                return;
+        }
+    }
+    else if (call->id == SCNCUTSCENE_HAND) {
         hand.on = (int32_t)call->values[1];
         hand.side = call->values[2];
         hand.motion = call->values[3];
@@ -950,7 +959,8 @@ static void OnTimedCall(void* context, uint32_t frame, uint32_t thread, const VM
         break;
     case SCNCUTSCENE_HAND:
     case SCNCUTSCENE_HAND_MOTION:
-        HandCall(c, frame, call);
+    case SCNCUTSCENE_HAND_POSE:
+        HandCall(c, frame, call, memory);
         break;
     case SCNCUTSCENE_DISPLAY:
     case SCNCUTSCENE_ACTIVE: {

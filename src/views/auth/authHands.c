@@ -5,8 +5,13 @@
 #include "views/auth/authViewInternal.h"
 
 #define AUTHHANDS_FOLDER    "model/hand"
+#define AUTHHANDS_UNITS     182.04445f      // Angles of the game per degree (0x10000 = 360 degrees)
 
 static const char* g_handSuffixes[AUTHVIEW_HAND_SIDES] = { "tl", "tr" };
+// The joints posed by HandPose, in the order of its angles (table at 0x0C296FB4)
+static const uint8_t g_poseJoints[SCNCUTSCENE_POSE_JOINTS] = {
+    31, 30, 29, 35, 34, 33, 32, 39, 38, 37, 36, 43, 42, 41, 40, 47, 46, 45, 44,
+};
 
 // The HMOT files of the folder of the map
 static void LoadMotions(void) {
@@ -153,20 +158,65 @@ static float MotionFrame(const SCNCutscene_Hand* call, const HMOT_Motion* motion
     return Clamp(m, (float)first, (float)last);
 }
 
-// Whether a hand of a character is shown at a frame, and the call that plays its motion (NULL if none)
-static bool HandAt(uint32_t idValue, uint32_t side, float frame, const SCNCutscene_Hand** motionCall) {
+// Whether a hand of a character is shown at a frame, and the last call for it (NULL if none)
+static bool HandAt(uint32_t idValue, uint32_t side, float frame, const SCNCutscene_Hand** lastCall) {
     const SCNCutscene* program = &g_auth.program;
     bool shown = false;
-    *motionCall = NULL;
+    *lastCall = NULL;
     for (uint32_t i = 0; i < program->handCount && (float)program->hands[i].frame <= frame; i++) {
         const SCNCutscene_Hand* call = &program->hands[i];
         if (call->character != idValue || call->side != side)
             continue;
         if (call->function == SCNCUTSCENE_HAND)
             shown = call->on > 0;
-        *motionCall = call;
+        *lastCall = call;
     }
     return shown;
+}
+
+// The angles (0x10000 = 360 degrees) of the nodes of a hand at a frame, by the first count calls of the program for it
+// (code at 0x0C0DDEFC of 1ST_READ.BIN): those of the motion of the last call that plays one (or of the rest), or those
+// of a pose of HandPose. A pose gives the angles of 19 joints of the fingers, from the rest, and puts the others at
+// rest; the hand goes to it in max(frames / 2, 1) frames, the same part of the way for every joint, from the angles of
+// the frame of the call (the difference wrapped to half a turn), and keeps it until another motion
+static void HandAngles(const AUTHView_Hands* hands, uint32_t idValue, uint32_t side, uint32_t count, float frame,
+    float angles[HM_NODES][3]) {
+    const SCNCutscene* program = &g_auth.program;
+    int32_t last = -1;
+    for (uint32_t i = 0; i < count && i < program->handCount && (float)program->hands[i].frame <= frame; i++) {
+        if (program->hands[i].character == idValue && program->hands[i].side == side)
+            last = (int32_t)i;
+    }
+    const float units = AUTHHANDS_UNITS * RAD2DEG;
+    const SCNCutscene_Hand* call = last >= 0 ? &program->hands[last] : NULL;
+    const HMOT_Motion* motion = call != NULL && call->function != SCNCUTSCENE_HAND_POSE ? FindMotion(call->motion) : NULL;
+    float motionFrame = motion != NULL ? MotionFrame(call, motion, frame) : 0.0f;
+    for (int n = 0; n < HM_NODES; n++) {
+        for (int a = 0; a < 3; a++) {
+            float rest = hands->skin.nodes[n].angles[a] * units;
+            angles[n][a] = motion == NULL ? rest :
+                HMOT_Value(motion, (uint32_t)(n * 3 + a), motionFrame, rest / AUTHHANDS_UNITS) * AUTHHANDS_UNITS;
+        }
+    }
+    if (call == NULL || call->function != SCNCUTSCENE_HAND_POSE)
+        return;
+    float from[HM_NODES][3];
+    HandAngles(hands, idValue, side, (uint32_t)last, (float)call->frame, from);
+    int32_t frames = call->frames >> 1;
+    float t = Clamp((frame - (float)call->frame + 1.0f) / (float)(frames > 1 ? frames : 1), 0.0f, 1.0f);
+    for (int n = 0; n < HM_NODES; n++) {
+        const int32_t* pose = NULL;
+        for (int k = 0; k < SCNCUTSCENE_POSE_JOINTS && pose == NULL; k++) {
+            if (hands->skin.nodes[n].joint == g_poseJoints[k])
+                pose = call->pose[k];
+        }
+        for (int a = 0; a < 3; a++) {
+            float target = angles[n][a] + (pose != NULL ? (float)pose[a] : 0.0f);
+            float d = fmodf(target - from[n][a], 65536.0f);
+            d = d >= 32768.0f ? d - 65536.0f : d < -32768.0f ? d + 65536.0f : d;
+            angles[n][a] = from[n][a] + d * t;
+        }
+    }
 }
 
 static bool IsUnder(const MT5Mesh* mesh, int32_t node, int32_t ancestor) {
@@ -189,7 +239,8 @@ const bool* AUTHHands_HiddenNodes(uint32_t character, const bool* faceHidden) {
         AUTHView_Hand* hand = &hands->hands[side];
         const SCNCutscene_Hand* call;
         hand->shown = hand->loaded && HandAt(idValue, (uint32_t)side, frame, &call);
-        hand->motion = hand->shown && call != NULL ? FindMotion(call->motion) : NULL;
+        hand->posed = hand->shown && call != NULL && call->function == SCNCUTSCENE_HAND_POSE;
+        hand->motion = hand->shown && !hand->posed && call != NULL ? FindMotion(call->motion) : NULL;
         hand->motionFrame = hand->motion != NULL ? MotionFrame(call, hand->motion, frame) : 0.0f;
         any |= hand->shown;
     }
@@ -212,14 +263,13 @@ uint32_t AUTHHands_Pose(uint32_t character, const Matrix* body, MT5Render_Model*
         AUTHView_Hand* hand = &hands->hands[side];
         if (!hand->shown)
             continue;
-        // The angles of the motion at its frame, or of the rest
+        // The angles of the motion or of the pose at the current frame
         static float angles[HM_NODES][3], matrices[HM_NODES][16];
+        HandAngles(hands, g_auth.sequence.characters[character].idValue, (uint32_t)side, g_auth.program.handCount,
+            fmaxf(g_auth.time * AUTH_FRAME_RATE, 0.0f), angles);
         for (int n = 0; n < HM_NODES; n++) {
-            for (int a = 0; a < 3; a++) {
-                float rest = hands->skin.nodes[n].angles[a];
-                angles[n][a] = hand->motion == NULL ? rest :
-                    HMOT_Value(hand->motion, (uint32_t)(n * 3 + a), hand->motionFrame, rest * RAD2DEG) * DEG2RAD;
-            }
+            for (int a = 0; a < 3; a++)
+                angles[n][a] *= 2.0f * PI / 65536.0f;
         }
         HM_Pose(&hands->skin, (const float (*)[3])angles, matrices);
         HM_Deform(&hands->skin, (const float (*)[16])matrices, hand->positions, hand->vertexCount, side == 0, hand->offsets);

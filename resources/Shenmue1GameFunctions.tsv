@@ -93,7 +93,7 @@ id	handler	arguments	name	description	character
 05B	0x0C171112	1			
 05C	0x0C171120	5			
 05D	0x0C159074	2			yes
-05E	0x0C165C74	4			yes
+05E	0x0C165C74	4	HandPose	A pose of the fingers of a detailed hand of the character of ID argument 0 (argument 1: 0 left, else right): argument 2 points to 19 x 3 angles (0x10000 = 360 degrees) of the joints 31, 30, 29, 35-32, 39-36, 43-40, 47-44 of the HM skeleton, added to the rest, reached in max(argument 3 / 2, 1) frames and kept until the next hand motion	yes
 05F	0x0C16BF6E	1			
 060	0x0C16BF8A	2			
 061	0x0C156230	5			

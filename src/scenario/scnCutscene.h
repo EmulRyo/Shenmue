@@ -69,8 +69,8 @@
 //                 the face of a character (see the MAPINFO page of the wiki); EyesLook (character, 2, &point, frames)
 //                 turns the eyes to a point (3 floats, in the space of the map) in a number of frames, (character, 0)
 //                 back to the front
-//   HandMotion (0x0DF) and PlayHandMotion (0x0E7): the detailed hands of a character, shown or not, and the motions of
-//                 the HMOT files played on them
+//   HandMotion (0x0DF), PlayHandMotion (0x0E7) and HandPose (0x05E): the detailed hands of a character, shown or not,
+//                 the motions of the HMOT files played on them and the poses of their fingers
 // The packages of the characters: a function of the program that loads a package (0x13C (0, 0, folder, name)) named by
 // one of its parameters until the character named by another one exists (0x166 (1, character)), called with the values
 // of two variables of the program (e.g. func(var_118, var_11C) of scenario/act01_d000.scn, the can CAN1 of the drink
@@ -113,6 +113,8 @@
 #define SCNCUTSCENE_EYELIDS_CLOSED  3   // Closes them (unused by the programs)
 #define SCNCUTSCENE_HAND        0x0DF   // (character, on, side, motion): the detailed hand (on 1) or the hand of the body
 #define SCNCUTSCENE_HAND_MOTION 0x0E7   // (character, side, motion, first, last, current, flags, speed, blend)
+#define SCNCUTSCENE_HAND_POSE   0x05E   // (character, side, &angles, frames): a pose of the fingers
+#define SCNCUTSCENE_POSE_JOINTS 19      // Joints of the skeleton of the hands posed by HandPose
 #define SCNCUTSCENE_HAND_LOOP   1       // Flags of the hand motions: loop
 #define SCNCUTSCENE_HAND_BACK   2       // Backwards
 #define SCNCUTSCENE_EYES_FRONT  0       // Modes of EyesLook: to the front, in 16 frames
@@ -226,7 +228,7 @@ typedef struct {
 typedef struct {
     uint32_t    frame;
     uint32_t    address;
-    uint32_t    function;   // SCNCUTSCENE_HAND or SCNCUTSCENE_HAND_MOTION
+    uint32_t    function;   // SCNCUTSCENE_HAND, SCNCUTSCENE_HAND_MOTION or SCNCUTSCENE_HAND_POSE
     uint32_t    character;
     int32_t     on;         // SCNCUTSCENE_HAND: 1 the detailed hand, 0 the hand of the body
     uint32_t    side;       // 0 left (node 0xFFBE of the body), 1 right (0xFFBF)
@@ -236,6 +238,9 @@ typedef struct {
     int32_t     current;    // Where it starts, 0 for the first frame (the last one backwards)
     uint32_t    flags;      // SCNCUTSCENE_HAND_LOOP, SCNCUTSCENE_HAND_BACK
     float       speed;      // Frames of the motion per frame
+    int32_t     frames;     // SCNCUTSCENE_HAND_POSE: frames to reach the pose (twice the frames it takes)
+    int32_t     pose[SCNCUTSCENE_POSE_JOINTS][3]; // Its angles around X, Y and Z (0x10000 = 360 degrees), read from the
+                                                  // memory
 } SCNCutscene_Hand;
 
 // A package that the program loads for a character, with the values of its variables at the start of the cutscene

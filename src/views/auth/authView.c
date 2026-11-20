@@ -1059,8 +1059,9 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
             const char* names[AUTHVIEW_HAND_SIDES] = { "Left hand", "Right hand" };
             for (int side = 0; side < AUTHVIEW_HAND_SIDES; side++) {
                 const AUTHView_Hand* hand = &g_auth.hands[index].hands[side];
-                Properties_Text(properties, names[side], !hand->shown ? "of the body" : hand->motion == NULL ? "detailed, open" :
-                    TextFormat("detailed, %s frame %.0f", hand->motion->name, hand->motionFrame));
+                Properties_Text(properties, names[side], !hand->shown ? "of the body" : hand->posed ? "detailed, posed" :
+                    hand->motion == NULL ? "detailed, open" : TextFormat("detailed, %s frame %.0f", hand->motion->name,
+                    hand->motionFrame));
             }
         }
     }

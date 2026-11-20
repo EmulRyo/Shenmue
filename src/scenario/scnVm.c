@@ -8,6 +8,15 @@ typedef struct {
     bool        known;
 } Value;
 
+#define VM_STARTED_THREADS  8   // Kept by a path since its last wait
+
+// A thread started by a path: its function (offset in the program) and its arguments
+typedef struct {
+    uint32_t    function;
+    uint32_t    count;
+    Value       arguments[VM_MAX_ARGUMENTS];
+} Started;
+
 static const Value g_unknown = { 0, false };
 
 // A path of a thread: the registers and the memory that the program can write. The writes to the program itself (its
@@ -35,6 +44,8 @@ typedef struct {
     uint32_t    readCount;      // Reads of the variables since its last yield (VM_WAIT_READS at most are kept)
     uint32_t    reads[VM_WAIT_READS]; // Address of the first byte in the low 24 bits, size in the high 8 bits
     uint32_t    waits;          // Yields on the path (VM_Environment.maxWaits)
+    uint32_t    startedCount;   // Threads started by the path since its last yield (run without time)
+    Started     started[VM_STARTED_THREADS];
 } State;
 
 typedef enum {
@@ -214,6 +225,8 @@ static State* CopyState(Machine* machine, const State* source) {
     state->readCount = source->readCount;
     memcpy(state->reads, source->reads, sizeof(state->reads));
     state->waits = source->waits;
+    state->startedCount = source->startedCount;
+    memcpy(state->started, source->started, source->startedCount * sizeof(Started));
     memcpy(state->variables, source->variables, machine->variableSize * 2);
     state->variables[machine->variableSize * 2] = 0;
     state->gameUsed = source->gameUsed;
@@ -778,12 +791,21 @@ static Value GameCall(Machine* machine, State* state, const BC_Instruction* ins)
     }
     if (call.known != 0)
         AddCall(machine, &call);
+    // The threads started for a cutscene are those after the call that plays the one before
+    if (call.id == VM_CUTSCENE && call.count >= 1 && arguments[0].known && (int32_t)arguments[0].value >= 0)
+        state->startedCount = 0;
     // A thread: the function (an address of the code) and its arguments
     if (call.id == VM_START_THREAD && call.count >= 2 && arguments[0].known && arguments[1].known &&
         arguments[0].value >= VM_PROGRAM_BASE + program->scn->header.codeStart &&
         arguments[0].value < VM_PROGRAM_BASE + program->codeEnd) {
         uint32_t threadArguments = arguments[1].value < call.count - 2 ? arguments[1].value : call.count - 2;
         AddRoot(machine, arguments[0].value - VM_PROGRAM_BASE, threadArguments, arguments + 2, state->variables);
+        if (state->startedCount < VM_STARTED_THREADS) {
+            Started* started = &state->started[state->startedCount++];
+            started->function = arguments[0].value - VM_PROGRAM_BASE;
+            started->count = threadArguments;
+            memcpy(started->arguments, arguments + 2, threadArguments * sizeof(Value));
+        }
     }
     return Answer(machine, state, &call);
 }
@@ -910,6 +932,7 @@ static bool RunBranchZero(Machine* machine, State* state, uint32_t target, uint3
 static bool RunWait(Machine* machine, State* state, const BC_Instruction* ins, uint32_t next) {
     Settle(machine, state);
     state->result = g_unknown;
+    state->startedCount = 0;
     if (machine->timeline == NULL && machine->environment != NULL && machine->environment->maxWaits != 0 &&
         ++state->waits > machine->environment->maxWaits)
         return false;
@@ -1321,6 +1344,15 @@ bool VM_RunTimed(const BC_Program* program, const VM_Snapshot* snapshot, bool re
         first->sp = first->fp;
     }
     timeline.threads[timeline.count++] = first;
+    // From the call: the threads that the path started since its last wait run with it, as they would have
+    for (uint32_t i = 0; function < 0 && i < snapshot->state->startedCount && timeline.count < VM_TIMED_THREADS; i++) {
+        const Started* started = &snapshot->state->started[i];
+        State* thread = NewThread(&machine, started->function, started->count, started->arguments, NULL);
+        if (thread == NULL)
+            break;
+        thread->wake = 0;
+        timeline.threads[timeline.count++] = thread;
+    }
     for (uint32_t frame = 0; frame < frames && machine.ok; frame++) {
         timeline.frame = frame;
         bool running = false;
