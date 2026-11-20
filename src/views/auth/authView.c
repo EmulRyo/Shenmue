@@ -255,6 +255,7 @@ void AUTHView_Close(void) {
     free(g_auth.faces);
     TALK_Free(&g_auth.talks[0]);
     TALK_Free(&g_auth.talks[1]);
+    g_auth.eyelidsSimulated = false;
     free(g_auth.humanFiles);
     for (uint32_t i = 0; i < g_auth.placedCount; i++) {
         free((char*)g_auth.placed[i].source);

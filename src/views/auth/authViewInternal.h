@@ -69,6 +69,7 @@ typedef struct {
     int32_t         mouth;      // Pose of the mouth within the expression
     float           eyelids;    // 0 open, 1 closed
     bool            frozen;     // By FaceAnimation of the program of the map
+    float*          eyelidFrames; // How closed the eyes are at each frame of the cutscene, NULL until simulated
     Vector2         eyes[2];    // Angles of the eyes 0x4D and 0x4E in degrees: down, to the left
 } AUTHView_Face;
 
@@ -168,6 +169,7 @@ typedef struct {
     AUTHView_CharacterModel* characterModels;
     AUTHView_Face*  faces;      // Of each character
     TALK_File       talks[2];   // talk_n00.bin and talk_kc.bin of the face folder, loaded when a face uses them
+    bool            eyelidsSimulated; // The eyelids of the faces at every frame (simulated the first time they are posed)
     IPAC_FileList*  humanFiles; // Of each character: the files of its PKF/PKS pair in stream/humans if it isn't extracted
     MT5Render_Instance* instances; // Of the characters drawn with their model, filled before drawing them
     SCNCutscene     program;    // What the program of the map does with the cutscene (a cutscene of the table of a map)

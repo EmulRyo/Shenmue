@@ -12,9 +12,13 @@
 #define AUTHFACES_MOUTH_OPEN    8.0f            // 1/60 s to reach a shape of the mouth of the lip-sync
 #define AUTHFACES_MOUTH_CLOSE   16.0f           // To reach the shape 0 (closed), and the rest after the last key
 #define AUTHFACES_KEEP          INT32_MIN       // The mouth of a change of expression: unchanged
-#define AUTHFACES_BLINK_CLOSE   2.0f            // Frames (1/30 s) to close the eyes, and to open them
-#define AUTHFACES_BLINK_OPEN    4.0f
-#define AUTHFACES_BLINK_SEED    0x2545F491u
+#define AUTHFACES_BLINK_CLOSE   2               // Frames (1/30 s) to close the eyes, and to open them, when blinking
+#define AUTHFACES_BLINK_OPEN    4
+#define AUTHFACES_BLINK_MIN     60              // Frames between two blinks: 60 + 10 x (random & 3)
+#define AUTHFACES_BLINK_STEP    10
+#define AUTHFACES_EYELIDS_AUTO  3               // Frames of the transition of Eyelids mode 0
+#define AUTHFACES_RANDOM_SEED   1u              // The random numbers of the game at the start: unknown, they depend
+                                                // on the play
 #define AUTHFACES_EYE_RIGHT     0x4D            // Nodes of the eyes of the face models
 #define AUTHFACES_EYE_LEFT      0x4E
 #define AUTHFACES_FRONT_FRAMES  16.0f           // Frames to turn the eyes back to the front (EyesLook mode 0)
@@ -106,6 +110,7 @@ void AUTHFaces_Free(uint32_t character) {
     free(face->pose);
     free(face->hidden);
     free(face->offsets);
+    free(face->eyelidFrames);
     memset(face, 0, sizeof(*face));
 }
 
@@ -208,54 +213,159 @@ static bool MouthAt(uint32_t idValue, float frame, int32_t* previous, int32_t* c
     return false;
 }
 
-// How closed the eyes are (0 open, 1 closed) at a time in frames since the game started to blink them by itself: every
-// 60 to 90 frames, a random time, closing the eyes in 2 frames and opening them in 4
-static float BlinkAt(uint32_t character, float frame) {
-    uint32_t seed = AUTHFACES_BLINK_SEED ^ (character * 0x9E3779B9u);
-    float start = 0.0f;
-    for (;;) {
-        seed = seed * 1664525u + 1013904223u;
-        start += 60.0f + 10.0f * (float)((seed >> 16) & 3);
-        if (frame < start)
-            return 0.0f;
-        float t = frame - start;
-        if (t < AUTHFACES_BLINK_CLOSE)
-            return t / AUTHFACES_BLINK_CLOSE;
-        if (t < AUTHFACES_BLINK_CLOSE + AUTHFACES_BLINK_OPEN)
-            return 1.0f - (t - AUTHFACES_BLINK_CLOSE) / AUTHFACES_BLINK_OPEN;
-        start += AUTHFACES_BLINK_CLOSE + AUTHFACES_BLINK_OPEN;
+// The eyelids of a face as the game moves them (at 0x44 of its FACE component; code at 0x0C0BBB60, 0x0C0BC38A and
+// 0x0C0903EC): blinking by itself, closed or opened by Eyelids, held while the face is frozen
+typedef struct {
+    int32_t mode;       // Of Eyelids; 4 or 5 once a mode 1 to 3 is applied: the eyes stay as they are
+    int32_t transition; // AUTHFACES_TRANSITION_*
+    bool    closed;     // Where the eyes go
+    int32_t lock;       // Argument 3 of Eyelids: at 2 or more the eyes stay as they are after the transition
+    int32_t counter;    // Frames since the last blink, up to interval
+    int32_t interval;
+    int32_t frames;     // Of the transition
+    int32_t step;
+    float   from;
+    float   value;      // 0 open, 1 closed
+    bool    frozen;
+} AUTHFaces_Eyelids;
+
+enum { AUTHFACES_TRANSITION_NONE, AUTHFACES_TRANSITION_START, AUTHFACES_TRANSITION_RUNNING, AUTHFACES_TRANSITION_LOCKED };
+
+// The random numbers of the game (0x0C1CFE80), shared by all the characters: 0 to 0x7FFF
+static uint32_t GameRandom(uint32_t* state) {
+    *state = *state * 1103515245u + 12345u;
+    return (*state >> 16) & 0x7FFF;
+}
+
+static int32_t BlinkInterval(uint32_t* random) {
+    return AUTHFACES_BLINK_MIN + AUTHFACES_BLINK_STEP * (int32_t)(GameRandom(random) & 3);
+}
+
+// A call of Eyelids (0x0C0BC38A), also made with the mode 0 when the character is created
+static void EyelidsCall(AUTHFaces_Eyelids* e, int32_t mode, int32_t frames, int32_t lock, uint32_t* random) {
+    e->mode = mode;
+    e->transition = AUTHFACES_TRANSITION_START;
+    e->lock = lock;
+    e->counter = 0;
+    e->frames = mode == SCNCUTSCENE_EYELIDS_AUTO ? AUTHFACES_EYELIDS_AUTO : frames < 1 ? 1 : frames;
+    e->interval = BlinkInterval(random);
+}
+
+// A change of the expression (FaceExpression, AUTH command 4) moves the whole face again, the eyes included
+static void EyelidsExpression(AUTHFaces_Eyelids* e, int32_t frames) {
+    if (e->lock >= 2)
+        return;
+    if (e->transition == AUTHFACES_TRANSITION_NONE)
+        e->frames = frames < 1 ? 1 : frames;
+    e->transition = AUTHFACES_TRANSITION_START;
+}
+
+// A frame of the game: the eyes blink when the counter reaches the interval (closing in 2 frames, then opening in 4),
+// and go linearly from where they are to where they go over the frames of the transition
+static void EyelidsUpdate(AUTHFaces_Eyelids* e, uint32_t* random) {
+    if (e->frozen) {
+        e->transition = AUTHFACES_TRANSITION_NONE;
+        return;
+    }
+    if (e->mode == SCNCUTSCENE_EYELIDS_AUTO) {
+        if (e->transition == AUTHFACES_TRANSITION_NONE) {
+            if (!e->closed && ++e->counter >= e->interval) {
+                e->interval = BlinkInterval(random);
+                e->counter = 0;
+            }
+            if (e->counter == 0) {
+                e->transition = AUTHFACES_TRANSITION_START;
+                e->closed = !e->closed;
+                e->frames = e->closed ? AUTHFACES_BLINK_CLOSE : AUTHFACES_BLINK_OPEN;
+            }
+        }
+    }
+    else if (e->mode >= SCNCUTSCENE_EYELIDS_CLOSE && e->mode <= SCNCUTSCENE_EYELIDS_CLOSED) {
+        e->closed = e->mode != SCNCUTSCENE_EYELIDS_OPEN;
+        e->mode = e->mode == SCNCUTSCENE_EYELIDS_CLOSED ? 5 : 4;
+        e->transition = AUTHFACES_TRANSITION_START;
+    }
+    if (e->transition == AUTHFACES_TRANSITION_START) {
+        e->transition = AUTHFACES_TRANSITION_RUNNING;
+        e->from = e->value;
+        e->step = 0;
+    }
+    if (e->transition == AUTHFACES_TRANSITION_RUNNING) {
+        e->step++;
+        e->value = Lerp(e->from, e->closed ? 1.0f : 0.0f, fminf((float)e->step / (float)e->frames, 1.0f));
+        if (e->step >= e->frames)
+            e->transition = e->lock >= 2 ? AUTHFACES_TRANSITION_LOCKED : AUTHFACES_TRANSITION_NONE;
     }
 }
 
-// How closed the eyes of a character are at a frame, by the first count calls of the program of the map: the last call
-// of Eyelids closes (modes 1 and 3) or opens (2) them in its number of frames from where they were, and keeps them so;
-// mode 0, and no call, makes the game blink them by itself (first opening them in 4 frames if they were closed)
-static float EyelidsAt(uint32_t character, uint32_t idValue, uint32_t count, float frame) {
+static int32_t CharacterOf(uint32_t idValue) {
+    for (uint32_t c = 0; c < g_auth.sequence.characterCount; c++) {
+        if (g_auth.sequence.characters[c].idValue == idValue)
+            return (int32_t)c;
+    }
+    return -1;
+}
+
+// The eyelids of all the faces at every frame of the cutscene, frame by frame as the game does (they share the random
+// numbers): the calls of the program of the map and the AUTH commands of a frame come before its update
+static void SimulateEyelids(void) {
+    uint32_t count = g_auth.sequence.characterCount, frames = g_auth.sequence.duration + 1;
+    AUTHFaces_Eyelids* states = calloc(count, sizeof(AUTHFaces_Eyelids));
+    if (states == NULL)
+        return;
+    uint32_t random = AUTHFACES_RANDOM_SEED;
+    for (uint32_t c = 0; c < count; c++) {
+        AUTHView_Face* face = &g_auth.faces[c];
+        face->eyelidFrames = face->loaded ? malloc(frames * sizeof(float)) : NULL;
+        if (face->eyelidFrames != NULL)
+            EyelidsCall(&states[c], SCNCUTSCENE_EYELIDS_AUTO, 0, 1, &random);
+    }
     const SCNCutscene* program = &g_auth.program;
-    int32_t last = -1;
-    for (uint32_t i = 0; i < count && i < program->faceCount && (float)program->faces[i].frame <= frame; i++) {
-        const SCNCutscene_Face* call = &program->faces[i];
-        if (call->function == SCNCUTSCENE_EYELIDS && call->character == idValue && (call->known & 3) == 3)
-            last = (int32_t)i;
+    uint32_t p = 0, a = 0;
+    for (uint32_t f = 0; f < frames; f++) {
+        for (; p < program->faceCount && program->faces[p].frame <= f; p++) {
+            const SCNCutscene_Face* call = &program->faces[p];
+            int32_t c = CharacterOf(call->character);
+            if (c < 0 || g_auth.faces[c].eyelidFrames == NULL)
+                continue;
+            AUTHFaces_Eyelids* e = &states[c];
+            if (call->function == SCNCUTSCENE_EYELIDS && (call->known & 3) == 3)
+                EyelidsCall(e, (int32_t)call->values[0], (int32_t)call->values[1],
+                    (call->known & 4) ? (int32_t)call->values[2] : 0, &random);
+            else if (call->function == SCNCUTSCENE_EXPRESSION && (call->known & 7) == 7)
+                EyelidsExpression(e, (int32_t)call->values[2]);
+            else if (call->function == SCNCUTSCENE_FACE && (call->known & 1)) {
+                e->frozen = call->values[0] == 0;
+                e->transition = AUTHFACES_TRANSITION_NONE;
+            }
+        }
+        for (; a < g_auth.sequence.commandCount && g_auth.sequence.commands[a].frame <= f; a++) {
+            const AUTH_Command* command = &g_auth.sequence.commands[a];
+            int32_t c = command->opcode == AUTH_COMMAND_EXPRESSION ? CharacterOf(Arg(command, 0)) : -1;
+            if (c >= 0 && g_auth.faces[c].eyelidFrames != NULL)
+                EyelidsExpression(&states[c], (int32_t)Arg(command, 3));
+        }
+        for (uint32_t c = 0; c < count; c++) {
+            if (g_auth.faces[c].eyelidFrames == NULL)
+                continue;
+            EyelidsUpdate(&states[c], &random);
+            g_auth.faces[c].eyelidFrames[f] = states[c].value;
+        }
     }
-    if (last < 0)
-        return BlinkAt(character, frame);
-    const SCNCutscene_Face* call = &program->faces[last];
-    float from = EyelidsAt(character, idValue, (uint32_t)last, (float)call->frame);
-    float t = frame - (float)call->frame;
-    switch (call->values[0]) {
-    case SCNCUTSCENE_EYELIDS_CLOSE:
-    case SCNCUTSCENE_EYELIDS_CLOSED:
-        return Lerp(from, 1.0f, Clamp(t / fmaxf((float)(int32_t)call->values[1], 1.0f), 0.0f, 1.0f));
-    case SCNCUTSCENE_EYELIDS_OPEN:
-        return Lerp(from, 0.0f, Clamp(t / fmaxf((float)(int32_t)call->values[1], 1.0f), 0.0f, 1.0f));
-    default:
-        if (from <= 0.0f)
-            return BlinkAt(character, t);
-        if (t < AUTHFACES_BLINK_OPEN)
-            return from * (1.0f - t / AUTHFACES_BLINK_OPEN);
-        return BlinkAt(character, t - AUTHFACES_BLINK_OPEN);
-    }
+    free(states);
+    g_auth.eyelidsSimulated = true;
+}
+
+// How closed the eyes of a face are at a frame (0 open, 1 closed), between the frames of the game
+static float EyelidsAt(const AUTHView_Face* face, float frame) {
+    if (!g_auth.eyelidsSimulated)
+        SimulateEyelids();
+    if (face->eyelidFrames == NULL)
+        return 0.0f;
+    uint32_t last = g_auth.sequence.duration;
+    uint32_t f = (uint32_t)fminf(fmaxf(frame, 0.0f), (float)last);
+    float t = Clamp(frame - (float)f, 0.0f, 1.0f);
+    return Lerp(face->eyelidFrames[f], face->eyelidFrames[f < last ? f + 1 : last], t);
 }
 
 // The frame at which the face of a character is: the frame of the last call of FaceAnimation that froze it, if it is
@@ -395,7 +505,7 @@ MT5Render_Model* AUTHFaces_Pose(uint32_t character, const Matrix* body, Matrix t
         mouthTo = rest || mouthChange.mouth < 0 ? 0 : mouthChange.mouth;
         mouthAlpha = rest ? 1.0f : Clamp((frame - mouthChange.frame) / mouthChange.frames, 0.0f, 1.0f);
     }
-    float blink = EyelidsAt(character, idValue, g_auth.program.faceCount, frame);
+    float blink = EyelidsAt(face, frame);
 
     // Each bone is moved by one part of the face: the eyes or the mouth
     AUTHFaces_Offsets eyes, eyesNext, mouth, mouthNext, total;
