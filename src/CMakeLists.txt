@@ -24,6 +24,8 @@ set(SRC_CORE
 
     src/formats/animation/auth.c
     src/formats/animation/auth.h
+    src/formats/animation/hmot.c
+    src/formats/animation/hmot.h
     src/formats/animation/motn.c
     src/formats/animation/motn.h
     src/formats/animation/talk.c
@@ -54,6 +56,8 @@ set(SRC_CORE
 
     src/formats/model/ftbl.c
     src/formats/model/ftbl.h
+    src/formats/model/hm.c
+    src/formats/model/hm.h
     src/formats/model/mt5.c
     src/formats/model/mt5.h
 
@@ -191,6 +195,7 @@ set(SRC
     src/views/xwmView.h
 
     src/views/auth/authFaces.c
+    src/views/auth/authHands.c
     src/views/auth/authModels.c
     src/views/auth/authMusic.c
     src/views/auth/authMusic.h

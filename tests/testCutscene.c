@@ -231,6 +231,7 @@ void Test_Cutscene(const TestContext* context) {
     uint32_t programs = 0, cutscenes = 0, found = 0, started = 0, moving = 0, sounding = 0, nodeCalls = 0, soundCalls = 0;
     uint32_t stopped = 0, placing = 0, placeCalls = 0, up = 0, levels = 0, displaying = 0, displayCalls = 0, before = 0;
     uint32_t attaching = 0, attachCalls = 0, packages = 0, facing = 0, faceCalls = 0, looks = 0, points = 0;
+    uint32_t handing = 0, handCalls = 0, handsShown = 0;
     clock_t start = clock();
     for (uint32_t i = 0; i < list.count; i++) {
         uint32_t size;
@@ -317,6 +318,14 @@ void Test_Cutscene(const TestContext* context) {
                 cutscenePoints += face->function == SCNCUTSCENE_EYES && (face->known & 8);
             }
             looks += cutsceneLooks;
+            handing += cutscene.handCount > 0;
+            handCalls += cutscene.handCount;
+            for (uint32_t n = 0; n < cutscene.handCount; n++) {
+                const SCNCutscene_Hand* hand = &cutscene.hands[n];
+                CHECK(SD_IsCharacterId(hand->character) && hand->side <= 1 && (n == 0 || hand->frame >= cutscene.hands[n - 1].frame),
+                    "%s: cutscene %u: hand of 0x%08X at %u", list.files[i].name, slot, hand->character, hand->frame);
+                handsShown += hand->function == SCNCUTSCENE_HAND && hand->on > 0;
+            }
             points += cutscenePoints;
             if (cutsceneLooks > 0)
                 Test_Info("%s: cutscene %u: %u face calls, %u EyesLook (%u to a known point)", list.files[i].name, slot,
@@ -354,6 +363,7 @@ void Test_Cutscene(const TestContext* context) {
         displaying, displayCalls, before, attaching, attachCalls, packages, sounding, soundCalls, stopped,
         (double)(clock() - start) / CLOCKS_PER_SEC);
     Test_Info("%u cutscenes with face calls (%u calls), %u EyesLook (%u to a known point)", facing, faceCalls, looks, points);
+    Test_Info("%u cutscenes with hand calls (%u calls, %u that show a detailed hand)", handing, handCalls, handsShown);
     CHECK_EQ(programs, 136, "SCN files");
     CHECK(found > 0 && started == found, "cutscenes found but not run");
     CHECK_EQ(stopped, 0, "threads stopped");

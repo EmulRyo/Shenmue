@@ -63,6 +63,7 @@ typedef struct {
     uint32_t            fadeCapacity;
     uint32_t            lightCapacity;
     uint32_t            faceCapacity;
+    uint32_t            handCapacity;
 } Context;
 
 // A call to a function of the program that loads the package of a character (SCNCUTSCENE_PACKAGE until
@@ -527,6 +528,46 @@ static void FaceCall(Context* c, uint32_t frame, const VM_Call* call, VM_Memory*
     cutscene->faces[cutscene->faceCount++] = face;
 }
 
+// A call that changes a hand of a character, with all its arguments known
+static void HandCall(Context* c, uint32_t frame, const VM_Call* call) {
+    uint32_t count = call->id == SCNCUTSCENE_HAND ? 4 : 9;
+    if (call->count < count)
+        return;
+    for (uint32_t a = 0; a < count; a++) {
+        if (!Known(call, a))
+            return;
+    }
+    SCNCutscene_Hand hand = { frame, call->address, call->id, call->values[0], 1, 0, 0, 0, 0, 0, SCNCUTSCENE_HAND_LOOP, 1.0f };
+    if (call->id == SCNCUTSCENE_HAND) {
+        hand.on = (int32_t)call->values[1];
+        hand.side = call->values[2];
+        hand.motion = call->values[3];
+    }
+    else {
+        hand.side = call->values[1];
+        hand.motion = call->values[2];
+        hand.first = (int32_t)call->values[3];
+        hand.last = (int32_t)call->values[4];
+        hand.current = (int32_t)call->values[5];
+        hand.flags = call->values[6];
+        memcpy(&hand.speed, &call->values[7], sizeof(float));
+        if (!isfinite(hand.speed))
+            return;
+    }
+    SCNCutscene* cutscene = c->cutscene;
+    if (cutscene->handCount == c->handCapacity) {
+        uint32_t capacity = c->handCapacity == 0 ? 16 : c->handCapacity * 2;
+        SCNCutscene_Hand* hands = realloc(cutscene->hands, capacity * sizeof(SCNCutscene_Hand));
+        if (hands == NULL) {
+            c->ok = false;
+            return;
+        }
+        cutscene->hands = hands;
+        c->handCapacity = capacity;
+    }
+    cutscene->hands[cutscene->handCount++] = hand;
+}
+
 // A call that changes the lights, unless the last one of the same function (and light and operation) leaves the same
 // values
 static void AddLight(Context* c, const SCNCutscene_Light* light) {
@@ -907,6 +948,10 @@ static void OnTimedCall(void* context, uint32_t frame, uint32_t thread, const VM
     case SCNCUTSCENE_EXPRESSION:
         FaceCall(c, frame, call, memory);
         break;
+    case SCNCUTSCENE_HAND:
+    case SCNCUTSCENE_HAND_MOTION:
+        HandCall(c, frame, call);
+        break;
     case SCNCUTSCENE_DISPLAY:
     case SCNCUTSCENE_ACTIVE: {
         int on = SetsDisplay(memory, call);
@@ -930,6 +975,7 @@ static void ClearCalls(SCNCutscene* cutscene) {
     cutscene->fadeCount = 0;
     cutscene->lightCount = 0;
     cutscene->faceCount = 0;
+    cutscene->handCount = 0;
 }
 
 // The run of a function that places a character
@@ -1144,6 +1190,7 @@ void SCNCutscene_Free(SCNCutscene* cutscene) {
     free(cutscene->fades);
     free(cutscene->lights);
     free(cutscene->faces);
+    free(cutscene->hands);
     memset(cutscene, 0, sizeof(*cutscene));
 }
 

@@ -230,6 +230,8 @@ In 16 of the 83 different bodies (`_L` and `_M` files, by content) the hands are
 
 The upper 16 bits of the root ID are `0`, `1`, `4` or `9` (unknown meaning). The rotations are the ones of 154 of the 166 bodies of the game (the rest are posed differently). The meshes of the body nodes `0xFFBD`, `0xFFBE` and `0xFFBF` are low detail versions of the parts that replace them, with about the same bounding box. A few faces (e.g. `mgr_f.mt5`) have the root ID `0xFFFF` and only triangles with negative indices.
 
+The mesh of the root of a hand is deformed by the skeleton of the [HM](HM) file with the same three letters (`ykb_hm.bin` for `ykb_tl.mt5` and `ykb_tr.mt5`), posed by the motions of the [HMOT](HMOT) files: that is how the fingers bend. The game draws the detailed hands only while the program of the map shows them (function `0x0DF`, see [MAPINFO](MAPINFO#functions-of-the-game)); else it draws the hands of the body.
+
 The root of a face has two children, the eyes: the nodes `0x4D` and `0x4E` (e.g. at y = −0.031 and +0.031 in `ykb_f.mt5`, 19 vertices each), which turn to look around. The mesh of the root is deformed by the face bones of the [FTBL](FTBL) file with the same three letters (`ykb_ftbl.bin`), posed by the [TALK](TALK) files: that is how the faces blink, speak and change their expression.
 
 ## Arms of Ryo

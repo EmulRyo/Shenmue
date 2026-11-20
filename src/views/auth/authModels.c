@@ -285,12 +285,13 @@ bool AUTHModels_LoadCharacters(void) {
     const AUTH_Sequence* sequence = &g_auth.sequence;
     g_auth.models = calloc(sequence->characterCount + 1, sizeof(AUTHView_Model));
     g_auth.characterModels = calloc(sequence->characterCount + 1, sizeof(AUTHView_CharacterModel));
-    // A body and a face for each character
-    g_auth.instances = calloc(2 * sequence->characterCount + 1, sizeof(MT5Render_Instance));
+    // A body, a face and two hands for each character
+    g_auth.instances = calloc(4 * sequence->characterCount + 1, sizeof(MT5Render_Instance));
     g_auth.humanFiles = calloc(sequence->characterCount + 1, sizeof(IPAC_FileList));
     g_auth.faces = calloc(sequence->characterCount + 1, sizeof(AUTHView_Face));
+    g_auth.hands = calloc(sequence->characterCount + 1, sizeof(AUTHView_Hands));
     if (g_auth.models == NULL || g_auth.characterModels == NULL || g_auth.instances == NULL || g_auth.humanFiles == NULL ||
-        g_auth.faces == NULL)
+        g_auth.faces == NULL || g_auth.hands == NULL)
         return false;
 
     // The characters of the map
@@ -326,8 +327,10 @@ bool AUTHModels_LoadCharacters(void) {
             Log_Warning("[AUTHView_Open]: No model for %s (%s)\n", character->id, characterModel->source != NULL ? "invalid model file" : "not found");
         else {
             Log_Debug("  %s: %s (%s)\n", character->id, GetFileName(path), characterModel->source);
-            if (characterModel->human)
+            if (characterModel->human) {
                 AUTHFaces_Load(i, info.face, packed != NULL ? packed->filename : path, packed);
+                AUTHHands_Load(i, packed != NULL ? packed->filename : path, packed);
+            }
         }
     }
     if (hasMapScript)
@@ -373,8 +376,8 @@ bool AUTHModels_LoadPlaced(void) {
     AUTHView_Model* models = realloc(g_auth.models, capacity * sizeof(AUTHView_Model));
     if (models != NULL)
         g_auth.models = models;
-    // And a face for each character of the cutscene
-    MT5Render_Instance* instances = realloc(g_auth.instances, (capacity + g_auth.sequence.characterCount) * sizeof(MT5Render_Instance));
+    // And a face and two hands for each character of the cutscene
+    MT5Render_Instance* instances = realloc(g_auth.instances, (capacity + 3 * g_auth.sequence.characterCount) * sizeof(MT5Render_Instance));
     if (instances != NULL)
         g_auth.instances = instances;
     if (models == NULL || instances == NULL)

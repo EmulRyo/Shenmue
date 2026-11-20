@@ -2,7 +2,7 @@
 #define __AUTHVIEWINTERNAL_H__
 
 // The state of the view of the cutscenes, shared by its files: authView.c (opening, drawing, tree, timeline and
-// properties), authMotions.c, authModels.c, authPose.c and authProgram.c
+// properties), authMotions.c, authModels.c, authPose.c, authProgram.c, authFaces.c and authHands.c
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -16,6 +16,7 @@
 #include "core/path.h"
 #include "core/text.h"
 #include "formats/animation/auth.h"
+#include "formats/animation/hmot.h"
 #include "formats/animation/talk.h"
 #include "formats/animation/motn.h"
 #include "formats/archive/ipac.h"
@@ -23,6 +24,7 @@
 #include "formats/archive/pks.h"
 #include "formats/map/mapinfo.h"
 #include "formats/model/ftbl.h"
+#include "formats/model/hm.h"
 #include "formats/script/chrt.h"
 #include "game/mapFiles.h"
 #include "game/mapProgram.h"
@@ -72,6 +74,33 @@ typedef struct {
     float*          eyelidFrames; // How closed the eyes are at each frame of the cutscene, NULL until simulated
     Vector2         eyes[2];    // Angles of the eyes 0x4D and 0x4E in degrees: down, to the left
 } AUTHView_Face;
+
+#define AUTHVIEW_HAND_SIDES 2   // Left (node 0xFFBE of the body, _TL model), right (0xFFBF, _TR)
+
+// A detailed hand of a character, which replaces a hand of its body while the program of the map shows it
+typedef struct {
+    bool            loaded;
+    MT5Render_Model model;
+    int32_t         node;       // Node of the body that the hand replaces
+    int32_t         arm;        // Node of the body whose mesh the negative vertex indices of the hand use
+    uint32_t        vertexCount; // Of the mesh of the root of the model
+    float*          positions;  // Of its vertices
+    float*          offsets;    // Of its vertices, from the skin
+    Matrix*         pose;       // World matrices of the nodes of the hand, then of the arm
+    bool            shown;      // At the current frame
+    const HMOT_Motion* motion;  // Played at the current frame, NULL for the rest
+    float           motionFrame;
+} AUTHView_Hand;
+
+// The detailed hands of a character (_TL and _TR models in the model/hand folder with the first three letters of its
+// body), with their skin (HM file)
+typedef struct {
+    bool            loaded;
+    char            name[4];
+    HM_Skin         skin;
+    AUTHView_Hand   hands[AUTHVIEW_HAND_SIDES];
+    bool*           hidden;     // Nodes of the body hidden at the current frame: of the face and of the hands shown
+} AUTHView_Hands;
 
 // A motion played by the commands, decoded from the MOTN files
 typedef struct {
@@ -170,6 +199,10 @@ typedef struct {
     AUTHView_Face*  faces;      // Of each character
     TALK_File       talks[2];   // talk_n00.bin and talk_kc.bin of the face folder, loaded when a face uses them
     bool            eyelidsSimulated; // The eyelids of the faces at every frame (simulated the first time they are posed)
+    AUTHView_Hands* hands;      // Of each character
+    uint32_t        handMotionCount;
+    HMOT_File*      handMotions; // The HMOT files of the folder of the map
+    bool            handMotionsLoaded;
     IPAC_FileList*  humanFiles; // Of each character: the files of its PKF/PKS pair in stream/humans if it isn't extracted
     MT5Render_Instance* instances; // Of the characters drawn with their model, filled before drawing them
     SCNCutscene     program;    // What the program of the map does with the cutscene (a cutscene of the table of a map)
@@ -236,6 +269,19 @@ const bool* AUTHFaces_HiddenNodes(uint32_t character); // The nodes of the body 
 // Puts the face in the pose of the current frame on the body in a pose (world matrices of its nodes), placed in the map
 // with transform. Returns the face model to draw with the body, NULL if none
 MT5Render_Model* AUTHFaces_Pose(uint32_t character, const Matrix* body, Matrix transform);
+
+// authHands.c: the detailed hands of the characters, shown and posed by the calls of the program of the map. Load is
+// called after the model of the body of the character is loaded (body: its file, packed: the file if it is packed).
+// Returns false if the character has no detailed hands
+bool AUTHHands_Load(uint32_t character, const char* body, const IPAC_File* packed);
+void AUTHHands_Free(uint32_t character);
+void AUTHHands_FreeMotions(void);
+// The nodes of the body hidden at the current frame: those of the face (faceHidden, NULL if none) and the hands that the
+// detailed hands replace. Returns faceHidden if no hand is shown
+const bool* AUTHHands_HiddenNodes(uint32_t character, const bool* faceHidden);
+// Puts the hands shown at the current frame (after AUTHHands_HiddenNodes) on the body in a pose (world matrices of its
+// nodes). Returns the number of hand models to draw with the body, in models
+uint32_t AUTHHands_Pose(uint32_t character, const Matrix* body, MT5Render_Model* models[AUTHVIEW_HAND_SIDES]);
 
 // authPose.c: the poses and the transforms of the characters at the current frame
 void AUTHPose_PoseCharacter(uint32_t index);

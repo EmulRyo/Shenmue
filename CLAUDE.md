@@ -9,7 +9,7 @@ The build folder is `build/`, already configured with the Visual Studio 17 2022 
 - If the link fails because the executable is in use, stop the running instance: `Get-Process Shenmue -ErrorAction SilentlyContinue | Stop-Process -Force`.
 - Build the tests: `cmake --build build --config Release --target ShenmueTests`.
 - While iterating, run only the affected test: `ctest --test-dir build -C Release -R cutscene --output-on-failure`. The whole set (`ctest --test-dir build -C Release -j 16 --output-on-failure`) takes about 70 s: run it once, at the end.
-- Tests (`tests/CMakeLists.txt`): `mapinfo_chunks scn3_chunks scn_files scn_pairs sh4_encodings sh4_code sh4_program sh4_listing game_functions bc_encodings bc_files scn_pair decompile scn_data vm display cutscene faces lip_sync`. The longest are `display`, `cutscene`, `scn_data` and `vm`. A test can also be run directly, to see all its output: `build/tests/Release/ShenmueTests.exe content/Shenmue1 <test>`.
+- Tests (`tests/CMakeLists.txt`): `mapinfo_chunks scn3_chunks scn_files scn_pairs sh4_encodings sh4_code sh4_program sh4_listing game_functions bc_encodings bc_files scn_pair decompile scn_data vm display cutscene faces lip_sync hands`. The longest are `display`, `cutscene`, `scn_data` and `vm`. A test can also be run directly, to see all its output: `build/tests/Release/ShenmueTests.exe content/Shenmue1 <test>`.
 - A test that only checks that the output doesn't change: run it before and after the change and compare the outputs.
 
 ## Running the application

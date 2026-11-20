@@ -69,6 +69,8 @@
 //                 the face of a character (see the MAPINFO page of the wiki); EyesLook (character, 2, &point, frames)
 //                 turns the eyes to a point (3 floats, in the space of the map) in a number of frames, (character, 0)
 //                 back to the front
+//   HandMotion (0x0DF) and PlayHandMotion (0x0E7): the detailed hands of a character, shown or not, and the motions of
+//                 the HMOT files played on them
 // The packages of the characters: a function of the program that loads a package (0x13C (0, 0, folder, name)) named by
 // one of its parameters until the character named by another one exists (0x166 (1, character)), called with the values
 // of two variables of the program (e.g. func(var_118, var_11C) of scenario/act01_d000.scn, the can CAN1 of the drink
@@ -109,6 +111,10 @@
 #define SCNCUTSCENE_EYELIDS_CLOSE   1   // Closes the eyes in the frames, and keeps them closed
 #define SCNCUTSCENE_EYELIDS_OPEN    2   // Opens them, and keeps them open
 #define SCNCUTSCENE_EYELIDS_CLOSED  3   // Closes them (unused by the programs)
+#define SCNCUTSCENE_HAND        0x0DF   // (character, on, side, motion): the detailed hand (on 1) or the hand of the body
+#define SCNCUTSCENE_HAND_MOTION 0x0E7   // (character, side, motion, first, last, current, flags, speed, blend)
+#define SCNCUTSCENE_HAND_LOOP   1       // Flags of the hand motions: loop
+#define SCNCUTSCENE_HAND_BACK   2       // Backwards
 #define SCNCUTSCENE_EYES_FRONT  0       // Modes of EyesLook: to the front, in 16 frames
 #define SCNCUTSCENE_EYES_GAME   1       // To a point chosen by the game
 #define SCNCUTSCENE_EYES_POINT  2       // To the point of the call
@@ -215,6 +221,23 @@ typedef struct {
     uint8_t     known;      // Bit i: values[i] is known; bit 3: point is known
 } SCNCutscene_Face;
 
+// A call that changes a hand of a character: HandMotion (0x0DF) shows its detailed hand or the hand of its body and
+// loops a motion of the HMOT files on it, PlayHandMotion (0x0E7) plays a motion between two frames
+typedef struct {
+    uint32_t    frame;
+    uint32_t    address;
+    uint32_t    function;   // SCNCUTSCENE_HAND or SCNCUTSCENE_HAND_MOTION
+    uint32_t    character;
+    int32_t     on;         // SCNCUTSCENE_HAND: 1 the detailed hand, 0 the hand of the body
+    uint32_t    side;       // 0 left (node 0xFFBE of the body), 1 right (0xFFBF)
+    uint32_t    motion;     // ID in the HMOT files
+    int32_t     first;      // Frames of the motion plus 1, 0 for its first frame
+    int32_t     last;       // 0 for its last frame
+    int32_t     current;    // Where it starts, 0 for the first frame (the last one backwards)
+    uint32_t    flags;      // SCNCUTSCENE_HAND_LOOP, SCNCUTSCENE_HAND_BACK
+    float       speed;      // Frames of the motion per frame
+} SCNCutscene_Hand;
+
 // A package that the program loads for a character, with the values of its variables at the start of the cutscene
 typedef struct {
     uint32_t    character;
@@ -267,6 +290,8 @@ typedef struct {
     SCNCutscene_Light*  lights;     // In the order of the calls
     uint32_t            faceCount;
     SCNCutscene_Face*   faces;      // In the order of the calls
+    uint32_t            handCount;
+    SCNCutscene_Hand*   hands;      // In the order of the calls, those with all their arguments known
     uint32_t            levels;     // Functions run before the function of the call that plays the slot
     uint32_t            start;      // Function from which the emulation got to the call
 } SCNCutscene;

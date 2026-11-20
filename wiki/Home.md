@@ -25,6 +25,8 @@ This wiki describes the file formats of Shenmue, with their fields and sizes.
 | [MT5 / CHRM](MT5)  | `.mt5` `.chrm` | `HRCM`          | Model             | 3D model (CHRM: textures stored in the PKF)  |
 | [FTBL](FTBL)       | `.bin` (`*_ftbl.bin`) | —         | Model             | Skin of a face: 25 face bones and the bones and weights of each vertex |
 | [TALK](TALK)       | `.bin` (`talk_*.bin`) | —         | Animation         | Poses of the faces: expressions, blinking and shapes of the mouth |
+| [HM](HM)           | `.bin` (`*_hm.bin`) | —           | Model             | Skeleton (71 nodes) and skin of the detailed hands |
+| [HMOT](HMOT)       | `.bin` (`hmot*.bin`) | —          | Animation         | Motions of the detailed hands, numbered |
 | [PVR](PVR)         | `.pvr`        | `GBIX` / `PVRT`  | Texture           | PowerVR texture                              |
 | [SPR](SPR)         | `.spr`        | `TEXN` / `SCRL`  | Texture           | TEXN blocks with a PVR texture each          |
 | [GZ](GZ)           | `.gz`         | `1F 8B 08`       | Texture           | Gzipped SPR file                             |
@@ -46,6 +48,8 @@ TAD/TAC
  ├─ MOTN (motion/motion.bin, m_*.bin of the maps)
  ├─ MT5 → TEXN → PVR / DDS
  ├─ FTBL, TALK (model/face, with the faces _F.MT5)
+ ├─ HM (model/hand, with the hands _TL.MT5 and _TR.MT5)
+ ├─ HMOT (hmot*.bin of the maps and of their packages)
  ├─ PVR
  ├─ SPR → PVR
  ├─ GZ → SPR → PVR (misc/battle*.gz, sprite/*.gz)

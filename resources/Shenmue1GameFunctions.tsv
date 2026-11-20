@@ -222,7 +222,7 @@ id	handler	arguments	name	description	character
 0DC	0x0C181C18				
 0DD	0x0C16591C	3	LoadHmotFile	Loads a HMOT_*.BIN file (argument 2, e.g. "HMOT_CAN.BIN") of the loaded package of argument 1, or else from scene/NN/<folder> (NN: argument 0, folder: the 4-character ID of argument 1, e.g. 'VEND'), and adds it to a list. Returns it	
 0DE	0x0C16593E	1			
-0DF	0x0C165984	4			yes
+0DF	0x0C165984	4	HandMotion	A hand of the character of ID argument 0 (argument 2: 0 left, else right): with argument 1 at 1 its detailed hand (_TL/_TR model with its HM skin) instead of the hand of the body, looping the motion of ID argument 3 of the loaded HMOT files (the hand stays open if it isn't loaded); 0 the hand of the body	yes
 0E0	0x0C16AC68				
 0E1	0x0C16AC6C				
 0E2	0x0C16AC70				
@@ -230,7 +230,7 @@ id	handler	arguments	name	description	character
 0E4	0x0C1578B0				
 0E5	0x0C163C8E				
 0E6	0x0C157FF2	5	Attach	Attaches the character of ID argument 0 to the one of argument 1, at the bone of argument 2 of the skeleton of its motion module MOTM (18: right hand, 12: left hand; not a node ID of the model), with a position (3 floats, argument 3) and angles (3 integers, 0x10000 = 360, argument 4) relative to the bone, through the module FIXO of the character; it then follows the bone. *Probably* attached to the character itself when it has no such bone	yes
-0E7	0x0C1659BE	9			yes
+0E7	0x0C1659BE	9	PlayHandMotion	Plays on a hand of the character of ID argument 0 (argument 1: 0 left, 1 right) the HMOT motion of ID argument 2, from frame argument 5 - 1 between frames argument 3 - 1 and argument 4 - 1 (0: first and last), flags argument 6 (1 loop, 2 backwards), speed argument 7 (float), blend frames argument 8	yes
 0E8	0x0C1659F8	2			yes
 0E9	0x0C165A74	4, 5			yes
 0EA	0x0C165AC8	3			yes

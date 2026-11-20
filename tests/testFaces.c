@@ -5,9 +5,11 @@
 #include <raylib.h>
 #include "core/bytes.h"
 #include "core/file.h"
+#include "formats/animation/hmot.h"
 #include "formats/animation/talk.h"
 #include "formats/archive/afs.h"
 #include "formats/model/ftbl.h"
+#include "formats/model/hm.h"
 #include "formats/model/mt5.h"
 #include "formats/sound/lipsync.h"
 #include "test.h"
@@ -157,4 +159,108 @@ void Test_LipSync(const TestContext* context) {
     CHECK_EQ(counts.invalid, 0, "invalid lip-sync records");
     CHECK_EQ(counts.badMouths, 0, "keys with a mouth above 5");
     Test_Info("%u voice AFS files, %u lip-sync records, %u keys", files, counts.records, counts.keys);
+}
+
+// The detailed hands: the skin (HM) of every hand folder, with its models: the skeleton has its 71 nodes, posed at rest
+// it gives the world matrices of the file, and it doesn't move the vertices of the models. And the hand motions (HMOT)
+// of the folders of the maps: 71 nodes, keys in order (some of them before the first frame or after the last one, and
+// the last key of a few channels twice)
+#define HANDS_TOLERANCE 0.0005f
+
+static void CheckHand(const char* folder, const char* skinPath, uint32_t* skins, uint32_t* models) {
+    HM_Skin skin;
+    CHECK(HM_Load(skinPath, &skin), "%s: invalid HM file", skinPath);
+    if (skin.vertexCount == 0)
+        return;
+    (*skins)++;
+    uint32_t nodes = 0, pending = 1;
+    for (int n = 0; n < HM_NODES && pending > 0; n++, nodes++)
+        pending += skin.nodes[n].children - 1u;
+    CHECK(nodes == HM_NODES && pending == 0, "%s: the tree has %u nodes", skinPath, nodes);
+    static float matrices[HM_NODES][16];
+    HM_Pose(&skin, NULL, matrices);
+    float worst = 0.0f;
+    for (int n = 0; n < HM_NODES; n++) {
+        for (int v = 0; v < 16; v++)
+            worst = fmaxf(worst, fabsf(matrices[n][v] - skin.nodes[n].rest[v]));
+    }
+    CHECK(worst < HANDS_TOLERANCE, "%s: the rest differs by %.5f", skinPath, worst);
+    const char* suffixes[2] = { "tl", "tr" };
+    for (int side = 0; side < 2; side++) {
+        char modelPath[1024];
+        snprintf(modelPath, sizeof(modelPath), "%s/%.3s_%s.mt5", folder, GetFileName(skinPath), suffixes[side]);
+        MT5_Model model;
+        if (!FileExists(modelPath) || !MT5_Load(modelPath, &model))
+            continue;
+        (*models)++;
+        uint32_t count = model.nodeCount > 0 ? model.nodes[0].vertexCount : 0;
+        CHECK(skin.vertexCount >= count, "%s: %u counts for %u vertices", modelPath, skin.vertexCount, count);
+        float* positions = malloc((count + 1) * 3 * sizeof(float)), * offsets = malloc((count + 1) * 3 * sizeof(float));
+        if (positions != NULL && offsets != NULL) {
+            for (uint32_t v = 0; v < count; v++)
+                memcpy(&positions[v * 3], model.nodes[0].vertices[v].position, 3 * sizeof(float));
+            HM_Deform(&skin, (const float (*)[16])matrices, positions, count, side == 0, offsets);
+            float moved = 0.0f;
+            for (uint32_t v = 0; v < count * 3; v++)
+                moved = fmaxf(moved, fabsf(offsets[v]));
+            CHECK(moved < HANDS_TOLERANCE, "%s: the rest moves a vertex %.5f", modelPath, moved);
+        }
+        free(positions);
+        free(offsets);
+        MT5_Free(&model);
+    }
+    HM_Free(&skin);
+}
+
+static void CheckHandMotions(const char* path, uint32_t* files, uint32_t* motions, uint32_t* keys, uint32_t* outside) {
+    HMOT_File file;
+    CHECK(HMOT_Load(path, &file), "%s: invalid HMOT file", path);
+    (*files)++;
+    for (uint32_t m = 0; m < file.motionCount; m++) {
+        const HMOT_Motion* motion = &file.motions[m];
+        (*motions)++;
+        CHECK(motion->nodeCount == HM_NODES, "%s: motion %s with %u nodes", path, motion->name, motion->nodeCount);
+        for (uint32_t c = 0; c < motion->nodeCount * 3; c++) {
+            for (uint32_t k = 0; k < motion->keyCounts[c]; k++) {
+                int32_t frame = motion->keys[c][k].frame;
+                CHECK(k == 0 || frame >= motion->keys[c][k - 1].frame, "%s: motion %s: keys not in order", path, motion->name);
+                (*keys)++;
+                *outside += frame < 0 || frame >= motion->frames;
+            }
+        }
+    }
+    HMOT_Free(&file);
+}
+
+void Test_Hands(const TestContext* context) {
+    uint32_t skins = 0, models = 0, files = 0, motions = 0, keys = 0, outside = 0;
+    for (int scene = 1; scene <= FACES_SCENES; scene++) {
+        char folder[1024];
+        snprintf(folder, sizeof(folder), "%s/scene/%02d/model/hand", context->content, scene);
+        if (DirectoryExists(folder)) {
+            FilePathList list = LoadDirectoryFilesEx(folder, ".bin", false);
+            for (unsigned int i = 0; i < list.count; i++) {
+                const char* name = GetFileName(list.paths[i]);
+                size_t length = strlen(name);
+                if (length > 7 && TextIsEqual(TextToLower(name + length - 7), "_hm.bin"))
+                    CheckHand(folder, list.paths[i], &skins, &models);
+            }
+            UnloadDirectoryFiles(list);
+        }
+        snprintf(folder, sizeof(folder), "%s/scene/%02d", context->content, scene);
+        if (!DirectoryExists(folder))
+            continue;
+        FilePathList list = LoadDirectoryFilesEx(folder, ".bin", true);
+        for (unsigned int i = 0; i < list.count; i++) {
+            if (TextIsEqual(TextToLower(TextSubtext(GetFileName(list.paths[i]), 0, 4)), "hmot"))
+                CheckHandMotions(list.paths[i], &files, &motions, &keys, &outside);
+        }
+        UnloadDirectoryFiles(list);
+    }
+    if (skins == 0) {
+        Test_Info("No model/hand folder");
+        return;
+    }
+    Test_Info("%u HM files (%u hand models), %u HMOT files (%u motions, %u keys, %u outside the frames of their motion)", skins,
+        models, files, motions, keys, outside);
 }

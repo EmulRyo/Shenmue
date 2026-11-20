@@ -30,6 +30,7 @@ void Test_Display(const TestContext* context);
 void Test_Cutscene(const TestContext* context);
 void Test_Faces(const TestContext* context);
 void Test_LipSync(const TestContext* context);
+void Test_Hands(const TestContext* context);
 
 static const Test s_tests[] = {
     { "mapinfo_chunks", Test_MapinfoChunks, true },
@@ -51,6 +52,7 @@ static const Test s_tests[] = {
     { "cutscene",       Test_Cutscene,      true },
     { "faces",          Test_Faces,         true },
     { "lip_sync",       Test_LipSync,       true },
+    { "hands",          Test_Hands,         true },
 };
 
 static int s_checks;

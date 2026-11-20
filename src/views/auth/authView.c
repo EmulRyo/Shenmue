@@ -253,6 +253,10 @@ void AUTHView_Close(void) {
     for (uint32_t i = 0; g_auth.faces != NULL && i < g_auth.sequence.characterCount; i++)
         AUTHFaces_Free(i);
     free(g_auth.faces);
+    for (uint32_t i = 0; g_auth.hands != NULL && i < g_auth.sequence.characterCount; i++)
+        AUTHHands_Free(i);
+    free(g_auth.hands);
+    AUTHHands_FreeMotions();
     TALK_Free(&g_auth.talks[0]);
     TALK_Free(&g_auth.talks[1]);
     g_auth.eyelidsSimulated = false;
@@ -708,6 +712,10 @@ static void DrawCharacters(Camera3D camera) {
         MT5Render_Model* face = AUTHFaces_Pose(i, AUTHPose_BodyWorld(i), transform);
         if (face != NULL)
             g_auth.instances[count++] = (MT5Render_Instance) { face, transform, center, 0, fade, lighting };
+        MT5Render_Model* hands[AUTHVIEW_HAND_SIDES];
+        uint32_t handCount = AUTHHands_Pose(i, AUTHPose_BodyWorld(i), hands);
+        for (uint32_t h = 0; h < handCount; h++)
+            g_auth.instances[count++] = (MT5Render_Instance) { hands[h], transform, center, 0, fade, lighting };
     }
     for (uint32_t i = 0; i < g_auth.placedCount && g_options.charactersShown; i++) {
         const AUTHView_Placed* placed = &g_auth.placed[i];
@@ -1046,6 +1054,14 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
             Properties_Bool(properties, "Frozen", g_auth.faces[index].frozen);
             const Vector2* eyes = g_auth.faces[index].eyes;
             Properties_Text(properties, "Eyes", TextFormat("%.1f, %.1f / %.1f, %.1f", eyes[0].x, eyes[0].y, eyes[1].x, eyes[1].y));
+        }
+        if (g_auth.hands != NULL && g_auth.hands[index].loaded) {
+            const char* names[AUTHVIEW_HAND_SIDES] = { "Left hand", "Right hand" };
+            for (int side = 0; side < AUTHVIEW_HAND_SIDES; side++) {
+                const AUTHView_Hand* hand = &g_auth.hands[index].hands[side];
+                Properties_Text(properties, names[side], !hand->shown ? "of the body" : hand->motion == NULL ? "detailed, open" :
+                    TextFormat("detailed, %s frame %.0f", hand->motion->name, hand->motionFrame));
+            }
         }
     }
     Properties_Section(properties, "Keys of the curves");
