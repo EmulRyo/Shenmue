@@ -73,7 +73,7 @@ Characters are identified by a 4-character ID (`char[4]`, e.g. `AKIR` for Ryo, `
 | 1      | 2 | 306  | Start of the sequence. Always the first command |
 | 2      | 2 | 996  | Declares a character |
 | 3      | 5 | 2562 | Plays a motion on a character |
-| 4      | 4 | 714  | *Probably* the expression of the face of a character |
+| 4      | 4 | 714  | Changes the expression of the face of a character |
 | 5      | 5 | 1880 | Plays a voice clip |
 | 6      | 3 or 9 | 1132 / 2892 | Plays a sound effect |
 
@@ -103,14 +103,14 @@ Characters are identified by a 4-character ID (`char[4]`, e.g. `AKIR` for Ryo, `
 
 The frames of args 2 and 3 are frames of the motion (30 per second), played from the frame of the command. The position of the hips in the motion (bone 0, see [MOTN](MOTN#skeleton)) moves the character from the position of its curves, in the space of the character: while a motion moves the hips (e.g. 2.9 m for `0x100A` in `scene/01/d000/d0w0/SEQDATA4`), the curves of the character stay still, and while the curves move a character a long way (a character sitting in the bus of `scene/01/d000/buss/SEQDATA1`, 29 m), its motion keeps the hips in place.
 
-**4 — Face expression (*probably*).** Its arguments have the shape of those of the function `0x113` of the programs of the maps (see [MAPINFO](MAPINFO#functions-of-the-game)): a character, an expression (0 to 12, the 13 expressions of the [TALK](TALK#poses) sets of most faces), a value that goes to the mouth and a number of frames to go to the new pose.
+**4 — Face expression.** The game runs it with the same code as the function `0x113` (FaceExpression) of the programs of the maps (see [MAPINFO](MAPINFO#functions-of-the-game)): the entry 4 of the table of the commands at `0x0C2A8608` of `1ST_READ.BIN` (PAL v1.001) calls `0x0C0BC2F8`, as `0x113` does. The face goes to the expression, with the eyes as they are and the mouth in the given pose, while the character doesn't speak: the [lip-sync](Lip-sync) of a voice clip moves the mouth, and puts it back at rest (pose 0) at its end.
 
 | Arg | Type    | Description                                                      |
 |----:|---------|------------------------------------------------------------------|
 | 0   | char[4] | Character ID                                                     |
-| 1   | uint32  | *Probably* the expression, 0 to 12                               |
-| 2   | uint32  | Unknown, usually 0 (up to 6): *probably* the mouth               |
-| 3   | uint32  | 1 to 49; most often 10, 20 or 1: *probably* the number of frames to go to the new pose |
+| 1   | uint32  | Expression, 0 to 12: the poses `6 × expression` of the [TALK](TALK#poses) set of the face |
+| 2   | uint32  | Pose of the mouth within the expression (`6 × expression + mouth`), usually 0 (rest), up to 6 |
+| 3   | uint32  | Frames to go to the new pose, 1 to 49; most often 10, 20 or 1   |
 
 **5 — Voice clip.** The sound name is a path in a `SOUND` folder (e.g. `.../01TEL/SOUND/01TELA001.aiff`), whose file name is the name of the [xWMA](XWM) clip in the [IDX](IDX) of a voice [AFS](AFS) of the same scene (`scene/0N/stream/pc/eng/` and `.../jap/`). The name of the AFS is the name of the clip without its last 4 characters (the speaker letter and the number), which is not always the name of the folder: `01TELA001` is in `01tel.afs`, `01JUCEAA005` in `01jucea.afs`, and the clips of the `01YAMA` folder (`E1020B001`…) in `e1020.afs`.
 

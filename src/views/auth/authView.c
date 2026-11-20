@@ -146,7 +146,7 @@ static const char* CommandText(const AUTH_Command* command) {
             name != NULL ? " " : "", name != NULL ? name : "");
     }
     case AUTH_COMMAND_EXPRESSION:
-        return TextFormat("Expression %s %u %u, %u frames", id, Arg(command, 1), Arg(command, 2), Arg(command, 3));
+        return TextFormat("Expression %s %u, mouth %u, %u frames", id, Arg(command, 1), Arg(command, 2), Arg(command, 3));
     case AUTH_COMMAND_VOICE:
         return TextFormat("Voice %s %s %.2f s", id, SoundName(Arg(command, 1)), AUTH_ArgFloat(command, 4));
     case AUTH_COMMAND_SOUND:
@@ -557,6 +557,14 @@ static Camera3D CutsceneCamera(void) {
     return Scene3D_CurveCamera(g_auth.sequence.camera, g_auth.time, SCENE3D_FOVY);
 }
 
+void AUTHView_Look(Vector3 position, Vector3 target) {
+    if (!g_auth.open)
+        return;
+    FreeCamera_LookFrom(&g_auth.camera, (Camera3D) { position, target, { 0.0f, 1.0f, 0.0f }, SCENE3D_FOVY, CAMERA_PERSPECTIVE });
+    FreeCamera_SetFly(&g_auth.camera, false);
+    g_options.cutsceneCamera = false;
+}
+
 void AUTHView_Toolbar(void) {
     // The view of the map is open behind the cutscene
     if (AUTHView_UsesMap()) {
@@ -696,7 +704,7 @@ static void DrawCharacters(Camera3D camera) {
         float fade = ProgramFade(g_auth.sequence.characters[i].idValue);
         const MT5Render_Lighting* lighting = CharacterLighting(g_auth.characterModels[i].human);
         g_auth.instances[count++] = (MT5Render_Instance) { instanced, transform, center, 0, fade, lighting };
-        MT5Render_Model* face = AUTHFaces_Pose(i, AUTHPose_BodyWorld(i));
+        MT5Render_Model* face = AUTHFaces_Pose(i, AUTHPose_BodyWorld(i), transform);
         if (face != NULL)
             g_auth.instances[count++] = (MT5Render_Instance) { face, transform, center, 0, fade, lighting };
     }
@@ -1033,6 +1041,10 @@ static void CharacterProperties(Properties* properties, uint32_t index) {
         if (g_auth.faces[index].set != NULL) {
             Properties_Int(properties, "Expression", g_auth.faces[index].expression);
             Properties_Int(properties, "Mouth", g_auth.faces[index].mouth);
+            Properties_Text(properties, "Eyelids", TextFormat("%.0f %% closed", g_auth.faces[index].eyelids * 100.0f));
+            Properties_Bool(properties, "Frozen", g_auth.faces[index].frozen);
+            const Vector2* eyes = g_auth.faces[index].eyes;
+            Properties_Text(properties, "Eyes", TextFormat("%.1f, %.1f / %.1f, %.1f", eyes[0].x, eyes[0].y, eyes[1].x, eyes[1].y));
         }
     }
     Properties_Section(properties, "Keys of the curves");

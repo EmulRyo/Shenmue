@@ -62,6 +62,7 @@ typedef struct {
     uint32_t            bankCapacity;
     uint32_t            fadeCapacity;
     uint32_t            lightCapacity;
+    uint32_t            faceCapacity;
 } Context;
 
 // A call to a function of the program that loads the package of a character (SCNCUTSCENE_PACKAGE until
@@ -495,6 +496,37 @@ static void FadeCall(Context* c, uint32_t frame, const VM_Call* call) {
     AddFade(c, &fade);
 }
 
+// A call that changes the face of a character with a known character; the point of EyesLook is read from the memory
+static void FaceCall(Context* c, uint32_t frame, const VM_Call* call, VM_Memory* memory) {
+    if (call->count < 2 || !Known(call, 0))
+        return;
+    SCNCutscene_Face face = { frame, call->address, call->id, call->values[0], { 0 }, { 0 }, 0 };
+    for (uint32_t a = 1; a < call->count && a <= 3; a++) {
+        face.values[a - 1] = call->values[a];
+        face.known |= Known(call, a) ? (uint8_t)(1 << (a - 1)) : 0;
+    }
+    if (call->id == SCNCUTSCENE_EYES && (face.known & 3) == 3 && face.values[0] == SCNCUTSCENE_EYES_POINT) {
+        uint8_t bytes[12];
+        uint32_t known;
+        if (VM_ReadMemory(memory, face.values[1], sizeof(bytes), bytes, &known) && known == 0xFFF) {
+            memcpy(face.point, bytes, sizeof(face.point));
+            face.known |= isfinite(face.point[0]) && isfinite(face.point[1]) && isfinite(face.point[2]) ? 8 : 0;
+        }
+    }
+    SCNCutscene* cutscene = c->cutscene;
+    if (cutscene->faceCount == c->faceCapacity) {
+        uint32_t capacity = c->faceCapacity == 0 ? 16 : c->faceCapacity * 2;
+        SCNCutscene_Face* faces = realloc(cutscene->faces, capacity * sizeof(SCNCutscene_Face));
+        if (faces == NULL) {
+            c->ok = false;
+            return;
+        }
+        cutscene->faces = faces;
+        c->faceCapacity = capacity;
+    }
+    cutscene->faces[cutscene->faceCount++] = face;
+}
+
 // A call that changes the lights, unless the last one of the same function (and light and operation) leaves the same
 // values
 static void AddLight(Context* c, const SCNCutscene_Light* light) {
@@ -869,6 +901,12 @@ static void OnTimedCall(void* context, uint32_t frame, uint32_t thread, const VM
     case SCNCUTSCENE_AMBIENT:
         LightCall(c, frame, call, memory);
         break;
+    case SCNCUTSCENE_FACE:
+    case SCNCUTSCENE_EYELIDS:
+    case SCNCUTSCENE_EYES:
+    case SCNCUTSCENE_EXPRESSION:
+        FaceCall(c, frame, call, memory);
+        break;
     case SCNCUTSCENE_DISPLAY:
     case SCNCUTSCENE_ACTIVE: {
         int on = SetsDisplay(memory, call);
@@ -891,6 +929,7 @@ static void ClearCalls(SCNCutscene* cutscene) {
     cutscene->attachCount = 0;
     cutscene->fadeCount = 0;
     cutscene->lightCount = 0;
+    cutscene->faceCount = 0;
 }
 
 // The run of a function that places a character
@@ -1104,6 +1143,7 @@ void SCNCutscene_Free(SCNCutscene* cutscene) {
     free(cutscene->packages);
     free(cutscene->fades);
     free(cutscene->lights);
+    free(cutscene->faces);
     memset(cutscene, 0, sizeof(*cutscene));
 }
 

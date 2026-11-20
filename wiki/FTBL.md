@@ -33,9 +33,9 @@ There are 161 FTBL files (47 different contents), one per face model.
 | 0x00   | 4    | int32  | `talkSet`       | Index of the set of poses in a [TALK](TALK) chain (0 to 3): 0 in 80 files (e.g. Ryo), 1 in 57, 2 in 9, 3 in 15 |
 | 0x04   | 4    | uint32 | `bonesOffset`   | Position of the bones. Always 0x30 |
 | 0x08   | 4    | uint32 | `skinOffset`    | Position of the three positions of the skin below (`countsOffset`). Always 0x24 |
-| 0x0C   | 4    | int32  | `eyeYMax`       | Limits of the rotation of the eyes around their Y axis (up and down), `0x10000` = 360°: maximum and minimum. Both eyes |
+| 0x0C   | 4    | int32  | `eyeYMax`       | Limits of the rotation of the eyes around their Y axis (positive: down), `0x10000` = 360°: maximum and minimum. Both eyes |
 | 0x10   | 4    | int32  | `eyeYMin`       | |
-| 0x14   | 4    | int32  | `eyeZMax1`      | Limits of the rotation of the eye `0x4D` around its Z axis (to the sides), maximum and minimum |
+| 0x14   | 4    | int32  | `eyeZMax1`      | Limits of the rotation of the eye `0x4D` around its Z axis (positive: to the left of the face, the side of the eye `0x4E`), maximum and minimum |
 | 0x18   | 4    | int32  | `eyeZMin1`      | |
 | 0x1C   | 4    | int32  | `eyeZMax2`      | Limits of the rotation of the eye `0x4E` around its Z axis, maximum and minimum |
 | 0x20   | 4    | int32  | `eyeZMin2`      | |
@@ -43,7 +43,7 @@ There are 161 FTBL files (47 different contents), one per face model.
 | 0x28   | 4    | uint32 | `indicesOffset` | Position of the bone indices |
 | 0x2C   | 4    | uint32 | `weightsOffset` | Position of the weights |
 
-The eyes are the nodes `0x4D` and `0x4E` of the face model, children of its root (e.g. at y = −0.031 and +0.031 in `ykb_f.mt5`). The limits of Ryo are 12°, −2° (Y), 8°, −24° (`0x4D`) and 24°, −7° (`0x4E`): each eye turns about 24° outwards and 7° or 8° towards the nose. They differ from face to face (e.g. 17°, −7°, 22°, −18°, 22°, −18° in `aso_ftbl.bin`); `ykd_ftbl.bin`, another face of Ryo, has −34° instead of −2°.
+The eyes are the nodes `0x4D` and `0x4E` of the face model, children of its root (e.g. at y = −0.031 and +0.031 in `ykb_f.mt5`). The game turns the eyes with the rotations of their nodes: around Y, 0 to the front and positive to look down (the Z axis of the face is the top of the head), then around Z, positive to the left of the face. The limits of Ryo are 12°, −2° (Y: 12° down, 2° up), 8°, −24° (`0x4D`) and 24°, −7° (`0x4E`): each eye turns about 24° outwards and 7° or 8° towards the nose. They differ from face to face (e.g. 17°, −7°, 22°, −18°, 22°, −18° in `aso_ftbl.bin`); `ykd_ftbl.bin`, another face of Ryo, has −34° instead of −2°.
 
 ## Bone (0x30 bytes)
 

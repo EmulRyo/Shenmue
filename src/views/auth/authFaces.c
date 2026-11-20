@@ -8,10 +8,20 @@
 #define AUTHFACES_FOLDER        "model/face"
 #define AUTHFACES_CHAIN         "talk_n00.bin"  // The sets s, m, b and ss, by the talk set of the FTBL files
 #define AUTHFACES_KC            "talk_kc.bin"   // The face KC1 (the game gives it its own set)
-#define AUTHFACES_MOUTH_FRAMES  4.0f            // Game frames (1/60 s) to go from a shape of the mouth to the next
+#define AUTHFACES_MOUTH_AHEAD   8.0f            // 1/60 s before its key that the game starts to move to a shape
+#define AUTHFACES_MOUTH_OPEN    8.0f            // 1/60 s to reach a shape of the mouth of the lip-sync
+#define AUTHFACES_MOUTH_CLOSE   16.0f           // To reach the shape 0 (closed), and the rest after the last key
+#define AUTHFACES_KEEP          INT32_MIN       // The mouth of a change of expression: unchanged
 #define AUTHFACES_BLINK_CLOSE   2.0f            // Frames (1/30 s) to close the eyes, and to open them
 #define AUTHFACES_BLINK_OPEN    4.0f
 #define AUTHFACES_BLINK_SEED    0x2545F491u
+#define AUTHFACES_EYE_RIGHT     0x4D            // Nodes of the eyes of the face models
+#define AUTHFACES_EYE_LEFT      0x4E
+#define AUTHFACES_FRONT_FRAMES  16.0f           // Frames to turn the eyes back to the front (EyesLook mode 0)
+#define AUTHFACES_EYE_LIMIT     30.0f           // Degrees the eyes turn without FTBL file
+
+// The pose of the mouth within the expression for each shape of the lip-sync records (table at 0x0C26C708)
+static const int32_t g_mouthPoses[] = { 0, 3, 2, 5, 4, 1 };
 
 // The face that the game gives to some bodies, by the first three letters of their model (code at 0x0C0BBB60)
 static const char* g_faceOfBody[][2] = {
@@ -103,46 +113,103 @@ const bool* AUTHFaces_HiddenNodes(uint32_t character) {
     return g_auth.faces != NULL && g_auth.faces[character].loaded ? g_auth.faces[character].hidden : NULL;
 }
 
-// The expression of the face of a character at a frame (the face commands), and the one before it. *alpha goes from 0
-// to 1 over the frames of the command
-static void ExpressionAt(uint32_t idValue, float frame, int32_t* previous, int32_t* current, float* alpha) {
-    *previous = *current = 0;
-    *alpha = 1.0f;
-    for (uint32_t i = 0; i < g_auth.sequence.commandCount && g_auth.sequence.commands[i].frame <= frame; i++) {
-        const AUTH_Command* command = &g_auth.sequence.commands[i];
-        if (command->opcode != AUTH_COMMAND_EXPRESSION || Arg(command, 0) != idValue)
-            continue;
-        *previous = *current;
-        *current = (int32_t)Arg(command, 1);
-        float frames = fmaxf((float)Arg(command, 3), 1.0f);
-        *alpha = Clamp((frame - (float)command->frame) / frames, 0.0f, 1.0f);
+// A change of the expression of a face, by the AUTH command 4 or the calls FaceExpression and FaceAnimation of the
+// program of the map: the expression (poses 6 x expression of the TALK set) reached in a number of frames, and the
+// pose of the mouth within it that the face keeps while it doesn't speak (-1 rest, AUTHFACES_KEEP unchanged)
+typedef struct {
+    float   frame;
+    int32_t expression;
+    int32_t mouth;
+    float   frames;
+} AUTHFaces_Change;
+
+// The changes of the expression of a character up to a frame, the AUTH commands and the calls of the program in the
+// order of their frames (the calls first at the same frame): the last one, the one before it, and the last two that
+// change the mouth. Each is expression 0 with the mouth at rest at frame 0 if there is none
+static void ExpressionAt(uint32_t idValue, float frame, AUTHFaces_Change* last, AUTHFaces_Change* before, AUTHFaces_Change* mouth,
+    AUTHFaces_Change* mouthBefore) {
+    AUTHFaces_Change none = { 0.0f, 0, -1, 1.0f };
+    *last = *before = *mouth = *mouthBefore = none;
+    const SCNCutscene* program = &g_auth.program;
+    uint32_t c = 0, p = 0;
+    for (;;) {
+        const AUTH_Command* command = c < g_auth.sequence.commandCount ? &g_auth.sequence.commands[c] : NULL;
+        const SCNCutscene_Face* call = p < program->faceCount ? &program->faces[p] : NULL;
+        bool useCall = call != NULL && (command == NULL || call->frame <= command->frame);
+        float at = useCall ? (float)call->frame : command != NULL ? (float)command->frame : frame + 1.0f;
+        if (at > frame)
+            break;
+        AUTHFaces_Change change = { at, 0, AUTHFACES_KEEP, 1.0f };
+        if (useCall) {
+            p++;
+            if (call->character != idValue || (call->known & 7) != 7)
+                continue;
+            if (call->function == SCNCUTSCENE_EXPRESSION) {
+                change.expression = (int32_t)call->values[0];
+                change.mouth = (int32_t)call->values[1];
+                change.frames = (float)(int32_t)call->values[2];
+            }
+            else if (call->function == SCNCUTSCENE_FACE && call->values[0] != 0) {
+                change.expression = (int32_t)call->values[1];
+                change.frames = (float)(int32_t)call->values[2];
+            }
+            else
+                continue;
+        }
+        else {
+            c++;
+            if (command->opcode != AUTH_COMMAND_EXPRESSION || Arg(command, 0) != idValue)
+                continue;
+            change.expression = (int32_t)Arg(command, 1);
+            change.mouth = (int32_t)Arg(command, 2);
+            change.frames = (float)(int32_t)Arg(command, 3);
+        }
+        change.frames = fmaxf(change.frames, 1.0f);
+        *before = *last;
+        *last = change;
+        if (change.mouth != AUTHFACES_KEEP) {
+            *mouthBefore = *mouth;
+            *mouth = change;
+        }
     }
 }
 
-// The shape of the mouth of a character at a frame (the lip-sync of its voices, else rest), the one before it, and
-// *alpha from 0 to 1 while it goes from one to the other. Returns false if it isn't speaking
-static bool MouthAt(uint32_t idValue, float frame, int32_t* previous, int32_t* current, float* alpha) {
+static int32_t MouthPose(uint16_t shape) {
+    return shape < sizeof(g_mouthPoses) / sizeof(g_mouthPoses[0]) ? g_mouthPoses[shape] : 0;
+}
+
+// The pose of the mouth of a character at a frame by the lip-sync of its voices (within the expression), the one before
+// it, and *alpha from 0 to 1 while it goes from one to the other. The game starts to move to each shape 4 frames before
+// its key, and closes the mouth after the last one. Returns false if it isn't speaking; *ended receives the frame at
+// which the last voice before the frame ended (-1 if none)
+static bool MouthAt(uint32_t idValue, float frame, int32_t* previous, int32_t* current, float* alpha, float* ended) {
     *previous = *current = 0;
     *alpha = 1.0f;
+    *ended = -1.0f;
     for (uint32_t i = 0; i < g_auth.sequence.commandCount && g_auth.sequence.commands[i].frame <= frame; i++) {
         const AUTH_Command* command = &g_auth.sequence.commands[i];
         const LIPSYNC_Record* record = command->opcode == AUTH_COMMAND_VOICE && Arg(command, 0) == idValue ? AUTHSounds_LipSync(i) : NULL;
         if (record == NULL)
             continue;
         float time = (frame - (float)command->frame) / AUTH_FRAME_RATE * LIPSYNC_FRAME_RATE, start;
-        if (time > (float)record->duration + AUTHFACES_MOUTH_FRAMES)
+        float duration = (float)record->duration;
+        if (time > duration + AUTHFACES_MOUTH_CLOSE) {
+            *ended = fmaxf(*ended, (float)command->frame + duration / LIPSYNC_FRAME_RATE * AUTH_FRAME_RATE);
             continue;
+        }
+        float ahead = time < duration ? fminf(time + AUTHFACES_MOUTH_AHEAD, duration - 0.01f) : time;
         uint16_t before;
-        *current = LIPSYNC_MouthAt(record, time, &start, &before);
-        *previous = before;
-        *alpha = Clamp((time - start) / AUTHFACES_MOUTH_FRAMES, 0.0f, 1.0f);
+        uint16_t shape = LIPSYNC_MouthAt(record, ahead, &start, &before);
+        *current = MouthPose(shape);
+        *previous = MouthPose(before);
+        *alpha = Clamp((ahead - start) / (shape == 0 ? AUTHFACES_MOUTH_CLOSE : AUTHFACES_MOUTH_OPEN), 0.0f, 1.0f);
         return true;
     }
     return false;
 }
 
-// How closed the eyes are at a frame (0 open, 1 closed): the game blinks every 60 to 90 frames, a random time, closing
-// the eyes in 2 frames and opening them in 4
+// How closed the eyes are (0 open, 1 closed) at a time in frames since the game started to blink them by itself: every
+// 60 to 90 frames, a random time, closing the eyes in 2 frames and opening them in 4
 static float BlinkAt(uint32_t character, float frame) {
     uint32_t seed = AUTHFACES_BLINK_SEED ^ (character * 0x9E3779B9u);
     float start = 0.0f;
@@ -158,6 +225,51 @@ static float BlinkAt(uint32_t character, float frame) {
             return 1.0f - (t - AUTHFACES_BLINK_CLOSE) / AUTHFACES_BLINK_OPEN;
         start += AUTHFACES_BLINK_CLOSE + AUTHFACES_BLINK_OPEN;
     }
+}
+
+// How closed the eyes of a character are at a frame, by the first count calls of the program of the map: the last call
+// of Eyelids closes (modes 1 and 3) or opens (2) them in its number of frames from where they were, and keeps them so;
+// mode 0, and no call, makes the game blink them by itself (first opening them in 4 frames if they were closed)
+static float EyelidsAt(uint32_t character, uint32_t idValue, uint32_t count, float frame) {
+    const SCNCutscene* program = &g_auth.program;
+    int32_t last = -1;
+    for (uint32_t i = 0; i < count && i < program->faceCount && (float)program->faces[i].frame <= frame; i++) {
+        const SCNCutscene_Face* call = &program->faces[i];
+        if (call->function == SCNCUTSCENE_EYELIDS && call->character == idValue && (call->known & 3) == 3)
+            last = (int32_t)i;
+    }
+    if (last < 0)
+        return BlinkAt(character, frame);
+    const SCNCutscene_Face* call = &program->faces[last];
+    float from = EyelidsAt(character, idValue, (uint32_t)last, (float)call->frame);
+    float t = frame - (float)call->frame;
+    switch (call->values[0]) {
+    case SCNCUTSCENE_EYELIDS_CLOSE:
+    case SCNCUTSCENE_EYELIDS_CLOSED:
+        return Lerp(from, 1.0f, Clamp(t / fmaxf((float)(int32_t)call->values[1], 1.0f), 0.0f, 1.0f));
+    case SCNCUTSCENE_EYELIDS_OPEN:
+        return Lerp(from, 0.0f, Clamp(t / fmaxf((float)(int32_t)call->values[1], 1.0f), 0.0f, 1.0f));
+    default:
+        if (from <= 0.0f)
+            return BlinkAt(character, t);
+        if (t < AUTHFACES_BLINK_OPEN)
+            return from * (1.0f - t / AUTHFACES_BLINK_OPEN);
+        return BlinkAt(character, t - AUTHFACES_BLINK_OPEN);
+    }
+}
+
+// The frame at which the face of a character is: the frame of the last call of FaceAnimation that froze it, if it is
+// frozen, else the frame
+static float FaceFrame(uint32_t idValue, float frame, bool* frozen) {
+    const SCNCutscene* program = &g_auth.program;
+    float at = -1.0f;
+    for (uint32_t i = 0; i < program->faceCount && (float)program->faces[i].frame <= frame; i++) {
+        const SCNCutscene_Face* call = &program->faces[i];
+        if (call->function == SCNCUTSCENE_FACE && call->character == idValue && (call->known & 1))
+            at = call->values[0] == 0 ? (float)call->frame : -1.0f;
+    }
+    *frozen = at >= 0.0f;
+    return *frozen ? at : frame;
 }
 
 typedef float AUTHFaces_Offsets[FTBL_BONES][3];
@@ -188,16 +300,82 @@ static void ExpressionOffsets(const AUTHView_Face* face, TALK_Layer layer, int32
     }
 }
 
-MT5Render_Model* AUTHFaces_Pose(uint32_t character, const Matrix* body) {
+// Limits of the rotation of an eye in degrees, from the FTBL file: around Y (both eyes) and around Z (its own)
+static void EyeLimits(const AUTHView_Face* face, bool left, float limits[4]) {
+    const int32_t* l = face->skin.eyeLimits;
+    if (face->skin.vertexCount == 0) {
+        limits[0] = limits[2] = AUTHFACES_EYE_LIMIT;
+        limits[1] = limits[3] = -AUTHFACES_EYE_LIMIT;
+        return;
+    }
+    limits[0] = (float)l[0] * 360.0f / 65536.0f;
+    limits[1] = (float)l[1] * 360.0f / 65536.0f;
+    limits[2] = (float)l[left ? 4 : 2] * 360.0f / 65536.0f;
+    limits[3] = (float)l[left ? 5 : 3] * 360.0f / 65536.0f;
+}
+
+// The angles of an eye (its node of the face model, whose parent is in a pose) that look at a point of the map, in
+// degrees: around its Y axis (down, the top of the head is Z) and its Z axis (to the left of the face, +Y), within its
+// limits. The eye looks to its X axis
+static Vector2 EyeAngles(const AUTHView_Face* face, const MT5Mesh_Node* node, Matrix parent, Matrix transform, const float point[3]) {
+    Matrix world = MatrixMultiply(parent, transform);
+    Vector3 local = Vector3Subtract(Vector3Transform((Vector3) { point[0], point[1], point[2] }, MatrixInvert(world)), node->position);
+    float limits[4];
+    EyeLimits(face, (node->id & 0xFFFF) == AUTHFACES_EYE_LEFT, limits);
+    float down = atan2f(-local.z, sqrtf(local.x * local.x + local.y * local.y)) * RAD2DEG;
+    float side = atan2f(local.y, local.x) * RAD2DEG;
+    return (Vector2) { Clamp(down, limits[1], limits[0]), Clamp(side, limits[3], limits[2]) };
+}
+
+// Where the eyes look by a call of EyesLook of the program of the map: the front (modes 0 and 1), or a point
+static Vector2 CallAngles(const AUTHView_Face* face, const SCNCutscene_Face* call, const MT5Mesh_Node* node, Matrix parent,
+    Matrix transform) {
+    if (call == NULL || call->values[0] != SCNCUTSCENE_EYES_POINT || !(call->known & 8))
+        return (Vector2) { 0.0f, 0.0f };
+    return EyeAngles(face, node, parent, transform, call->point);
+}
+
+// The angles of an eye at a frame: from where the previous call of EyesLook for the character makes it look to where
+// the last one does, over the frames of the last one (the eyes follow the point)
+static Vector2 EyeAt(const AUTHView_Face* face, uint32_t idValue, float frame, const MT5Mesh_Node* node, Matrix parent, Matrix transform) {
+    const SCNCutscene* program = &g_auth.program;
+    const SCNCutscene_Face* last = NULL, * before = NULL;
+    for (uint32_t i = 0; i < program->faceCount && (float)program->faces[i].frame <= frame; i++) {
+        const SCNCutscene_Face* call = &program->faces[i];
+        if (call->function == SCNCUTSCENE_EYES && call->character == idValue && (call->known & 1)) {
+            before = last;
+            last = call;
+        }
+    }
+    Vector2 to = CallAngles(face, last, node, parent, transform);
+    if (last == NULL)
+        return to;
+    float frames = last->values[0] == SCNCUTSCENE_EYES_POINT ? (float)last->values[2] : AUTHFACES_FRONT_FRAMES;
+    float t = Clamp((frame - (float)last->frame) / fmaxf(frames, 1.0f), 0.0f, 1.0f);
+    return Vector2Lerp(CallAngles(face, before, node, parent, transform), to, t);
+}
+
+MT5Render_Model* AUTHFaces_Pose(uint32_t character, const Matrix* body, Matrix transform) {
     AUTHView_Face* face = g_auth.faces != NULL ? &g_auth.faces[character] : NULL;
     if (face == NULL || !face->loaded)
         return NULL;
-    // The face on the head, its eyes as in the file, and the node of the body that the face joins
+    // The face on the head, its eyes where the program makes them look, and the node of the body that the face joins. A
+    // frozen face stays as it was when it was frozen
+    uint32_t idValue = g_auth.sequence.characters[character].idValue;
+    float frame = FaceFrame(idValue, fmaxf(g_auth.time * AUTH_FRAME_RATE, 0.0f), &face->frozen);
     const MT5Mesh* mesh = &face->model.mesh;
     face->pose[0] = body[face->head];
     for (uint32_t i = 1; i < mesh->nodeCount; i++) {
         int32_t parent = mesh->nodes[i].parent;
-        face->pose[i] = MatrixMultiply(MT5Mesh_NodeMatrix(&mesh->nodes[i]), face->pose[parent >= 0 ? parent : 0]);
+        MT5Mesh_Node node = mesh->nodes[i];
+        Matrix parentWorld = face->pose[parent >= 0 ? parent : 0];
+        uint32_t id = node.id & 0xFFFF;
+        if (id == AUTHFACES_EYE_RIGHT || id == AUTHFACES_EYE_LEFT) {
+            Vector2 angles = EyeAt(face, idValue, frame, &node, parentWorld, transform);
+            node.rotation = (Vector3) { 0.0f, angles.x, angles.y };
+            face->eyes[id == AUTHFACES_EYE_LEFT ? 1 : 0] = angles;
+        }
+        face->pose[i] = MatrixMultiply(MT5Mesh_NodeMatrix(&node), parentWorld);
     }
     face->pose[mesh->nodeCount] = body[face->neck];
     if (face->set == NULL) {
@@ -205,14 +383,19 @@ MT5Render_Model* AUTHFaces_Pose(uint32_t character, const Matrix* body) {
         return &face->model;
     }
 
-    uint32_t idValue = g_auth.sequence.characters[character].idValue;
-    float frame = fmaxf(g_auth.time * AUTH_FRAME_RATE, 0.0f);
-    int32_t previous, current, mouthFrom, mouthTo;
-    float expressionAlpha, mouthAlpha;
-    ExpressionAt(idValue, frame, &previous, &current, &expressionAlpha);
-    if (!MouthAt(idValue, frame, &mouthFrom, &mouthTo, &mouthAlpha))
-        mouthFrom = mouthTo = 0;
-    float blink = BlinkAt(character, frame);
+    // The expression, the mouth (by the lip-sync while the character speaks, else the one of the last change of
+    // expression, or rest if a voice ended after it), and the eyelids
+    AUTHFaces_Change last, before, mouthChange, mouthBefore;
+    ExpressionAt(idValue, frame, &last, &before, &mouthChange, &mouthBefore);
+    int32_t previous = before.expression, current = last.expression, mouthFrom, mouthTo;
+    float expressionAlpha = Clamp((frame - last.frame) / last.frames, 0.0f, 1.0f), mouthAlpha, ended;
+    if (!MouthAt(idValue, frame, &mouthFrom, &mouthTo, &mouthAlpha, &ended)) {
+        bool rest = ended >= mouthChange.frame;
+        mouthFrom = rest || ended >= mouthBefore.frame || mouthBefore.mouth < 0 ? 0 : mouthBefore.mouth;
+        mouthTo = rest || mouthChange.mouth < 0 ? 0 : mouthChange.mouth;
+        mouthAlpha = rest ? 1.0f : Clamp((frame - mouthChange.frame) / mouthChange.frames, 0.0f, 1.0f);
+    }
+    float blink = EyelidsAt(character, idValue, g_auth.program.faceCount, frame);
 
     // Each bone is moved by one part of the face: the eyes or the mouth
     AUTHFaces_Offsets eyes, eyesNext, mouth, mouthNext, total;
@@ -233,5 +416,6 @@ MT5Render_Model* AUTHFaces_Pose(uint32_t character, const Matrix* body) {
     MT5Render_PoseWith(&face->model, face->pose, &options);
     face->expression = current;
     face->mouth = mouthTo;
+    face->eyelids = blink;
     return &face->model;
 }

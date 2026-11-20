@@ -65,12 +65,13 @@ In 77 records (e.g. the lines of `ASDA` in `scene/01/stream/pc/eng/a0142.afs`) `
 
 | Offset | Size | Type   | Name       | Description                                                     |
 |-------:|-----:|--------|------------|-----------------------------------------------------------------|
-| 0x00   | 2    | uint16 | `mouth`    | Shape of the mouth, 0 to 5: the pose of the mouth in the group of poses of the expression of the face (see [TALK](TALK#poses)) |
+| 0x00   | 2    | uint16 | `mouth`    | Shape of the mouth, 0 to 5 (0 closed). The game shows it with a pose of the mouth in the group of poses of the expression of the face (see [TALK](TALK#poses)), from a table: the shapes 0 to 5 are the poses 0, 3, 2, 5, 4 and 1 |
 | 0x02   | 2    | uint16 | `unknown`  | Unknown, always 2                                               |
 | 0x04   | 4    | uint32 | `duration` | Time the shape is held, in 1/60 s                               |
 
 - The sum of the durations is the length of the line: it matches the length of the [xWMA](XWM) clip, which is a bit longer as it is padded to whole packets (median 55 keys per second of clip, 99 % of the clips under 59.6).
 - The last key has `mouth` 0 (except in 3 records), and its `duration` is 1 in 60 % of the records. The first key can have any shape.
+- The game counts the durations in its frames of 1/30 s (half the value, the odd 1/60 s carried to the next key, at least 1). It takes the first shape at the start of the clip, and moves to each next shape 4 frames before its key: in 4 frames, or 8 to the shape 0. After the last key it puts the mouth back at rest in 8 frames (code at `0x0C0AC6FA` and `0x0C0AC82A` of `1ST_READ.BIN`, PAL v1.001, with the table of the poses at `0x0C26C708`).
 - Most durations are under 60 (1 second); 16 keys have a duration of 0.
 - In 117 clips of `F1274` (`jap/free01.afs`, `jap/free02.afs`) the durations add up to more than the length of the clip (up to 112 per second): the record doesn't match the clip.
 

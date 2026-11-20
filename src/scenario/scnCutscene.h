@@ -65,6 +65,10 @@
 //                 the cutscene of seqdata0.bin of scene/02/toki the group 1 lights the vision from the frame 1900, the
 //                 ambient color goes from blue to the brown of the shop and the light 4 fades out from 2501 to 2530,
 //                 and the group 0 is back at 2640. The calls that leave the same values are not kept
+//   FaceAnimation (0x075), Eyelids (0x094), EyesLook (0x099) and FaceExpression (0x113): (character, three values)
+//                 the face of a character (see the MAPINFO page of the wiki); EyesLook (character, 2, &point, frames)
+//                 turns the eyes to a point (3 floats, in the space of the map) in a number of frames, (character, 0)
+//                 back to the front
 // The packages of the characters: a function of the program that loads a package (0x13C (0, 0, folder, name)) named by
 // one of its parameters until the character named by another one exists (0x166 (1, character)), called with the values
 // of two variables of the program (e.g. func(var_118, var_11C) of scenario/act01_d000.scn, the can CAN1 of the drink
@@ -97,6 +101,17 @@
 #define SCNCUTSCENE_LIGHT       0x066   // (light, operation, value)
 #define SCNCUTSCENE_AMBIENT     0x064   // (&values)
 #define SCNCUTSCENE_LIGHT_INTENSITY 4   // Operation of LightControl: the intensity of the light (its float at 0x18)
+#define SCNCUTSCENE_FACE        0x075   // (character, 1 / 0, expression, frames): animates or freezes the face
+#define SCNCUTSCENE_EYELIDS     0x094   // (character, mode, frames, lock)
+#define SCNCUTSCENE_EYES        0x099   // (character, mode, &point or frames, frames)
+#define SCNCUTSCENE_EXPRESSION  0x113   // (character, expression, mouth (pose within the expression, -1 rest), frames)
+#define SCNCUTSCENE_EYELIDS_AUTO    0   // Modes of Eyelids: the game blinks by itself
+#define SCNCUTSCENE_EYELIDS_CLOSE   1   // Closes the eyes in the frames, and keeps them closed
+#define SCNCUTSCENE_EYELIDS_OPEN    2   // Opens them, and keeps them open
+#define SCNCUTSCENE_EYELIDS_CLOSED  3   // Closes them (unused by the programs)
+#define SCNCUTSCENE_EYES_FRONT  0       // Modes of EyesLook: to the front, in 16 frames
+#define SCNCUTSCENE_EYES_GAME   1       // To a point chosen by the game
+#define SCNCUTSCENE_EYES_POINT  2       // To the point of the call
 #define SCNCUTSCENE_PACKAGE     0x13C   // (0, 0, folder, name): loads a package
 #define SCNCUTSCENE_EXISTS      0x166   // (1, character): the character exists
 #define SCNCUTSCENE_FOLDER_SIZE 48
@@ -189,6 +204,17 @@ typedef struct {
     uint8_t     known;      // Bit i: values[i] is known
 } SCNCutscene_Light;
 
+// A call that changes the face of a character: FaceAnimation, Eyelids, EyesLook or FaceExpression
+typedef struct {
+    uint32_t    frame;
+    uint32_t    address;
+    uint32_t    function;   // SCNCUTSCENE_FACE, SCNCUTSCENE_EYELIDS, SCNCUTSCENE_EYES or SCNCUTSCENE_EXPRESSION
+    uint32_t    character;
+    uint32_t    values[3];  // Arguments 1 to 3
+    float       point[3];   // The point of EyesLook (mode 2)
+    uint8_t     known;      // Bit i: values[i] is known; bit 3: point is known
+} SCNCutscene_Face;
+
 // A package that the program loads for a character, with the values of its variables at the start of the cutscene
 typedef struct {
     uint32_t    character;
@@ -239,6 +265,8 @@ typedef struct {
     SCNCutscene_Fade*   fades;      // In the order of the calls
     uint32_t            lightCount;
     SCNCutscene_Light*  lights;     // In the order of the calls
+    uint32_t            faceCount;
+    SCNCutscene_Face*   faces;      // In the order of the calls
     uint32_t            levels;     // Functions run before the function of the call that plays the slot
     uint32_t            start;      // Function from which the emulation got to the call
 } SCNCutscene;

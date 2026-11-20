@@ -230,7 +230,7 @@ void Test_Cutscene(const TestContext* context) {
     CorpusList list = Corpus_ScnFiles(context->content);
     uint32_t programs = 0, cutscenes = 0, found = 0, started = 0, moving = 0, sounding = 0, nodeCalls = 0, soundCalls = 0;
     uint32_t stopped = 0, placing = 0, placeCalls = 0, up = 0, levels = 0, displaying = 0, displayCalls = 0, before = 0;
-    uint32_t attaching = 0, attachCalls = 0, packages = 0;
+    uint32_t attaching = 0, attachCalls = 0, packages = 0, facing = 0, faceCalls = 0, looks = 0, points = 0;
     clock_t start = clock();
     for (uint32_t i = 0; i < list.count; i++) {
         uint32_t size;
@@ -306,6 +306,21 @@ void Test_Cutscene(const TestContext* context) {
             for (uint32_t n = 0; n < cutscene.attachCount; n++)
                 CHECK(SD_IsCharacterId(cutscene.attaches[n].character) && (n == 0 || cutscene.attaches[n].frame >= cutscene.attaches[n - 1].frame),
                     "%s: cutscene %u: attach of 0x%08X at %u", list.files[i].name, slot, cutscene.attaches[n].character, cutscene.attaches[n].frame);
+            facing += cutscene.faceCount > 0;
+            faceCalls += cutscene.faceCount;
+            uint32_t cutsceneLooks = 0, cutscenePoints = 0;
+            for (uint32_t n = 0; n < cutscene.faceCount; n++) {
+                const SCNCutscene_Face* face = &cutscene.faces[n];
+                CHECK(SD_IsCharacterId(face->character) && (n == 0 || face->frame >= cutscene.faces[n - 1].frame),
+                    "%s: cutscene %u: face of 0x%08X at %u", list.files[i].name, slot, face->character, face->frame);
+                cutsceneLooks += face->function == SCNCUTSCENE_EYES;
+                cutscenePoints += face->function == SCNCUTSCENE_EYES && (face->known & 8);
+            }
+            looks += cutsceneLooks;
+            points += cutscenePoints;
+            if (cutsceneLooks > 0)
+                Test_Info("%s: cutscene %u: %u face calls, %u EyesLook (%u to a known point)", list.files[i].name, slot,
+                    cutscene.faceCount, cutsceneLooks, cutscenePoints);
             for (uint32_t n = 0; n < cutscene.packageCount; n++)
                 Test_Info("%s: cutscene %u: package %s%s for %.4s", list.files[i].name, slot, cutscene.packages[n].folder,
                     cutscene.packages[n].name, (const char*)&cutscene.packages[n].character);
@@ -338,6 +353,7 @@ void Test_Cutscene(const TestContext* context) {
         "%u threads stopped, %.1f s", programs, cutscenes, found, up, levels, started, moving, nodeCalls, placing, placeCalls,
         displaying, displayCalls, before, attaching, attachCalls, packages, sounding, soundCalls, stopped,
         (double)(clock() - start) / CLOCKS_PER_SEC);
+    Test_Info("%u cutscenes with face calls (%u calls), %u EyesLook (%u to a known point)", facing, faceCalls, looks, points);
     CHECK_EQ(programs, 136, "SCN files");
     CHECK(found > 0 && started == found, "cutscenes found but not run");
     CHECK_EQ(stopped, 0, "threads stopped");

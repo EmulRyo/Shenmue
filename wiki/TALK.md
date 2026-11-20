@@ -85,6 +85,6 @@ Each channel is in exactly one of the two tables (`keyCount` not 0), the same in
 
 ## Poses
 
-The poses are in groups of 6, one group per expression: the pose of an expression is `6 × expression + n` (code at `0x0C0BBB60` of `1ST_READ.BIN`, PAL v1.001). The game takes the eyes of the poses `n` = 0 (open) and 1 (closed) to blink, and the mouth of the pose `n` = the shape of the mouth, 0 to 5 as in the keys of the [lip-sync tables](Lip-sync#key-8-bytes). `s` has 13 expressions (and one more pose), `m` 13, `b` 11, `ss` 11 (and one more pose) and `kc` only one.
+The poses are in groups of 6, one group per expression: the pose of an expression is `6 × expression + n` (code at `0x0C0BBB60` of `1ST_READ.BIN`, PAL v1.001). The game takes the eyes of the poses `n` = 0 (open) and 1 (closed) to blink, and the mouth of the poses `n` = 0 to 5: the rest (0) and the shapes of the mouth of the [lip-sync tables](Lip-sync#key-8-bytes) (in another order: the shapes 1 to 5 are the poses 3, 2, 5, 4 and 1), or the pose that a change of expression gives (function `0x113` of the programs, command 4 of the [AUTH](AUTH) files). `s` has 13 expressions (and one more pose), `m` 13, `b` 11, `ss` 11 (and one more pose) and `kc` only one.
 
 The game blinks every 60 to 90 frames (a random time), closing the eyes in 2 frames and opening them in 4, and goes from a pose to another in a number of frames given by the programs of the maps (see the functions `0x075`, `0x094` and `0x113` in [MAPINFO](MAPINFO#functions-of-the-game)).

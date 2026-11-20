@@ -116,7 +116,7 @@ id	handler	arguments	name	description	character
 072	0x0C1586C8	2			yes
 073	0x0C16B980	1			
 074	0x0C16556E	3	FaceSlot	With argument 1 equal to 0, returns the slot (0 to 7) of the detailed face of the character of ID argument 0 (its _F model and _FTBL skin, attached the first time), or -1 if it has none. With 1, returns another value of the character (-1 if below 1)	yes
-075	0x0C16566A	4	FaceAnimation	Animates (argument 1: 1) or freezes (0) the face of the character of ID argument 0: a frozen face does not blink, look or speak. Argument 2 is an expression (poses 6 x expression of its TALK set) and argument 3 a number of frames	yes
+075	0x0C16566A	4	FaceAnimation	Animates (argument 1: 1) or freezes (0) the face of the character of ID argument 0: a frozen face keeps its pose and does not blink, look or speak. Argument 2 is an expression (poses 6 x expression of its TALK set), taken at the next change of the face, and argument 3 a number of frames	yes
 076					
 077					
 078	0x0C16681C	3			yes
@@ -147,7 +147,7 @@ id	handler	arguments	name	description	character
 091	0x0C158710	2			yes
 092	0x0C174036				
 093	0x0C174056				
-094	0x0C165874	4	Eyelids	Eyelids of the character of ID argument 0, the mode in argument 1: 0 blinks by itself (every 60 to 90 frames), 1 closes the eyes, 2 opens them, in the number of frames of argument 2. Mode 3 unused by the programs; argument 3 unknown	yes
+094	0x0C165874	4	Eyelids	Eyelids of the character of ID argument 0, the mode in argument 1: 0 blinks by itself (every 60 to 90 frames), 1 closes the eyes, 2 opens them, in the number of frames of argument 2, and keeps them so until the next call. Mode 3 (unused by the programs) closes them too. With argument 3 at 2 or more the eyes stop blinking after the change	yes
 095	0x0C164C6C				
 096	0x0C174076	1			
 097	0x0C174098	0			
@@ -274,7 +274,7 @@ id	handler	arguments	name	description	character
 110	0x0C09C288	3			yes
 111	0x0C1578FE				
 112	0x0C164EF4	3			
-113	0x0C1656AC	4	FaceExpression	Expression of the face of the character of ID argument 0: argument 1 (0 to 11) selects the poses 6 x expression of its TALK set, reached in argument 3 frames. Argument 2 goes to the CLIP module of the character, which gives the shape of the mouth (-1 another mode)	yes
+113	0x0C1656AC	4	FaceExpression	Expression of the face of the character of ID argument 0: argument 1 (0 to 11) selects the poses 6 x expression of its TALK set, reached in argument 3 frames. Argument 2 is the pose of the mouth within the expression (-1 rest), kept by the CLIP module of the character while it does not speak. The command 4 of the AUTH files runs the same code	yes
 114	0x0C160438	2-4, 6, 9			
 115	0x0C158CFE	1			
 116	0x0C15791A	1, 2			

@@ -44,5 +44,7 @@ void AUTHView_Draw(Rectangle area);
 void AUTHView_Status(ViewStatus* status);
 // Adds its actions to the toolbar (backspace: back to the map, M: show the map)
 void AUTHView_Toolbar(void);
+// Shows the scene from the free camera, at a position looking at a target (the camera command of the headless mode)
+void AUTHView_Look(Vector3 position, Vector3 target);
 
 #endif

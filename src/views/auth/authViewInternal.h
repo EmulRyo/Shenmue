@@ -66,7 +66,10 @@ typedef struct {
     Matrix*         pose;       // World matrices of the nodes of the face, then of the neck
     float*          offsets;    // Of the vertices of the face, from the skin
     int32_t         expression; // At the current frame
-    int32_t         mouth;
+    int32_t         mouth;      // Pose of the mouth within the expression
+    float           eyelids;    // 0 open, 1 closed
+    bool            frozen;     // By FaceAnimation of the program of the map
+    Vector2         eyes[2];    // Angles of the eyes 0x4D and 0x4E in degrees: down, to the left
 } AUTHView_Face;
 
 // A motion played by the commands, decoded from the MOTN files
@@ -228,9 +231,9 @@ bool AUTHModels_LoadPlaced(void);
 bool AUTHFaces_Load(uint32_t character, const char* face, const char* body, const IPAC_File* packed);
 void AUTHFaces_Free(uint32_t character);
 const bool* AUTHFaces_HiddenNodes(uint32_t character); // The nodes of the body that the face replaces, NULL if no face
-// Puts the face in the pose of the current frame on the body in a pose (world matrices of its nodes). Returns the face
-// model to draw with the body, NULL if none
-MT5Render_Model* AUTHFaces_Pose(uint32_t character, const Matrix* body);
+// Puts the face in the pose of the current frame on the body in a pose (world matrices of its nodes), placed in the map
+// with transform. Returns the face model to draw with the body, NULL if none
+MT5Render_Model* AUTHFaces_Pose(uint32_t character, const Matrix* body, Matrix transform);
 
 // authPose.c: the poses and the transforms of the characters at the current frame
 void AUTHPose_PoseCharacter(uint32_t index);
